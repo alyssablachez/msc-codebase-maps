@@ -1,13 +1,25 @@
+"""
+Generate an AST-based codebase map for a Python package at a given git commit.
+
+Usage:
+    python3 scripts/generate_ast_map.py \
+        --repo repos/requests_full \
+        --commit abc1234 \
+        --out repo_maps/requests/task_0/ast_map.json \
+        --package-name requests
+"""
+import argparse
 import ast
 import json
 import os
+import sys
 
-SRC_DIR = "repos/requests_full/src/requests"
-OUT_FILE = "repo_maps/requests/requests_ast_map.json"
+sys.path.insert(0, os.path.dirname(__file__))
+from git_utils import checkout, current_head, restore
+from package_resolver import find_package_dir
 
 
 def first_docstring_line(node):
-    """Return the first non-empty line of a node's docstring, or None."""
     docstring = ast.get_docstring(node)
     if not docstring:
         return None
@@ -21,23 +33,20 @@ def first_docstring_line(node):
 def extract_file(filepath, rel_path):
     with open(filepath, encoding="utf-8") as f:
         source = f.read()
-
     try:
         tree = ast.parse(source, filename=filepath)
     except SyntaxError:
         return []
 
     records = []
-
     for node in ast.walk(tree):
-        if isinstance(node, (ast.ClassDef,)):
+        if isinstance(node, ast.ClassDef):
             bases = []
             for base in node.bases:
                 if isinstance(base, ast.Name):
                     bases.append(base.id)
                 elif isinstance(base, ast.Attribute):
-                    bases.append(f"{ast.unparse(base)}")
-
+                    bases.append(ast.unparse(base))
             records.append({
                 "type": "class",
                 "file": rel_path,
@@ -46,7 +55,6 @@ def extract_file(filepath, rel_path):
                 "docstring": first_docstring_line(node),
                 "bases": bases,
             })
-
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             records.append({
                 "type": "function",
@@ -54,10 +62,9 @@ def extract_file(filepath, rel_path):
                 "name": node.name,
                 "line": node.lineno,
                 "docstring": first_docstring_line(node),
-                "class": None,  # filled in below via a second pass
+                "class": None,
             })
 
-    # Second pass: assign class membership using parent tracking
     records_by_line = {r["line"]: r for r in records if r["type"] == "function"}
 
     class ParentVisitor(ast.NodeVisitor):
@@ -79,31 +86,59 @@ def extract_file(filepath, rel_path):
         visit_AsyncFunctionDef = visit_FunctionDef
 
     ParentVisitor().visit(tree)
-
     return records
 
 
 def main():
-    all_records = []
+    parser = argparse.ArgumentParser(description="Generate AST map for a Python package at a given commit")
+    parser.add_argument("--repo", required=True, help="Path to the git repository")
+    parser.add_argument("--commit", required=True, help="Commit SHA to check out")
+    parser.add_argument("--out", required=True, help="Output NDJSON file path")
+    parser.add_argument("--package-name", default="requests",
+                        help="Package directory name to walk (default: requests). "
+                             "Tries src/<name> then <name> at the repo root.")
+    parser.add_argument("--skip-dirs", nargs="+", default=["packages"],
+                        help="Subdirectory names to skip while recursing (default: packages).")
+    args = parser.parse_args()
 
-    for fname in sorted(os.listdir(SRC_DIR)):
-        if not fname.endswith(".py"):
-            continue
-        filepath = os.path.join(SRC_DIR, fname)
-        rel_path = os.path.join("src/requests", fname)
-        all_records.extend(extract_file(filepath, rel_path))
+    original_head = current_head(args.repo)
+    print(f"Checking out {args.commit[:8]} (was {original_head[:8]})")
+    checkout(args.repo, args.commit)
 
-    os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
-    with open(OUT_FILE, "w", encoding="utf-8") as f:
-        for record in all_records:
-            f.write(json.dumps(record) + "\n")
+    try:
+        pkg_dir = find_package_dir(args.repo, args.package_name)
+        if pkg_dir is None:
+            print(
+                f"ERROR: could not find {args.package_name}/ or src/{args.package_name}/ "
+                f"in {args.repo}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    char_count = sum(len(json.dumps(r)) + 1 for r in all_records)
-    token_estimate = char_count // 4
+        skip = set(args.skip_dirs)
+        all_records = []
+        for dirpath, dirs, filenames in os.walk(pkg_dir):
+            dirs[:] = [d for d in dirs if d not in skip]
+            for fname in sorted(filenames):
+                if not fname.endswith(".py"):
+                    continue
+                filepath = os.path.join(dirpath, fname)
+                rel_path = os.path.relpath(filepath, args.repo)
+                all_records.extend(extract_file(filepath, rel_path))
 
-    print(f"Wrote {len(all_records)} records to {OUT_FILE}")
-    print(f"Character count: {char_count:,}")
-    print(f"Estimated tokens: {token_estimate:,}")
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            for record in all_records:
+                f.write(json.dumps(record) + "\n")
+
+        char_count = sum(len(json.dumps(r)) + 1 for r in all_records)
+        token_estimate = char_count // 4
+        print(f"Wrote {len(all_records)} records to {args.out}")
+        print(f"Character count:  {char_count:,}")
+        print(f"Estimated tokens: {token_estimate:,}")
+    finally:
+        print(f"Restoring {original_head[:8]}")
+        restore(args.repo, original_head)
 
 
 if __name__ == "__main__":
