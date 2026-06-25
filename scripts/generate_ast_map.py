@@ -19,6 +19,44 @@ from git_utils import checkout, current_head, restore
 from package_resolver import find_package_dir
 
 
+def build_signature(node):
+    """Return a readable signature string like '(self, url, params=None, **kwargs)'."""
+    args = node.args
+    parts = []
+
+    # Positional-only and regular positional args share a single defaults list,
+    # aligned to the right: defaults[0] belongs to args[len(args)-len(defaults)].
+    all_pos = args.posonlyargs + args.args
+    offset = len(all_pos) - len(args.defaults)
+    for i, arg in enumerate(all_pos):
+        di = i - offset
+        if di >= 0:
+            parts.append(f"{arg.arg}={ast.unparse(args.defaults[di])}")
+        else:
+            parts.append(arg.arg)
+        # Insert "/" sentinel after positional-only args
+        if args.posonlyargs and i == len(args.posonlyargs) - 1:
+            parts.append("/")
+
+    # *args (or bare * when there are keyword-only args but no *args)
+    if args.vararg:
+        parts.append(f"*{args.vararg.arg}")
+    elif args.kwonlyargs:
+        parts.append("*")
+
+    # Keyword-only args (kw_defaults may be None for args with no default)
+    for arg, default in zip(args.kwonlyargs, args.kw_defaults):
+        if default is not None:
+            parts.append(f"{arg.arg}={ast.unparse(default)}")
+        else:
+            parts.append(arg.arg)
+
+    if args.kwarg:
+        parts.append(f"**{args.kwarg.arg}")
+
+    return "(" + ", ".join(parts) + ")"
+
+
 def first_docstring_line(node):
     docstring = ast.get_docstring(node)
     if not docstring:
@@ -61,6 +99,7 @@ def extract_file(filepath, rel_path):
                 "file": rel_path,
                 "name": node.name,
                 "line": node.lineno,
+                "signature": build_signature(node),
                 "docstring": first_docstring_line(node),
                 "class": None,
             })
