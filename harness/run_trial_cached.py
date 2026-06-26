@@ -57,14 +57,29 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read the full contents of a file within the repository.",
+            "description": (
+                "Read the contents of a file within the repository. "
+                "Supports optional line-range parameters for large files: "
+                "offset (1-indexed start line, default 1) and "
+                "limit (number of lines to return, default all). "
+                "Use these to read a file in sections rather than all at once."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
                         "description": "Relative path to the file within the repo.",
-                    }
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "1-indexed line number to start from (aliases: start).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of lines to return (aliases: length). "
+                                       "Can also use end (1-indexed last line) instead.",
+                    },
                 },
                 "required": ["path"],
             },
@@ -130,10 +145,34 @@ def execute_tool(name, args, repo_dir):
             if not os.path.isfile(full):
                 return f"Error: '{rel}' does not exist or is not a file"
             with open(full, encoding="utf-8", errors="replace") as f:
-                content = f.read()
+                all_lines = f.readlines()
+            total_lines = len(all_lines)
+
+            # Normalise offset/limit aliases across naming conventions models may use
+            offset = args.get("offset") or args.get("start")   # 1-indexed start line
+            limit  = args.get("limit")  or args.get("length")  # number of lines
+            end    = args.get("end")                            # 1-indexed end line
+
+            if offset is not None or limit is not None or end is not None:
+                # Convert to 0-indexed slice bounds
+                start_idx = min(max(0, int(offset) - 1), total_lines) if offset is not None else 0
+                if end is not None:
+                    stop_idx = int(end)           # end is 1-indexed inclusive → stop exclusive
+                elif limit is not None:
+                    stop_idx = start_idx + int(limit)
+                else:
+                    stop_idx = total_lines
+                stop_idx = min(stop_idx, total_lines)
+                lines = all_lines[start_idx:stop_idx]
+                content = "".join(lines)
+                header = f"[Lines {start_idx + 1}–{stop_idx} of {total_lines}]\n"
+            else:
+                content = "".join(all_lines)
+                header = ""
+
             if len(content) > MAX_FILE_CHARS:
-                content = content[:MAX_FILE_CHARS] + f"\n\n... (file truncated at {MAX_FILE_CHARS} chars)"
-            return content
+                content = content[:MAX_FILE_CHARS] + f"\n\n... (truncated at {MAX_FILE_CHARS} chars)"
+            return header + content
 
         elif name == "search":
             pattern = args.get("pattern") or ""
