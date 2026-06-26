@@ -1,9 +1,11 @@
 """
 Run a single file-localisation trial using an LLM agent with tool access.
+Identical to run_trial.py except the system prompt uses Anthropic prompt caching
+(cache_control: ephemeral) to reduce cost on repeated runs with the same map.
 
 Usage:
-    python3 harness/run_trial.py --model claude-sonnet-4-6 --task 0 --map none
-    python3 harness/run_trial.py --model claude-sonnet-4-6 --task 4 --map ast --max-turns 15
+    python3 harness/run_trial_cached.py --model claude-sonnet-4-6 --task 0 --map none
+    python3 harness/run_trial_cached.py --model claude-sonnet-4-6 --task 4 --map ast --max-turns 15
 """
 import argparse
 import json
@@ -274,8 +276,17 @@ def main():
     checkout(REPO_DIR, base_commit)
 
     messages = [
-        {"role": "system",  "content": system_prompt},
-        {"role": "user",    "content": user_message},
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+        },
+        {"role": "user", "content": user_message},
     ]
 
     total_input_tokens  = 0
@@ -404,7 +415,7 @@ def main():
     safe_model = args.model.replace("/", "_")
     out_dir  = os.path.join(RESULTS_DIR, safe_model)
     os.makedirs(out_dir, exist_ok=True)
-    out_file = os.path.join(out_dir, f"task_{args.task}_{args.map}.json")
+    out_file = os.path.join(out_dir, f"task_{args.task}_{args.map}_cached.json")
 
     result = {
         "model":      args.model,
