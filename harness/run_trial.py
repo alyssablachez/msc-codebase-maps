@@ -211,10 +211,10 @@ You are an expert software engineer helping to identify which source files in a 
 
 You have access to three tools to navigate the repository:
 - list_files(path): List files and directories at a path. Use "" for the repo root.
-- read_file(path): Read a file's full contents.
+- read_file(path, offset=None, limit=None): Read a file's contents. By default reads the whole file — prefer this unless the file is very large, in which case you may pass offset (starting line) and limit (number of lines) to read a smaller slice.
 - search(pattern, path): Grep recursively for a pattern within path (or the whole repo if path is "").
 
-Use these tools to investigate the issue thoroughly. Trace the logic through the codebase, read relevant source files, and verify your hypotheses before committing to an answer. Focus on source files — not tests or documentation.\
+Use these tools to investigate the issue efficiently. Trace the logic through the codebase and read relevant source files. Once you are reasonably confident you have identified the correct file(s), stop investigating and give your final answer — you do not need to exhaustively verify every hypothesis or read every related file. Focus on source files — not tests or documentation.\
 """
 
 MAP_SYSTEM_ADDON = """\
