@@ -81,3 +81,28 @@
 **Key learning:** before acting on an intuitive simplification ("just drop the redundant tool"), it was worth properly isolating the confound (path bug) and testing the actual claim (does richer info help accuracy) — the eventual decision to retire ctags ended up well-justified, but for different and more specific reasons than the original instinct.
 
 **Next:** verify nested-function indentation in compact format, then measure actual token savings precisely, then run a real harness trial comparing verbose-JSON-AST vs compact-AST to see if the smaller format performs equivalently before finalising it as the structural map condition.
+
+## 2026-06-26 (Week 4)
+- Set up API keys for Mistral, Gemini, Groq, OpenRouter, Cohere (skipped DeepSeek — confirmed known platform signup issues, not on my end)
+- Confirmed Mistral free tier has no billing attached — genuinely free, no charge risk
+- Resolved VPN/WSL conflict: API endpoints reachable regardless of VPN state, only provider websites affected
+- Attempted Anthropic prompt caching in new run_trial_cached.py — inconclusive (wrong test condition + missing debug output), parked for later
+- Verified harness is model-agnostic before testing Mistral — no Anthropic-specific assumptions found
+- Ran first Mistral trials (mistral/devstral-medium-latest, Mistral's coding-agent model) across none/ast/ast_compact maps on Task 0 — harness worked end-to-end with zero code changes, F1 = 1.0 on every run
+- Found large run-to-run variance for Devstral (turns 9–20, cost $0.05–$0.39, tokens 174k–1.86M)
+- Root cause: read_file silently ignored offset/limit-style parameters Devstral tried for partial reads, always returning the full file — worst case repeated 16x, ballooning one trial to 1.86M tokens and hitting max_turns
+- Fixed read_file in both harness scripts: documented offset/limit in tool schema, implemented real line-range slicing (6 alias names supported), added [Lines N-M of Total] header, fixed MAX_FILE_CHARS to apply to slices
+- Noted: bug-affected trials still scored correctly (F1 valid) but turn/cost/token metrics are inflated artifacts — flag via stop_reason == "max_turns" and exclude from efficiency averages
+- Two commits: map/caching additions, then the read_file fix 
+
+**Next:** rerun previously-buggy Devstral trials with fix in place; revisit caching properly later
+
+## 2026-06-29 (Week 5)
+- **Real fix:** added an explicit `submit_answer(files)` tool. The model can keep stating hypotheses and investigating freely, but the *only* unambiguous way to signal "I'm done" is calling this tool — removes the guesswork from loop-exit logic entirely
+- Updated `BASE_SYSTEM` to instruct the model to use `submit_answer` rather than concluding in plain text; kept the existing `FINAL_ANSWER_PROMPT` fallback for trials that end via `max_turns` or natural `stop` without a `submit_answer` call
+- Added a field to saved results indicating whether the final answer came from `submit_answer` or the fallback path, to see how reliably models actually adopt the new tool
+- Built `scripts/run_batch.py`: randomised batch runner across task × map × rep combinations (shuffled order to avoid time/load confounds), with per-trial subprocess calls to `run_trial.py`, running cost/time tracking, and a breakdown of `stop_reason` values across the batch
+- Added `--rep` argument to `run_trial.py` so repeated trials save to distinct filenames (`task_{idx}_{map}_rep{n}.json`) instead of overwriting each other
+- Ran first full grid: 5 tasks × 3 maps (none/ast/ast_compact) × 5 reps = 75 trials on `mistral/devstral-medium-latest` (free tier, no cost risk)
+- Main issue encountered: intermittent timeouts during the batch, requiring monitoring to distinguish genuine hangs from slow-but-progressing trials (checked via CPU activity, results folder file timestamps, and raw response log timestamps rather than interrupting the batch)
+- Batch nearly complete by end of day
