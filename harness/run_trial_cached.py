@@ -213,10 +213,10 @@ You are an expert software engineer helping to identify which source files in a 
 
 You have access to three tools to navigate the repository:
 - list_files(path): List files and directories at a path. Use "" for the repo root.
-- read_file(path): Read a file's full contents.
+- read_file(path, offset=None, limit=None): Read a file's contents. By default reads the whole file — prefer this unless the file is very large, in which case you may pass offset (starting line) and limit (number of lines) to read a smaller slice.
 - search(pattern, path): Grep recursively for a pattern within path (or the whole repo if path is "").
 
-Use these tools to investigate the issue thoroughly. Trace the logic through the codebase, read relevant source files, and verify your hypotheses before committing to an answer. Focus on source files — not tests or documentation.\
+Use these tools to investigate the issue efficiently. Trace the logic through the codebase and read relevant source files. Once you are reasonably confident you have identified the correct file(s), stop investigating and give your final answer — you do not need to exhaustively verify every hypothesis or read every related file. Focus on source files — not tests or documentation.\
 """
 
 MAP_SYSTEM_ADDON = """\
@@ -235,6 +235,19 @@ Output a JSON list of file paths (relative to the repository root) that you beli
 
 Example: ["requests/models.py", "requests/auth.py"]\
 """
+
+
+# ── debug logging ─────────────────────────────────────────────────────────────
+
+def _log_response(log_file, label, response):
+    """Append one raw API response as a JSON line to log_file."""
+    try:
+        rec = response.model_dump() if hasattr(response, "model_dump") else {"raw": str(response)}
+    except Exception:
+        rec = {"raw": str(response)}
+    rec["_label"] = label
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, default=str) + "\n")
 
 
 # ── scoring ───────────────────────────────────────────────────────────────────
@@ -266,6 +279,11 @@ def main():
     parser.add_argument("--map",       choices=["none", "ast", "ctags", "ast_compact"], default="none")
     parser.add_argument("--max-turns", type=int, default=20)
     args = parser.parse_args()
+
+    safe_model = args.model.replace("/", "_")
+    logs_dir = os.path.join(_ROOT, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_file = os.path.join(logs_dir, f"raw_responses_{safe_model}_{args.task}_{args.map}.jsonl")
 
     # ── load task ─────────────────────────────────────────────────────────────
     with open(PKL_FILE, "rb") as f:
@@ -345,6 +363,7 @@ def main():
                 tools=TOOLS,
                 tool_choice="auto",
             )
+            _log_response(log_file, f"turn_{turn}", response)
 
             total_input_tokens  += response.usage.prompt_tokens
             total_output_tokens += response.usage.completion_tokens
@@ -423,6 +442,7 @@ def main():
         # ── elicit final answer ───────────────────────────────────────────────
         messages.append({"role": "user", "content": FINAL_ANSWER_PROMPT})
         final_resp = litellm.completion(model=args.model, messages=messages)
+        _log_response(log_file, "final_answer", final_resp)
 
         total_input_tokens  += final_resp.usage.prompt_tokens
         total_output_tokens += final_resp.usage.completion_tokens
@@ -451,7 +471,6 @@ def main():
     scores = compute_scores(predicted_files, ground_truth)
 
     # ── save result ───────────────────────────────────────────────────────────
-    safe_model = args.model.replace("/", "_")
     out_dir  = os.path.join(RESULTS_DIR, safe_model)
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, f"task_{args.task}_{args.map}_cached.json")
@@ -498,6 +517,7 @@ def main():
     print(f"{'F1':<{w}} {scores['f1']}")
     print("=" * 55)
     print(f"Saved → {out_file}")
+    print(f"Log   → {log_file}")
 
 
 if __name__ == "__main__":

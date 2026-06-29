@@ -107,6 +107,28 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_answer",
+            "description": (
+                "Submit your final answer: the list of source files that need to be modified "
+                "to resolve the issue. Call this once you are confident — the trial ends "
+                "immediately and no further tool calls will be made."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "File paths relative to the repository root.",
+                    },
+                },
+                "required": ["files"],
+            },
+        },
+    },
 ]
 
 # ── tool execution ─────────────────────────────────────────────────────────────
@@ -209,12 +231,13 @@ def execute_tool(name, args, repo_dir):
 BASE_SYSTEM = """\
 You are an expert software engineer helping to identify which source files in a codebase need to be modified to resolve a GitHub issue.
 
-You have access to three tools to navigate the repository:
+You have access to four tools:
 - list_files(path): List files and directories at a path. Use "" for the repo root.
 - read_file(path, offset=None, limit=None): Read a file's contents. By default reads the whole file — prefer this unless the file is very large, in which case you may pass offset (starting line) and limit (number of lines) to read a smaller slice.
 - search(pattern, path): Grep recursively for a pattern within path (or the whole repo if path is "").
+- submit_answer(files): Submit your final answer — a JSON list of file paths (relative to repo root) that need to be modified. Call this once you are confident. The trial ends immediately.
 
-Use these tools to investigate the issue efficiently. Trace the logic through the codebase and read relevant source files. Once you are reasonably confident you have identified the correct file(s), stop investigating and give your final answer — you do not need to exhaustively verify every hypothesis or read every related file. Focus on source files — not tests or documentation.\
+Use list_files, read_file, and search to investigate the issue. Once you are reasonably confident you have identified the correct file(s), call submit_answer — you do not need to exhaustively verify every hypothesis. Focus on source files, not tests or documentation.\
 """
 
 MAP_SYSTEM_ADDON = """\
@@ -233,6 +256,19 @@ Output a JSON list of file paths (relative to the repository root) that you beli
 
 Example: ["requests/models.py", "requests/auth.py"]\
 """
+
+
+# ── debug logging ─────────────────────────────────────────────────────────────
+
+def _log_response(log_file, label, response):
+    """Append one raw API response as a JSON line to log_file."""
+    try:
+        rec = response.model_dump() if hasattr(response, "model_dump") else {"raw": str(response)}
+    except Exception:
+        rec = {"raw": str(response)}
+    rec["_label"] = label
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, default=str) + "\n")
 
 
 # ── scoring ───────────────────────────────────────────────────────────────────
@@ -263,7 +299,14 @@ def main():
                         help="Task index into the requests subset of MuLocBench")
     parser.add_argument("--map",       choices=["none", "ast", "ctags", "ast_compact"], default="none")
     parser.add_argument("--max-turns", type=int, default=20)
+    parser.add_argument("--rep",       type=int, default=0,
+                        help="Repetition index, appended to the output filename.")
     args = parser.parse_args()
+
+    safe_model = args.model.replace("/", "_")
+    logs_dir = os.path.join(_ROOT, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_file = os.path.join(logs_dir, f"raw_responses_{safe_model}_{args.task}_{args.map}_rep{args.rep}.jsonl")
 
     # ── load task ─────────────────────────────────────────────────────────────
     with open(PKL_FILE, "rb") as f:
@@ -324,6 +367,8 @@ def main():
     stop_reason         = "max_turns"
     transcript          = []
     start_time          = time.time()
+    submitted           = False
+    predicted_files     = []
 
     try:
         # ── tool-calling loop ─────────────────────────────────────────────────
@@ -334,6 +379,7 @@ def main():
                 tools=TOOLS,
                 tool_choice="auto",
             )
+            _log_response(log_file, f"turn_{turn}", response)
 
             total_input_tokens  += response.usage.prompt_tokens
             total_output_tokens += response.usage.completion_tokens
@@ -391,6 +437,27 @@ def main():
                 except json.JSONDecodeError:
                     tc_args = {}
 
+                if name == "submit_answer":
+                    predicted_files = tc_args.get("files", [])
+                    stop_reason = "submitted"
+                    tool_result = "Answer submitted."
+                    print(f"    submit_answer → {predicted_files}")
+                    messages.append({
+                        "role":         "tool",
+                        "tool_call_id": tc.id,
+                        "content":      tool_result,
+                    })
+                    transcript.append({
+                        "turn":         turn,
+                        "role":         "tool",
+                        "tool_call_id": tc.id,
+                        "name":         name,
+                        "args":         tc_args,
+                        "result":       tool_result,
+                    })
+                    submitted = True
+                    break
+
                 result = execute_tool(name, tc_args, REPO_DIR)
                 print(f"    {name}({tc_args}) → {len(result)} chars")
 
@@ -409,27 +476,31 @@ def main():
                     "result":       result,
                 })
 
-        # ── elicit final answer ───────────────────────────────────────────────
-        messages.append({"role": "user", "content": FINAL_ANSWER_PROMPT})
-        final_resp = litellm.completion(model=args.model, messages=messages)
+            if submitted:
+                break
 
-        total_input_tokens  += final_resp.usage.prompt_tokens
-        total_output_tokens += final_resp.usage.completion_tokens
-        try:
-            total_cost += litellm.completion_cost(completion_response=final_resp)
-        except Exception:
-            pass
+        if not submitted:
+            # ── elicit final answer ───────────────────────────────────────────
+            messages.append({"role": "user", "content": FINAL_ANSWER_PROMPT})
+            final_resp = litellm.completion(model=args.model, messages=messages)
+            _log_response(log_file, "final_answer", final_resp)
 
-        final_text = (final_resp.choices[0].message.content or "").strip()
-        transcript.append({"turn": "final", "role": "assistant", "content": final_text})
+            total_input_tokens  += final_resp.usage.prompt_tokens
+            total_output_tokens += final_resp.usage.completion_tokens
+            try:
+                total_cost += litellm.completion_cost(completion_response=final_resp)
+            except Exception:
+                pass
 
-        # Parse JSON list from final answer (handle markdown fences gracefully)
-        predicted_files = []
-        try:
-            match = re.search(r"\[.*?\]", final_text, re.DOTALL)
-            predicted_files = json.loads(match.group() if match else final_text)
-        except (json.JSONDecodeError, AttributeError):
-            print(f"WARNING: could not parse final answer as JSON: {final_text!r}")
+            final_text = (final_resp.choices[0].message.content or "").strip()
+            transcript.append({"turn": "final", "role": "assistant", "content": final_text})
+
+            # Parse JSON list from final answer (handle markdown fences gracefully)
+            try:
+                match = re.search(r"\[.*?\]", final_text, re.DOTALL)
+                predicted_files = json.loads(match.group() if match else final_text)
+            except (json.JSONDecodeError, AttributeError):
+                print(f"WARNING: could not parse final answer as JSON: {final_text!r}")
 
     finally:
         wall_time = time.time() - start_time
@@ -440,15 +511,15 @@ def main():
     scores = compute_scores(predicted_files, ground_truth)
 
     # ── save result ───────────────────────────────────────────────────────────
-    safe_model = args.model.replace("/", "_")
     out_dir  = os.path.join(RESULTS_DIR, safe_model)
     os.makedirs(out_dir, exist_ok=True)
-    out_file = os.path.join(out_dir, f"task_{args.task}_{args.map}.json")
+    out_file = os.path.join(out_dir, f"task_{args.task}_{args.map}_rep{args.rep}.json")
 
     result = {
         "model":      args.model,
         "task_idx":   args.task,
         "map_type":   args.map,
+        "rep":        args.rep,
         "issue_title": issue_title,
         "base_commit": base_commit,
         "metrics": {
@@ -487,6 +558,7 @@ def main():
     print(f"{'F1':<{w}} {scores['f1']}")
     print("=" * 55)
     print(f"Saved → {out_file}")
+    print(f"Log   → {log_file}")
 
 
 if __name__ == "__main__":
