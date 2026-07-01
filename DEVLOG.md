@@ -105,4 +105,133 @@
 - Added `--rep` argument to `run_trial.py` so repeated trials save to distinct filenames (`task_{idx}_{map}_rep{n}.json`) instead of overwriting each other
 - Ran first full grid: 5 tasks × 3 maps (none/ast/ast_compact) × 5 reps = 75 trials on `mistral/devstral-medium-latest` (free tier, no cost risk)
 - Main issue encountered: intermittent timeouts during the batch, requiring monitoring to distinguish genuine hangs from slow-but-progressing trials (checked via CPU activity, results folder file timestamps, and raw response log timestamps rather than interrupting the batch)
-- Batch nearly complete by end of day
+- Result:
+=================================================================
+BATCH COMPLETE
+  Trials    68/75 succeeded  (7 failed)
+  Cost      $2.4207
+  Time      4h04m37s  (avg 196s/trial)
+
+  Stop reasons:
+    submitted         48  (71%)
+    max_turns         20  (29%)
+
+  Failures:
+    task=0 map=none rep=2: timeout (600s)
+    task=12 map=none rep=3: timeout (600s)
+    task=0 map=ast rep=1: timeout (600s)
+    task=0 map=none rep=0: timeout (600s)
+    task=0 map=none rep=1: timeout (600s)
+    task=4 map=none rep=2: timeout (600s)
+    task=4 map=ast_compact rep=3: timeout (600s)
+=================================================================
+- Started second full grid: 5 tasks × 3 maps (none/ast/ast_compact) × 5 reps = 75 trials on `mistral/devstral-small-latest` (free tier, no cost risk)
+
+## 2026-06-30 (Week 5)
+- Completed small-latest, 3 didn't complete and didn't have the print out from the terminal becuase computer restarted
+- Filled in gap for trials that timed out
+- Discovered that devstral-small-latest still defaulted to the same version of Devstral as devstral-medium-latest
+- Ran same trial with DeepSeek v4-flash. Only small codebase 5 tasks, 3 map conditions (none, ast, ast_compact), 5 reps
+=================================================================
+BATCH COMPLETE
+  Trials    75/75 succeeded  (0 failed)
+  Cost      $0.2639
+  Time      1h32m10s  (avg 74s/trial)
+
+  Stop reasons:
+    submitted         68  (91%)
+    max_turns          7  (9%)
+=================================================================
+- Ran same trial with DeepSeek v4-pro. Only small codebase 5 tasks, 3 map conditions (none, ast, ast_compact), 5 reps
+=================================================================
+BATCH COMPLETE
+  Trials    75/75 succeeded  (0 failed)
+  Cost      $0.8379
+  Time      1h50m50s  (avg 89s/trial)
+
+  Stop reasons:
+    submitted         68  (91%)
+    max_turns          7  (9%)
+=================================================================
+- Completed base_commit and issue body verification for medium (scrapy) and large (yt-dlp) codebase task selections
+- **Scrapy primary 5:** idx 2, 33, 45, 6, 35 — confirmed all ground truth files exist at base_commit (including task 45's test fixtures which were suspected new-but confirmed pre-existing)
+- **Scrapy backup 5:** idx 8, 39, 31, 17, 20
+- **yt-dlp primary 5:** idx 0, 22, 25, 16, 13 — swapped original idx 4 (YouTube DASH manifest) after finding second ground truth file `youtube_live_chat.py` was likely an incidental PR touch unrelated to the issue; replaced with idx 13 (subscriber count/channel views), body verified as substantial
+- **yt-dlp backup 5:** idx 34, 21, 7, 45, 38 — all body-checked, backup 38 (SonyLIV 406) confirmed solid
+- Noted task 6 (scrapy MailSender) is deliberately thin/ambiguous — kept as a "hard" task in the spirit of Task 12 (requests), not a mistake
+- Decided tests should remain excluded from AST maps but are still discoverable via tools — task 45 will be a natural test of whether map-excluded files are findable through tool use alone
+
+
+
+## 2026-07-01 (Week 5)
+- Investigated different platforms hosting opensource models to look for low-cost size pairs
+- Ran fireworks_ai/gpt-oss-120b: this is the first time that end-turn has been used to complete the cycle
+=================================================================
+BATCH COMPLETE
+  Trials    75/75 succeeded  (0 failed)
+  Cost      $1.3236
+  Time      1h05m44s  (avg 53s/trial)
+
+  Stop reasons:
+    end_turn          64  (85%)
+    submitted          7  (9%)
+    max_turns          4  (5%)
+=================================================================
+- **Expanded codebase plan to 3 per size class** — ran LOC/Python% analysis across all 46 MULocBench repos:
+  - Small: requests ✅, thefuck, flask
+  - Medium: scrapy ✅, MetaGPT, fastapi  
+  - Large: yt-dlp ✅, keras, scikit-learn
+  - Filtered on >90% Python, >20 issues, eliminated repos with heavy non-Python components (ansible 68%, OpenHands 59%, etc.)
+
+- **Finalized model lineup for experiments** — 6 pairs across 4 providers:
+  - Pair 1: Qwen3-VL-30B-A3B vs Qwen3-VL-235B-A22B (DeepInfra, MoE vision-language)
+  - Pair 2: Llama-3.1-8B vs Llama-3.1-70B (DeepInfra, dense)
+  - Pair 3: Gemma-3-4B vs Gemma-3-27B (DeepInfra, dense)
+  - Pair 4: gpt-oss-20B vs gpt-oss-120B (Fireworks, MoE) — 120B already partially tested
+  - Pair 5: Ministral-3B vs Ministral-8B (Mistral direct, dense) — swapped out Mistral Large 3 for cleaner within-family comparison
+  - Pair 6: DeepSeek-V4-Flash vs DeepSeek-V4-Pro (DeepSeek direct, MoE)
+
+Ruled out OpenRouter and aggregators — routing layer could serve requests via different backends without visibility, undermining controlled comparison. Fireworks and DeepInfra confirmed as genuine inference providers (not proxies).
+
+**Study design merged into two studies:**
+- Study 1: 4 maps × 4-model anchor panel × 3 codebase sizes × 15 issues × 3 reps ≈ 2,160 trials
+- Study 2: 4 maps × all 12 models × 2 codebase sizes × 15 issues × 3 reps ≈ 4,320 trials (anchor models shared between studies)
+- Codebase size is a blocking variable in both studies, not a standalone study — the real question is the interaction (does map benefit differ by model size?)
+
+**Issue selection rule:** 4 issues per codebase = 2 single-file + 2 multi-file (capped at 2-3 files, excluding trivial/import-only touches). Simple, mechanical, pre-registerable.
+
+**3 codebases per size tier confirmed as minimum** — 1 codebase per tier conflates size with codebase identity; 3 makes codebase a proper random effect. 4 adds only ~15-20% precision, not worth the cost.
+
+**3 reps per condition** — issue-to-issue variance is the dominant source of variance (captured via `(1|issue)` random effect); 3 reps is sufficient to average sampling noise without over-indexing on repetition.
+
+**Turn cap (currently 20) — do not change until pilot data reviewed.** Literature shows localisation-only agents typically solve in 5-10 turns; 20 is probably fine but risks disproportionately truncating slower conditions (larger codebases, no-map, smaller models), which would masquerade as a real effect. Decision: raise or confirm based on pilot per-model turn distribution.
+
+**Wall-clock time downgraded from scientific outcome to operational/descriptive metric.** Cache-hit likelihood is structurally correlated with experimental factors (codebase size, map condition) — no-map trials may cache-hit more reliably than map trials, producing a spurious "maps are slower" artifact. Turn count is the real efficiency measure.
+
+**Stats plan:**
+- Primary: logistic GLMM, `success ~ map_condition * model + codebase_size + (1|issue)`
+- Interaction terms are the key test — non-significant = generalizable effect; significant = report as conditional
+- Paired comparisons: McNemar (2 conditions) / Cochran's Q (3+) on matched issues
+- Secondary: turn count via Poisson/negative-binomial GLMM; forced-answer rate via logistic GLMM
+- Multiple comparisons: Holm-Bonferroni within each test family
+
+- **Diagnosed `final_files_predicted: []` bug on OSS models** — gpt-oss-120b example showed model answered correctly in turn 2 message content (`{"files": ["requests/utils.py"]}`), but harness sent `FINAL_ANSWER_PROMPT` afterward which returned empty string, overwriting the valid answer. Root cause: `FINAL_ANSWER_PROMPT` always fires after the loop regardless of whether a good answer was already given in content, specifically affects `end_turn` trials on models that answer in content rather than via `submit_answer`
+- Decision: do NOT modify harness mid-experiment to preserve comparability — instead apply post-hoc correction to summary CSV using transcript content, with `prediction_corrected` flag to maintain transparency. Raw JSON files remain untouched.
+- gpt-oss-120b stop_reason breakdown: 85% end_turn, 9% submitted, 5% max_turns — low `submit_answer` adoption consistent with OSS models that prefer answering in prose
+
+- **Fireworks caching concern** — Fireworks AI caches responses server-side to reduce costs; this could collapse multiple reps of identical prompts into the same cached response, undermining statistical independence of reps. Wall time is also unreliable for Fireworks trials. Cost will be calculated manually from input/output token counts × published pricing rather than relying on LiteLLM's `completion_cost()`.
+
+**TODO (pending harness modification):**
+- [ ] Fix `FINAL_ANSWER_PROMPT` overwrite bug: check if final assistant content is parseable before sending the extra prompt call — only send as fallback when content is empty/unparseable
+- [ ] Add cache-busting random prefix (`uuid4().hex[:8]` prepended as `[{token}]\n`) to system prompt for Fireworks trials — conditional on `"fireworks" in model name` — save `trial_token` in result JSON for auditability
+- [ ] Add `submit_answer` adoption rate as a reported metric in batch runner summary
+- [ ] Post-hoc audit: for all `end_turn` trials with `final_files_predicted == []`, check transcript's final assistant content for recoverable file predictions; apply correction to summary CSVs with `prediction_corrected` flag
+
+**TODO (data collection):**
+- [ ] Clone thefuck, flask, MetaGPT, fastapi, keras, scikit-learn repos with full history
+- [ ] Select 5+5 tasks for each new codebase (same process as scrapy/yt-dlp)
+- [ ] Generate AST maps for all primary tasks across all 9 codebases
+- [ ] Run single test trials for each new model before committing to full 75-trial batches
+- [ ] Recheck DeepSeek API connectivity before scheduling batch
+- [ ] Run full batches for all 12 models (6 pairs) once test trials confirm tool calling works
+- [ ] Decide final turn cap value based on pilot data — likely raising rather than lowering
