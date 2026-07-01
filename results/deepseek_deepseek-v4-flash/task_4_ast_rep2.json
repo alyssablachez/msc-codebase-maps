@@ -1,0 +1,346 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "task_idx": 4,
+  "map_type": "ast",
+  "rep": 2,
+  "issue_title": "Requests doesn't catch requests.packages.urllib3.exceptions.ProxyError",
+  "base_commit": "9968a10fcfad7268b552808c4f8946eecafc956a",
+  "metrics": {
+    "total_input_tokens": 162497,
+    "total_output_tokens": 2306,
+    "total_cost": 0.001601,
+    "num_turns": 10,
+    "wall_time_seconds": 29.18,
+    "stop_reason": "submitted"
+  },
+  "final_files_predicted": [
+    "requests/exceptions.py",
+    "requests/adapters.py"
+  ],
+  "ground_truth": [
+    "requests/adapters.py",
+    "requests/exceptions.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_9wx4IwWTlYwNOUTAtVbr8634",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/adapters.py\", \"offset\": 283, \"limit\": 150}"
+          }
+        },
+        {
+          "id": "call_01_WQte3d7qV5AWkjACJUVx2368",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/exceptions.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_9wx4IwWTlYwNOUTAtVbr8634",
+      "name": "read_file",
+      "args": {
+        "path": "requests/adapters.py",
+        "offset": 283,
+        "limit": 150
+      },
+      "result": "[Lines 283\u2013369 of 369]\n    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):\n        \"\"\"Sends PreparedRequest object. Returns Response object.\n\n        :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.\n        :param stream: (optional) Whether to stream the request content.\n        :param timeout: (optional) The timeout on the request.\n        :param verify: (optional) Whether to verify SSL certificates.\n        :param vert: (optional) Any user-provided SSL certificate to be trusted.\n        :param proxies: (optional) The proxies dictionary to apply to the request.\n        \"\"\"\n\n        conn = self.get_connection(request.url, proxies)\n\n        self.cert_verify(conn, request.url, verify, cert)\n        url = self.request_url(request, proxies)\n        self.add_headers(request)\n\n        chunked = not (request.body is None or 'Content-Length' in request.headers)\n\n        if stream:\n            timeout = TimeoutSauce(connect=timeout)\n        else:\n            timeout = TimeoutSauce(connect=timeout, read=timeout)\n\n        try:\n            if not chunked:\n                resp = conn.urlopen(\n                    method=request.method,\n                    url=url,\n                    body=request.body,\n                    headers=request.headers,\n                    redirect=False,\n                    assert_same_host=False,\n                    preload_content=False,\n                    decode_content=False,\n                    retries=self.max_retries,\n                    timeout=timeout\n                )\n\n            # Send the request.\n            else:\n                if hasattr(conn, 'proxy_pool'):\n                    conn = conn.proxy_pool\n\n                low_conn = conn._get_conn(timeout=timeout)\n                low_conn.putrequest(request.method, url, skip_accept_encoding=True)\n\n                for header, value in request.headers.items():\n                    low_conn.putheader(header, value)\n\n                low_conn.endheaders()\n\n                for i in request.body:\n                    low_conn.send(hex(len(i))[2:].encode('utf-8'))\n                    low_conn.send(b'\\r\\n')\n                    low_conn.send(i)\n                    low_conn.send(b'\\r\\n')\n                low_conn.send(b'0\\r\\n\\r\\n')\n\n                r = low_conn.getresponse()\n                resp = HTTPResponse.from_httplib(r,\n                    pool=conn,\n                    connection=low_conn,\n                    preload_content=False,\n                    decode_content=False\n                )\n\n        except socket.error as sockerr:\n            raise ConnectionError(sockerr)\n\n        except MaxRetryError as e:\n            raise ConnectionError(e)\n\n        except (_SSLError, _HTTPError) as e:\n            if isinstance(e, _SSLError):\n                raise SSLError(e)\n            elif isinstance(e, TimeoutError):\n                raise Timeout(e)\n            else:\n                raise\n\n        r = self.build_response(request, resp)\n\n        if not stream:\n            r.content\n\n        return r\n"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_01_WQte3d7qV5AWkjACJUVx2368",
+      "name": "read_file",
+      "args": {
+        "path": "requests/exceptions.py"
+      },
+      "result": "# -*- coding: utf-8 -*-\n\n\"\"\"\nrequests.exceptions\n~~~~~~~~~~~~~~~~~~~\n\nThis module contains the set of Requests' exceptions.\n\n\"\"\"\n\n\nclass RequestException(IOError):\n    \"\"\"There was an ambiguous exception that occurred while handling your\n    request.\"\"\"\n\n\nclass HTTPError(RequestException):\n    \"\"\"An HTTP error occurred.\"\"\"\n\n    def __init__(self, *args, **kwargs):\n        \"\"\" Initializes HTTPError with optional `response` object. \"\"\"\n        self.response = kwargs.pop('response', None)\n        super(HTTPError, self).__init__(*args, **kwargs)\n\n\nclass ConnectionError(RequestException):\n    \"\"\"A Connection error occurred.\"\"\"\n\n\nclass SSLError(ConnectionError):\n    \"\"\"An SSL error occurred.\"\"\"\n\n\nclass Timeout(RequestException):\n    \"\"\"The request timed out.\"\"\"\n\n\nclass URLRequired(RequestException):\n    \"\"\"A valid URL is required to make a request.\"\"\"\n\n\nclass TooManyRedirects(RequestException):\n    \"\"\"Too many redirects.\"\"\"\n\n\nclass MissingSchema(RequestException, ValueError):\n    \"\"\"The URL schema (e.g. http or https) is missing.\"\"\"\n\n\nclass InvalidSchema(RequestException, ValueError):\n    \"\"\"See defaults.py for valid schemas.\"\"\"\n\n\nclass InvalidURL(RequestException, ValueError):\n    \"\"\" The URL provided was somehow invalid. \"\"\"\n\n\nclass ChunkedEncodingError(RequestException):\n    \"\"\"The server declared chunked encoding but sent an invalid chunk.\"\"\"\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_kRuBTJbB2eKXrBRB4aNb9105",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/adapters.py\", \"limit\": 70}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_kRuBTJbB2eKXrBRB4aNb9105",
+      "name": "read_file",
+      "args": {
+        "path": "requests/adapters.py",
+        "limit": 70
+      },
+      "result": "[Lines 1\u201370 of 369]\n# -*- coding: utf-8 -*-\n\n\"\"\"\nrequests.adapters\n~~~~~~~~~~~~~~~~~\n\nThis module contains the transport adapters that Requests uses to define\nand maintain connections.\n\"\"\"\n\nimport socket\n\nfrom .models import Response\nfrom .packages.urllib3.poolmanager import PoolManager, proxy_from_url\nfrom .packages.urllib3.response import HTTPResponse\nfrom .packages.urllib3.util import Timeout as TimeoutSauce\nfrom .compat import urlparse, basestring, urldefrag, unquote\nfrom .utils import (DEFAULT_CA_BUNDLE_PATH, get_encoding_from_headers,\n                    except_on_missing_scheme, get_auth_from_url)\nfrom .structures import CaseInsensitiveDict\nfrom .packages.urllib3.exceptions import MaxRetryError\nfrom .packages.urllib3.exceptions import TimeoutError\nfrom .packages.urllib3.exceptions import SSLError as _SSLError\nfrom .packages.urllib3.exceptions import HTTPError as _HTTPError\nfrom .cookies import extract_cookies_to_jar\nfrom .exceptions import ConnectionError, Timeout, SSLError\nfrom .auth import _basic_auth_str\n\nDEFAULT_POOLBLOCK = False\nDEFAULT_POOLSIZE = 10\nDEFAULT_RETRIES = 0\n\n\nclass BaseAdapter(object):\n    \"\"\"The Base Transport Adapter\"\"\"\n\n    def __init__(self):\n        super(BaseAdapter, self).__init__()\n\n    def send(self):\n        raise NotImplementedError\n\n    def close(self):\n        raise NotImplementedError\n\n\nclass HTTPAdapter(BaseAdapter):\n    \"\"\"The built-in HTTP Adapter for urllib3.\n\n    Provides a general-case interface for Requests sessions to contact HTTP and\n    HTTPS urls by implementing the Transport Adapter interface. This class will\n    usually be created by the :class:`Session <Session>` class under the\n    covers.\n\n    :param pool_connections: The number of urllib3 connection pools to cache.\n    :param pool_maxsize: The maximum number of connections to save in the pool.\n    :param max_retries: The maximum number of retries each connection should attempt.\n    :param pool_block: Whether the connection pool should block for connections.\n\n    Usage::\n\n      >>> import requests\n      >>> s = requests.Session()\n      >>> a = requests.adapters.HTTPAdapter()\n      >>> s.mount('http://', a)\n    \"\"\"\n    __attrs__ = ['max_retries', 'config', '_pool_connections', '_pool_maxsize',\n                 '_pool_block']\n\n    def __init__(self, pool_connections=DEFAULT_POOLSIZE,\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_SE35mv8dMzmXSzFqHCC59455",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"class ProxyError\", \"path\": \"requests/packages/urllib3\"}"
+          }
+        },
+        {
+          "id": "call_01_6zGrSw7FDGi3mbqcELXd6550",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"ProxyError\", \"path\": \"requests/packages/urllib3/exceptions\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_SE35mv8dMzmXSzFqHCC59455",
+      "name": "search",
+      "args": {
+        "pattern": "class ProxyError",
+        "path": "requests/packages/urllib3"
+      },
+      "result": "requests/packages/urllib3/exceptions.py:42:class ProxyError(HTTPError):"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_01_6zGrSw7FDGi3mbqcELXd6550",
+      "name": "search",
+      "args": {
+        "pattern": "ProxyError",
+        "path": "requests/packages/urllib3/exceptions"
+      },
+      "result": "Error: path 'requests/packages/urllib3/exceptions' does not exist"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_zUhlI22c5cFnhII8SLpZ4912",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/packages/urllib3/exceptions.py\", \"offset\": 30, \"limit\": 30}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_zUhlI22c5cFnhII8SLpZ4912",
+      "name": "read_file",
+      "args": {
+        "path": "requests/packages/urllib3/exceptions.py",
+        "offset": 30,
+        "limit": 30
+      },
+      "result": "[Lines 30\u201359 of 121]\n        PoolError.__init__(self, pool, message)\n\n    def __reduce__(self):\n        # For pickling purposes.\n        return self.__class__, (None, self.url, None)\n\n\nclass SSLError(HTTPError):\n    \"Raised when SSL certificate fails in an HTTPS connection.\"\n    pass\n\n\nclass ProxyError(HTTPError):\n    \"Raised when the connection to a proxy fails.\"\n    pass\n\n\nclass DecodeError(HTTPError):\n    \"Raised when automatic decoding based on Content-Type fails.\"\n    pass\n\n\n## Leaf Exceptions\n\nclass MaxRetryError(RequestError):\n    \"Raised when the maximum number of retries is exceeded.\"\n\n    def __init__(self, pool, url, reason=None):\n        self.reason = reason\n\n"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "Now let me check what a `ProxyError` should translate to. Since it's a proxy connection failure, it maps naturally to `ConnectionError` or a new specific exception.",
+      "tool_calls": [
+        {
+          "id": "call_00_3v4uXloLXAaoIkXFkDbs3036",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"ProxyError\", \"path\": \"requests\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_3v4uXloLXAaoIkXFkDbs3036",
+      "name": "search",
+      "args": {
+        "pattern": "ProxyError",
+        "path": "requests"
+      },
+      "result": "requests/packages/urllib3/connectionpool.py:55:    ProxyError,\nrequests/packages/urllib3/connectionpool.py:582:                raise ProxyError('Cannot connect to proxy. '\nrequests/packages/urllib3/exceptions.py:42:class ProxyError(HTTPError):"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_GFZNskdkkXcvbYVKdtng9149",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/sessions.py\", \"offset\": 68, \"limit\": 90}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_GFZNskdkkXcvbYVKdtng9149",
+      "name": "read_file",
+      "args": {
+        "path": "requests/sessions.py",
+        "offset": 68,
+        "limit": 90
+      },
+      "result": "[Lines 68\u2013157 of 527]\nclass SessionRedirectMixin(object):\n    def resolve_redirects(self, resp, req, stream=False, timeout=None,\n                          verify=True, cert=None, proxies=None):\n        \"\"\"Receives a Response. Returns a generator of Responses.\"\"\"\n\n        i = 0\n\n        # ((resp.status_code is codes.see_other))\n        while (('location' in resp.headers and resp.status_code in REDIRECT_STATI)):\n            prepared_request = req.copy()\n\n            resp.content  # Consume socket so it can be released\n\n            if i >= self.max_redirects:\n                raise TooManyRedirects('Exceeded %s redirects.' % self.max_redirects)\n\n            # Release the connection back into the pool.\n            resp.close()\n\n            url = resp.headers['location']\n            method = req.method\n\n            # Handle redirection without scheme (see: RFC 1808 Section 4)\n            if url.startswith('//'):\n                parsed_rurl = urlparse(resp.url)\n                url = '%s:%s' % (parsed_rurl.scheme, url)\n\n            # The scheme should be lower case...\n            if '://' in url:\n                scheme, uri = url.split('://', 1)\n                url = '%s://%s' % (scheme.lower(), uri)\n\n            # Facilitate non-RFC2616-compliant 'location' headers\n            # (e.g. '/path/to/resource' instead of 'http://domain.tld/path/to/resource')\n            # Compliant with RFC3986, we percent encode the url.\n            if not urlparse(url).netloc:\n                url = urljoin(resp.url, requote_uri(url))\n            else:\n                url = requote_uri(url)\n\n            prepared_request.url = url\n\n            # http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.4\n            if (resp.status_code == codes.see_other and\n                    method != 'HEAD'):\n                method = 'GET'\n\n            # Do what the browsers do, despite standards...\n            if (resp.status_code in (codes.moved, codes.found) and\n                    method not in ('GET', 'HEAD')):\n                method = 'GET'\n\n            prepared_request.method = method\n\n            # https://github.com/kennethreitz/requests/issues/1084\n            if resp.status_code not in (codes.temporary, codes.resume):\n                if 'Content-Length' in prepared_request.headers:\n                    del prepared_request.headers['Content-Length']\n\n                prepared_request.body = None\n\n            headers = prepared_request.headers\n            try:\n                del headers['Cookie']\n            except KeyError:\n                pass\n\n            prepared_request.prepare_cookies(self.cookies)\n\n            resp = self.send(\n                prepared_request,\n                stream=stream,\n                timeout=timeout,\n                verify=verify,\n                cert=cert,\n                proxies=proxies,\n                allow_redirects=False,\n            )\n\n            extract_cookies_to_jar(self.cookies, prepared_request, resp.raw)\n\n            i += 1\n            yield resp\n\n\nclass Session(SessionRedirectMixin):\n    \"\"\"A Requests session.\n\n    Provides cookie persistence, connection-pooling, and configuration.\n\n"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_FpJmOZqxnMW4lEHMnP1Z7359",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/adapters.py\", \"offset\": 325, \"limit\": 25}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_FpJmOZqxnMW4lEHMnP1Z7359",
+      "name": "read_file",
+      "args": {
+        "path": "requests/adapters.py",
+        "offset": 325,
+        "limit": 25
+      },
+      "result": "[Lines 325\u2013349 of 369]\n                    conn = conn.proxy_pool\n\n                low_conn = conn._get_conn(timeout=timeout)\n                low_conn.putrequest(request.method, url, skip_accept_encoding=True)\n\n                for header, value in request.headers.items():\n                    low_conn.putheader(header, value)\n\n                low_conn.endheaders()\n\n                for i in request.body:\n                    low_conn.send(hex(len(i))[2:].encode('utf-8'))\n                    low_conn.send(b'\\r\\n')\n                    low_conn.send(i)\n                    low_conn.send(b'\\r\\n')\n                low_conn.send(b'0\\r\\n\\r\\n')\n\n                r = low_conn.getresponse()\n                resp = HTTPResponse.from_httplib(r,\n                    pool=conn,\n                    connection=low_conn,\n                    preload_content=False,\n                    decode_content=False\n                )\n\n"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_euNnviaOURh3wg4Fz5Nd1749",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"offset\": 349, \"path\": \"requests/adapters.py\", \"limit\": 20}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_00_euNnviaOURh3wg4Fz5Nd1749",
+      "name": "read_file",
+      "args": {
+        "offset": 349,
+        "path": "requests/adapters.py",
+        "limit": 20
+      },
+      "result": "[Lines 349\u2013368 of 369]\n\n        except socket.error as sockerr:\n            raise ConnectionError(sockerr)\n\n        except MaxRetryError as e:\n            raise ConnectionError(e)\n\n        except (_SSLError, _HTTPError) as e:\n            if isinstance(e, _SSLError):\n                raise SSLError(e)\n            elif isinstance(e, TimeoutError):\n                raise Timeout(e)\n            else:\n                raise\n\n        r = self.build_response(request, resp)\n\n        if not stream:\n            r.content\n\n"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "I now have a clear understanding of the issue. The `send()` method in `adapters.py` catches various urllib3 exceptions and translates them to requests-specific exceptions, but `ProxyError` from urllib3 is not handled. Since `ProxyError` inherits from `HTTPError`, it gets caught by the `except (_SSLError, _HTTPError)` block but falls through to `else: raise` and gets re-raised as the raw urllib3 exception.\n\nLet me verify the precise current exception handling logic:",
+      "tool_calls": [
+        {
+          "id": "call_00_z4yLI3uMQKs7LMou61Hf9720",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"offset\": 349, \"path\": \"requests/adapters.py\", \"limit\": 20}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_00_z4yLI3uMQKs7LMou61Hf9720",
+      "name": "read_file",
+      "args": {
+        "offset": 349,
+        "path": "requests/adapters.py",
+        "limit": 20
+      },
+      "result": "[Lines 349\u2013368 of 369]\n\n        except socket.error as sockerr:\n            raise ConnectionError(sockerr)\n\n        except MaxRetryError as e:\n            raise ConnectionError(e)\n\n        except (_SSLError, _HTTPError) as e:\n            if isinstance(e, _SSLError):\n                raise SSLError(e)\n            elif isinstance(e, TimeoutError):\n                raise Timeout(e)\n            else:\n                raise\n\n        r = self.build_response(request, resp)\n\n        if not stream:\n            r.content\n\n"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": "I now have a complete understanding. The fix requires changes to two files:\n\n1. **`requests/exceptions.py`** \u2014 Add a new `ProxyError` exception class (extending `ConnectionError`)\n2. **`requests/adapters.py`** \u2014 Import and handle `ProxyError` from urllib3, translating it to the new requests-specific `ProxyError`",
+      "tool_calls": [
+        {
+          "id": "call_00_D6UaAvTujaD7LbsHW0mO3475",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"requests/exceptions.py\", \"requests/adapters.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_00_D6UaAvTujaD7LbsHW0mO3475",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "requests/exceptions.py",
+          "requests/adapters.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}
