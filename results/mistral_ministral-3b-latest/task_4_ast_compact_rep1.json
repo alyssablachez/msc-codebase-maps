@@ -1,0 +1,167 @@
+{
+  "model": "mistral/ministral-3b-latest",
+  "task_idx": 4,
+  "map_type": "ast_compact",
+  "rep": 1,
+  "issue_title": "Requests doesn't catch requests.packages.urllib3.exceptions.ProxyError",
+  "base_commit": "9968a10fcfad7268b552808c4f8946eecafc956a",
+  "metrics": {
+    "total_input_tokens": 32503,
+    "total_output_tokens": 1029,
+    "total_cost": 0.0,
+    "num_turns": 5,
+    "wall_time_seconds": 23.92,
+    "stop_reason": "submitted"
+  },
+  "final_files_predicted": [
+    "requests/adapters.py"
+  ],
+  "ground_truth": [
+    "requests/adapters.py",
+    "requests/exceptions.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6667
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "Based on the issue description, the problem is that `requests` does not convert `urllib3.exceptions.ProxyError` into a custom `requests` exception (e.g., `requests.exceptions.ConnectionError` or similar). This causes `ProxyError` to be missed when catching exceptions derived from `RequestException`.\n\n### Likely Files to Investigate\nThe following files are likely candidates for modification:\n\n1. **`requests/adapters.py`**\n   - This file contains the `HTTPAdapter` class, which handles urllib3-specific errors. The `send` method (e.g., `L283`) is where urllib3 exceptions like `ProxyError` are raised. If the adapter does not wrap these exceptions into a `requests`-specific exception, this is the likely source of the issue.\n\n2. **`requests/exceptions.py`**\n   - This file defines custom exceptions like `ConnectionError`. If `ProxyError` needs to be mapped to a custom exception, this file may need to be updated to include a new exception or modify existing ones.\n\n3. **`requests/sessions.py`**\n   - The `Session` class uses adapters and may handle exceptions raised by adapters. If the session does not propagate or wrap urllib3 exceptions into `requests`-specific exceptions, this could also be relevant.\n\n---\n\n### Next Steps\nI will start by searching for where urllib3 exceptions are caught or handled in the codebase, focusing on the `send` method in `HTTPAdapter` and how exceptions are propagated.",
+      "tool_calls": [
+        {
+          "id": "W3mqGudRj",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"urllib3.exceptions.ProxyError\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "W3mqGudRj",
+      "name": "search",
+      "args": {
+        "pattern": "urllib3.exceptions.ProxyError",
+        "path": ""
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "Since `urllib3.exceptions.ProxyError` is not directly handled in the codebase, I will look for how urllib3 exceptions are caught or wrapped in the `HTTPAdapter` class, particularly in the `send` method. The issue likely stems from the fact that `ProxyError` is not being translated into a `requests`-specific exception.\n\n### Next Steps\nI will search for patterns like:\n- `urllib3.exceptions.ConnectionError`\n- `urllib3.exceptions.ProtocolError`\n- `urllib3.exceptions.HTTPSError`\n- Exception wrapping or translation logic in `HTTPAdapter.send`.\n\nI will then check the `send` method in `requests/adapters.py` to see if it wraps urllib3 exceptions.",
+      "tool_calls": [
+        {
+          "id": "tFWhk1pL4",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"urllib3.exceptions\", \"path\": \"requests/adapters.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "tFWhk1pL4",
+      "name": "search",
+      "args": {
+        "pattern": "urllib3.exceptions",
+        "path": "requests/adapters.py"
+      },
+      "result": "21:from .packages.urllib3.exceptions import MaxRetryError\n22:from .packages.urllib3.exceptions import TimeoutError\n23:from .packages.urllib3.exceptions import SSLError as _SSLError\n24:from .packages.urllib3.exceptions import HTTPError as _HTTPError"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "The `HTTPAdapter` class in `requests/adapters.py` imports several urllib3 exceptions, but it does not appear to explicitly handle or wrap `urllib3.exceptions.ProxyError`. Since `ProxyError` is not imported or caught, it likely propagates directly to the user.\n\n### Next Steps\nI will examine the `send` method in `HTTPAdapter` (around line `L283` in the codebase map) to see how urllib3 exceptions are currently handled. If `ProxyError` is not being caught or translated, I will identify the appropriate place to add logic for wrapping it into a `requests`-specific exception.",
+      "tool_calls": [
+        {
+          "id": "CtK0VAAKY",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/adapters.py\", \"offset\": 280, \"limit\": 350}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "CtK0VAAKY",
+      "name": "read_file",
+      "args": {
+        "path": "requests/adapters.py",
+        "offset": 280,
+        "limit": 350
+      },
+      "result": "[Lines 280\u2013369 of 369]\n\n        return headers\n\n    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):\n        \"\"\"Sends PreparedRequest object. Returns Response object.\n\n        :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.\n        :param stream: (optional) Whether to stream the request content.\n        :param timeout: (optional) The timeout on the request.\n        :param verify: (optional) Whether to verify SSL certificates.\n        :param vert: (optional) Any user-provided SSL certificate to be trusted.\n        :param proxies: (optional) The proxies dictionary to apply to the request.\n        \"\"\"\n\n        conn = self.get_connection(request.url, proxies)\n\n        self.cert_verify(conn, request.url, verify, cert)\n        url = self.request_url(request, proxies)\n        self.add_headers(request)\n\n        chunked = not (request.body is None or 'Content-Length' in request.headers)\n\n        if stream:\n            timeout = TimeoutSauce(connect=timeout)\n        else:\n            timeout = TimeoutSauce(connect=timeout, read=timeout)\n\n        try:\n            if not chunked:\n                resp = conn.urlopen(\n                    method=request.method,\n                    url=url,\n                    body=request.body,\n                    headers=request.headers,\n                    redirect=False,\n                    assert_same_host=False,\n                    preload_content=False,\n                    decode_content=False,\n                    retries=self.max_retries,\n                    timeout=timeout\n                )\n\n            # Send the request.\n            else:\n                if hasattr(conn, 'proxy_pool'):\n                    conn = conn.proxy_pool\n\n                low_conn = conn._get_conn(timeout=timeout)\n                low_conn.putrequest(request.method, url, skip_accept_encoding=True)\n\n                for header, value in request.headers.items():\n                    low_conn.putheader(header, value)\n\n                low_conn.endheaders()\n\n                for i in request.body:\n                    low_conn.send(hex(len(i))[2:].encode('utf-8'))\n                    low_conn.send(b'\\r\\n')\n                    low_conn.send(i)\n                    low_conn.send(b'\\r\\n')\n                low_conn.send(b'0\\r\\n\\r\\n')\n\n                r = low_conn.getresponse()\n                resp = HTTPResponse.from_httplib(r,\n                    pool=conn,\n                    connection=low_conn,\n                    preload_content=False,\n                    decode_content=False\n                )\n\n        except socket.error as sockerr:\n            raise ConnectionError(sockerr)\n\n        except MaxRetryError as e:\n            raise ConnectionError(e)\n\n        except (_SSLError, _HTTPError) as e:\n            if isinstance(e, _SSLError):\n                raise SSLError(e)\n            elif isinstance(e, TimeoutError):\n                raise Timeout(e)\n            else:\n                raise\n\n        r = self.build_response(request, resp)\n\n        if not stream:\n            r.content\n\n        return r\n"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "The `send` method in `HTTPAdapter` currently handles urllib3 exceptions like `MaxRetryError`, `_SSLError`, and `_HTTPError` by translating them into `requests`-specific exceptions (`ConnectionError`, `SSLError`, and `TimeoutError`). However, it does **not** handle `urllib3.exceptions.ProxyError`.\n\n### Required Fix\nTo address the issue, we need to add a catch block for `urllib3.exceptions.ProxyError` and translate it into a `requests.exceptions.ConnectionError` (or a custom exception if needed).\n\n#### Proposed Changes:\n1. Import `urllib3.exceptions.ProxyError` in `requests/adapters.py`.\n2. Add a `except urllib3.exceptions.ProxyError as e:` block in the `send` method to wrap it into a `ConnectionError`.\n\n---\n\n### Next Step\nI will check if `ProxyError` is already imported in `requests/adapters.py` and add the missing import if needed.",
+      "tool_calls": [
+        {
+          "id": "FkngnFfqb",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"ProxyError\", \"path\": \"requests/adapters.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "FkngnFfqb",
+      "name": "search",
+      "args": {
+        "pattern": "ProxyError",
+        "path": "requests/adapters.py"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "The `ProxyError` is not imported in `requests/adapters.py`. I will add the import and modify the `send` method to catch and translate `urllib3.exceptions.ProxyError` into a `requests.exceptions.ConnectionError`.\n\n### Plan:\n1. Add `from .packages.urllib3.exceptions import ProxyError`.\n2. Add a `except urllib3.exceptions.ProxyError as e:` block in the `send` method to raise `ConnectionError(e)`.\n\nI will now make these changes.",
+      "tool_calls": [
+        {
+          "id": "CQuJNToxq",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"requests/adapters.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "CQuJNToxq",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "requests/adapters.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}
