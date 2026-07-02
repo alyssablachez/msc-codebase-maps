@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from git_utils import checkout, current_head, restore
-from package_resolver import find_package_dir
+from package_resolver import resolve_package_dir
 
 
 def build_signature(node):
@@ -133,9 +133,10 @@ def main():
     parser.add_argument("--repo", required=True, help="Path to the git repository")
     parser.add_argument("--commit", required=True, help="Commit SHA to check out")
     parser.add_argument("--out", required=True, help="Output NDJSON file path")
-    parser.add_argument("--package-name", default="requests",
-                        help="Package directory name to walk (default: requests). "
-                             "Tries src/<name> then <name> at the repo root.")
+    parser.add_argument("--package-name", default=None,
+                        help="Package directory name to walk. "
+                             "Tries src/<name> then <name> at the repo root. "
+                             "Auto-detected from top-level __init__.py dirs if omitted.")
     parser.add_argument("--skip-dirs", nargs="+", default=["packages"],
                         help="Subdirectory names to skip while recursing (default: packages).")
     args = parser.parse_args()
@@ -145,13 +146,10 @@ def main():
     checkout(args.repo, args.commit)
 
     try:
-        pkg_dir = find_package_dir(args.repo, args.package_name)
-        if pkg_dir is None:
-            print(
-                f"ERROR: could not find {args.package_name}/ or src/{args.package_name}/ "
-                f"in {args.repo}",
-                file=sys.stderr,
-            )
+        try:
+            pkg_dir = resolve_package_dir(args.repo, args.package_name)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(1)
 
         skip = set(args.skip_dirs)
