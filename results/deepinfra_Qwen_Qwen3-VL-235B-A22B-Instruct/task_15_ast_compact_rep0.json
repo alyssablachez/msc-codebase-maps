@@ -1,0 +1,139 @@
+{
+  "model": "deepinfra/Qwen/Qwen3-VL-235B-A22B-Instruct",
+  "task_idx": 15,
+  "map_type": "ast_compact",
+  "rep": 0,
+  "issue_title": "Add header name to InvalidHeader exception message",
+  "base_commit": "1c2022cf868cb503815f34901ad8e85cf524d01a",
+  "metrics": {
+    "total_input_tokens": 29520,
+    "total_output_tokens": 545,
+    "total_cost": 0.0,
+    "num_turns": 4,
+    "wall_time_seconds": 33.01,
+    "stop_reason": "submitted"
+  },
+  "final_files_predicted": [
+    "requests/utils.py"
+  ],
+  "ground_truth": [
+    "requests/utils.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "Looking at the issue, I need to find where the `InvalidHeader` exception is raised and modify it to include the header name in the error message.\n\nFrom the codebase map, I can see that `InvalidHeader` is defined in `requests/exceptions.py` and there's a `check_header_validity` function in `requests/utils.py` that likely validates headers.\n\nLet me first check the `check_header_validity` function to see where the `InvalidHeader` exception is raised:\n\n",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-a56f9bd89b9ef841",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/utils.py\", \"offset\": 850, \"limit\": 20}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "chatcmpl-tool-a56f9bd89b9ef841",
+      "name": "read_file",
+      "args": {
+        "path": "requests/utils.py",
+        "offset": 850,
+        "limit": 20
+      },
+      "result": "[Lines 850\u2013869 of 904]\n_CLEAN_HEADER_REGEX_BYTE = re.compile(b'^\\\\S[^\\\\r\\\\n]*$|^$')\n_CLEAN_HEADER_REGEX_STR = re.compile(r'^\\S[^\\r\\n]*$|^$')\n\n\ndef check_header_validity(header):\n    \"\"\"Verifies that header value is a string which doesn't contain\n    leading whitespace or return characters. This prevents unintended\n    header injection.\n\n    :param header: tuple, in the format (name, value).\n    \"\"\"\n    name, value = header\n\n    if isinstance(value, bytes):\n        pat = _CLEAN_HEADER_REGEX_BYTE\n    else:\n        pat = _CLEAN_HEADER_REGEX_STR\n    try:\n        if not pat.match(value):\n            raise InvalidHeader(\"Invalid return character or leading space in header: %s\" % name)\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "I can see that the `check_header_validity` function raises an `InvalidHeader` exception when there are invalid characters in the header value. However, this doesn't match the specific issue where the error is about the header value type (not being str or bytes).\n\nLet me search for where the \"must be of type str or bytes\" error message is being raised:\n\n\n",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-b08634168ffeef23",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"must be of type str or bytes\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "chatcmpl-tool-b08634168ffeef23",
+      "name": "search",
+      "args": {
+        "pattern": "must be of type str or bytes"
+      },
+      "result": "requests/utils.py:871:        raise InvalidHeader(\"Header value %s must be of type str or bytes, \""
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "I found the location where the specific error message is being raised. In `requests/utils.py` at line 871, there's code that raises an `InvalidHeader` exception with the message \"Header value %s must be of type str or bytes, not %s\".\n\nLooking at the context around this line, I need to see if I can modify this to include the header name in the error message. Let me check the surrounding code to understand how the header name is available:\n\n\n",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-9a9a969b9c2bda54",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/utils.py\", \"offset\": 860, \"limit\": 20}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "chatcmpl-tool-9a9a969b9c2bda54",
+      "name": "read_file",
+      "args": {
+        "path": "requests/utils.py",
+        "offset": 860,
+        "limit": 20
+      },
+      "result": "[Lines 860\u2013879 of 904]\n    \"\"\"\n    name, value = header\n\n    if isinstance(value, bytes):\n        pat = _CLEAN_HEADER_REGEX_BYTE\n    else:\n        pat = _CLEAN_HEADER_REGEX_STR\n    try:\n        if not pat.match(value):\n            raise InvalidHeader(\"Invalid return character or leading space in header: %s\" % name)\n    except TypeError:\n        raise InvalidHeader(\"Header value %s must be of type str or bytes, \"\n                            \"not %s\" % (value, type(value)))\n\n\ndef urldefragauth(url):\n    \"\"\"\n    Given a url remove the fragment and the authentication part.\n\n    :rtype: str\n"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "I can see the issue now. In the `check_header_validity` function, when a `TypeError` occurs (likely when trying to match a non-string/bytes value against the regex), it raises an `InvalidHeader` exception with the message \"Header value %s must be of type str or bytes, not %s\".\n\nThe problem is that the error message is using the header value (`value`) in the message, not the header name. To fix this, I need to modify this exception to include the header name.\n\nThe fix should be to change the error message to include the header name, which is available as the variable `name` in this context.\n\nLet me submit the answer with the file that needs to be modified:\n\n\n\n",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-89a7daed252f7603",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"requests/utils.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "chatcmpl-tool-89a7daed252f7603",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "requests/utils.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}
