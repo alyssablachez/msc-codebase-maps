@@ -235,3 +235,230 @@ Ruled out OpenRouter and aggregators — routing layer could serve requests via 
 - [ ] Recheck DeepSeek API connectivity before scheduling batch
 - [ ] Run full batches for all 12 models (6 pairs) once test trials confirm tool calling works
 - [ ] Decide final turn cap value based on pilot data — likely raising rather than lowering
+
+- Ran fireworks_ai/gpt-oss-20b: Ran extremely slowly
+=================================================================
+BATCH COMPLETE
+  Trials    68/75 succeeded  (7 failed)
+  Cost      $0.6811
+  Time      5h30m13s  (avg 264s/trial)
+
+  Stop reasons:
+    submitted         46  (68%)
+    max_turns         13  (19%)
+    end_turn           9  (13%)
+
+  Failures:
+    task=14 map=ast rep=0: timeout (600s)
+    task=14 map=ast rep=2: timeout (600s)
+    task=14 map=ast rep=3: timeout (600s)
+    task=14 map=ast_compact rep=2: timeout (600s)
+    task=0 map=ast rep=0: timeout (600s)
+    task=14 map=ast rep=4: timeout (600s)
+    task=14 map=ast_compact rep=4: timeout (600s)
+=================================================================
+
+## 2026-07-02 (Week 5)
+- Attempted to run with Gemma and Llama models, but they failed to call tools
+- Will try to replace with zai GLM-4.7 versions and Nvidia Nemotron versions
+- Ran Qwen3-VL-235B-A22B: there is a bug where it doesn't calculate costs, but it looks like the total was around $1.73. I'll need to calculate this based on tokens and try to figure out why it didn't calculate correctly
+=================================================================
+BATCH COMPLETE
+  Trials    75/75 succeeded  (0 failed)
+  Cost      $0.0000
+  Time      1h47m49s  (avg 86s/trial)
+
+  Stop reasons:
+    submitted         66  (88%)
+    max_turns          7  (9%)
+    end_turn           2  (3%)
+=================================================================
+- Ran ministral-3-3b
+=======================================================
+Model          mistral/ministral-3b-latest
+Task           0 — AttributeError: 'NoneType' object has no attribute 'read'
+Map            ast
+Turns          6 (submitted)
+Tokens         109,234 in / 2,451 out
+Cost           $0.00000
+Time           20.6s
+
+Predicted      ['requests/models.py']
+Expected       ['requests/models.py']
+Precision      1.0
+Recall         1.0
+F1             1.0
+=======================================================
+
+
+
+
+
+## Empty Predictions Audit (post-hoc)
+
+**Scope:** 619 total trials across all models collected to date  
+**Empty predictions:** 53 / 619 (8.6%)  
+**Audit file:** logs/empty_predictions_audit.csv
+
+### Category breakdown
+
+| Category | Count | Root cause |
+|---|---|---|
+| A: API_ERROR | 0 | No API failures detected |
+| B: CONTENT_ANSWER | 17 | Harness bug — model answered correctly in message content but FINAL_ANSWER_PROMPT returned empty because the model responded with a tool call (finish_reason=tool_calls, content=null) rather than plain JSON; harness took content="" and produced [] |
+| C: GENUINE_EMPTY | 5 | Model explicitly submitted [] or reached end_turn with nothing useful |
+| D: MAX_TURNS | 31 | Hit 20-turn cap without converging on an answer |
+
+### Model-level findings
+
+**gpt-oss-120b and gpt-oss-20b** — primarily Category B. Nine of gpt-oss-120b's 12 empty trials are recoverable from transcript content. Several would have scored F1=1.0 (confirmed: task_15_ast_rep4, task_4_ast_rep2, task_4_none_rep0 all recover to F1=1.0).
+
+**DeepSeek, Ministral-3B, Ministral-8B** — primarily Category D. Models loop through tool calls without converging before hitting max_turns. No harness bug involved — genuine model behaviour.
+
+-Ran Ministral-3-14b
+=================================================================
+BATCH COMPLETE
+  Trials    74/75 succeeded  (1 failed)
+  Cost      $0.0000
+  Time      43m18s  (avg 35s/trial)
+
+  Stop reasons:
+    submitted         67  (91%)
+    max_turns          7  (9%)
+
+  Failures:
+    task=14 map=ast rep=2: exit code 1
+=================================================================
+
+-Ran deepinfra/Qwen/Qwen3-VL-30B-A3B-Instruct. VERY HIGH FAILURE RATE
+=================================================================
+BATCH COMPLETE
+  Trials    53/75 succeeded  (22 failed)
+  Cost      $0.0000
+  Time      3h58m04s  (avg 190s/trial)
+
+  Stop reasons:
+    submitted         46  (87%)
+    max_turns          4  (8%)
+    end_turn           3  (6%)
+
+  Failures:
+    task=12 map=ast rep=1: timeout (600s)
+    task=0 map=ast rep=2: timeout (600s)
+    task=14 map=ast_compact rep=2: timeout (600s)
+    task=14 map=none rep=4: timeout (600s)
+    task=14 map=ast rep=1: timeout (600s)
+    task=0 map=none rep=2: timeout (600s)
+    task=14 map=ast rep=0: timeout (600s)
+    task=4 map=ast_compact rep=0: timeout (600s)
+    task=12 map=none rep=3: timeout (600s)
+    task=4 map=ast rep=2: timeout (600s)
+    task=14 map=none rep=3: timeout (600s)
+    task=4 map=ast rep=4: timeout (600s)
+    task=0 map=ast rep=1: timeout (600s)
+    task=0 map=ast rep=4: timeout (600s)
+    task=14 map=none rep=2: timeout (600s)
+    task=4 map=ast rep=1: exit code 1
+    task=15 map=ast_compact rep=0: exit code 1
+    task=12 map=none rep=4: exit code 1
+    task=14 map=none rep=0: timeout (600s)
+    task=12 map=ast rep=3: exit code 1
+    task=15 map=ast rep=3: exit code 1
+    task=15 map=ast rep=2: exit code 1
+=================================================================
+
+### Actions
+
+- [ ] Fix harness: when FINAL_ANSWER_PROMPT returns finish_reason=tool_calls, fall back to parsing the last normal assistant turn content instead of taking content="" as the final answer
+- [ ] Apply post-hoc correction to summary CSVs for Category B trials using recovered predictions from audit CSV — flag with prediction_corrected=True
+- [ ] Category D: exclude from both accuracy and efficiency analysis, flag separately — F1=0.0 is not meaningful and efficiency metrics are inflated artifacts of hitting the cap
+- [ ] Category C (5 trials): include in accuracy analysis as F1=0.0, note as genuine model failures
+- [ ] Category B finding is itself a reportable result: gpt-oss models systematically treat FINAL_ANSWER_PROMPT as an invitation to continue tool use rather than a request
+
+
+Models & Infrastructure 
+
+Bugs to fix so far:
+- Final answer not provided in JSON
+- End vs submit: Should everything be forced to submit?
+- Qwen output isn't allowing for cost at least in the printout, there is an estimated cost reported in the log, but this doesn't show up in Deepseek's log so may somehow be unique to either deepinfra or Qwen
+
+Other problems to consider:
+- Caching: does it matter on a per-trial basis? Does it matter on a between trial basis?
+- Time problems: fireworks.ai may be too slow for gpt-oss-20b
+- Some models don't complete within 20 turns
+
+For now:
+- Running every model through none, ast, ast compact versions to get time estimates, cost estimates, check for bugs
+
+
+Experimental Design and Statistics
+
+
+## 2026-07-03 (Week 5)
+-Ran deepinfra_nvidia_NVIDIA-Nemotron-3-Super-120B-A12B
+=================================================================
+BATCH COMPLETE
+  Trials    73/75 succeeded  (2 failed)
+  Cost      $0.0000
+  Time      3h35m47s  (avg 173s/trial)
+
+  Stop reasons:
+    submitted         66  (90%)
+    end_turn           7  (10%)
+
+  Failures:
+    task=14 map=ast_compact rep=3: exit code 1
+    task=12 map=none rep=2: exit code 1
+=================================================================
+
+-Ran deepinfra_nvidia_Nemotron-3-Nano-30B-A3B
+=================================================================
+BATCH COMPLETE
+  Trials    69/75 succeeded  (6 failed)
+  Cost      $0.0000
+  Time      4h31m28s  (avg 217s/trial)
+
+  Stop reasons:
+    submitted         40  (58%)
+    max_turns         26  (38%)
+    end_turn           3  (4%)
+
+  Failures:
+    task=14 map=none rep=1: timeout (600s)
+    task=14 map=ast rep=1: timeout (600s)
+    task=14 map=ast rep=0: timeout (600s)
+    task=14 map=ast_compact rep=3: timeout (600s)
+    task=14 map=none rep=2: timeout (600s)
+    task=14 map=ast rep=4: timeout (600s)
+=================================================================
+
+-Ran deepinfra_zai-org_GLM-4.7-Flash
+=================================================================
+BATCH COMPLETE
+  Trials    71/75 succeeded  (4 failed)
+  Cost      $0.0000
+  Time      3h21m03s  (avg 161s/trial)
+
+  Stop reasons:
+    max_turns         50  (70%)
+    submitted         21  (30%)
+
+  Failures:
+    task=14 map=ast_compact rep=4: timeout (600s)
+    task=4 map=none rep=4: exit code 1
+    task=14 map=none rep=2: exit code 1
+    task=4 map=ast rep=1: exit code 1
+=================================================================
+
+-Ran deepinfra_zai-org_GLM-4.7
+=================================================================
+BATCH COMPLETE
+  Trials    75/75 succeeded  (0 failed)
+  Cost      $0.0000
+  Time      4h03m54s  (avg 195s/trial)
+
+  Stop reasons:
+    submitted         40  (53%)
+    max_turns         35  (47%)
+================================================================
