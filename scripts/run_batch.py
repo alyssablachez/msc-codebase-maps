@@ -20,6 +20,10 @@ _ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HARNESS = os.path.join(_ROOT, "harness", "run_trial.py")
 RESULTS_DIR = os.path.join(_ROOT, "results")
 
+MAX_RETRIES   = 2
+RETRY_BACKOFF = 30   # seconds between retries
+TRIAL_TIMEOUT = 900  # seconds hard ceiling per attempt
+
 
 def load_result(model, task, map_type, rep):
     safe_model = model.replace("/", "_")
@@ -93,48 +97,53 @@ def main():
               f"elapsed={fmt_time(elapsed)}{eta_str} | cost=${total_cost:.4f} ───")
 
         trial_start = time.time()
-        try:
-            proc = subprocess.run(
-                [sys.executable, HARNESS,
-                 "--model",     args.model,
-                 "--task",      str(task),
-                 "--map",       map_type,
-                 "--rep",       str(rep),
-                 "--max-turns", str(args.max_turns)],
-                timeout=600,    # 10 min hard ceiling per trial
-            )
-            trial_elapsed = time.time() - trial_start
+        cmd = [sys.executable, HARNESS,
+               "--model",     args.model,
+               "--task",      str(task),
+               "--map",       map_type,
+               "--rep",       str(rep),
+               "--max-turns", str(args.max_turns)]
 
-            if proc.returncode != 0:
-                failures.append({
-                    "task": task, "map": map_type, "rep": rep,
-                    "reason": f"exit code {proc.returncode}",
-                })
-                print(f">>> FAILED (exit {proc.returncode}) in {trial_elapsed:.0f}s\n")
-            else:
-                res = load_result(args.model, task, map_type, rep)
-                if res:
-                    cost = res.get("metrics", {}).get("total_cost", 0.0)
-                    total_cost += cost
-                    sr = res.get("metrics", {}).get("stop_reason", "unknown")
-                    stop_reasons[sr] = stop_reasons.get(sr, 0) + 1
+        attempt = 0
+        trial_ok = False
+        last_reason = ""
+        while attempt <= MAX_RETRIES:
+            if attempt > 0:
+                print(f"    retry {attempt}/{MAX_RETRIES} after {RETRY_BACKOFF}s …")
+                time.sleep(RETRY_BACKOFF)
+            try:
+                proc = subprocess.run(cmd, timeout=TRIAL_TIMEOUT)
+                if proc.returncode != 0:
+                    last_reason = f"exit code {proc.returncode}"
+                    attempt += 1
                 else:
-                    print(">>> WARNING: result file not found after successful run")
-                completed += 1
-                print(f">>> OK in {trial_elapsed:.0f}s\n")
+                    trial_ok = True
+                    break
+            except subprocess.TimeoutExpired:
+                last_reason = f"timeout ({TRIAL_TIMEOUT}s)"
+                attempt += 1
+            except Exception as exc:
+                last_reason = str(exc)
+                attempt += 1
 
-        except subprocess.TimeoutExpired:
+        trial_elapsed = time.time() - trial_start
+        if trial_ok:
+            res = load_result(args.model, task, map_type, rep)
+            if res:
+                cost = res.get("metrics", {}).get("total_cost", 0.0)
+                total_cost += cost
+                sr = res.get("metrics", {}).get("stop_reason", "unknown")
+                stop_reasons[sr] = stop_reasons.get(sr, 0) + 1
+            else:
+                print(">>> WARNING: result file not found after successful run")
+            completed += 1
+            print(f">>> OK in {trial_elapsed:.0f}s\n")
+        else:
             failures.append({
                 "task": task, "map": map_type, "rep": rep,
-                "reason": "timeout (600s)",
+                "reason": last_reason,
             })
-            print(">>> FAILED (timeout)\n")
-        except Exception as exc:
-            failures.append({
-                "task": task, "map": map_type, "rep": rep,
-                "reason": str(exc),
-            })
-            print(f">>> FAILED ({exc})\n")
+            print(f">>> FAILED after {attempt} attempt(s): {last_reason}\n")
 
         if i < total - 1:
             time.sleep(args.delay)

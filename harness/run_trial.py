@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 
 import litellm
 import pandas as pd
@@ -250,11 +251,15 @@ You have been provided with a {map_type} codebase map below. Use it to orient yo
 """
 
 FINAL_ANSWER_PROMPT = """\
-You have finished your investigation. Now provide your final answer.
+STOP. Do not call any more tools.
 
-Output a JSON list of file paths (relative to the repository root) that you believe need to be modified to resolve this issue. Include only source files, not tests or docs. Output valid JSON only — no explanation, no markdown fences.
+You must now output your final answer as a JSON list of file paths that need \
+to be modified to resolve this issue. Output ONLY the JSON list — no \
+explanation, no markdown, no tool calls.
 
-Example: ["requests/models.py", "requests/auth.py"]\
+Example: ["requests/models.py", "requests/auth.py"]
+
+Your answer:\
 """
 
 
@@ -348,7 +353,8 @@ def main():
             map_content=map_content,
         )
 
-    user_message = f"## Issue: {issue_title}\n\n{issue_body}"
+    trial_token = uuid.uuid4().hex[:8]
+    user_message = f"[trial:{trial_token}]\n## Issue: {issue_title}\n\n{issue_body}"
 
     # ── checkout repo ─────────────────────────────────────────────────────────
     original_head = current_head(REPO_DIR)
@@ -438,7 +444,13 @@ def main():
                     tc_args = {}
 
                 if name == "submit_answer":
-                    predicted_files = tc_args.get("files", [])
+                    if isinstance(tc_args, list):
+                        predicted_files = tc_args
+                    elif isinstance(tc_args, dict):
+                        files = tc_args.get("files", [])
+                        predicted_files = [files] if isinstance(files, str) else files
+                    else:
+                        predicted_files = []
                     stop_reason = "submitted"
                     tool_result = "Answer submitted."
                     print(f"    submit_answer → {predicted_files}")
@@ -492,7 +504,17 @@ def main():
             except Exception:
                 pass
 
-            final_text = (final_resp.choices[0].message.content or "").strip()
+            final_content = final_resp.choices[0].message.content or ""
+            if not final_content and final_resp.choices[0].finish_reason == "tool_calls":
+                final_content = next(
+                    (t.get("content", "") for t in reversed(transcript)
+                     if t.get("role") == "assistant"
+                     and t.get("turn") != "final"
+                     and t.get("content")
+                     and t.get("content") != "None"),
+                    ""
+                )
+            final_text = final_content.strip()
             transcript.append({"turn": "final", "role": "assistant", "content": final_text})
 
             # Parse JSON list from final answer (handle markdown fences gracefully)
@@ -529,6 +551,14 @@ def main():
             "num_turns":           num_turns,
             "wall_time_seconds":   round(wall_time, 2),
             "stop_reason":         stop_reason,
+            "hit_turn_cap":        stop_reason == "max_turns",
+            "submission_type":     (
+                "submit_answer" if stop_reason == "submitted" else
+                "end_turn"      if stop_reason == "end_turn"  else
+                "max_turns"     if stop_reason == "max_turns" else
+                "unknown"
+            ),
+            "trial_token":         trial_token,
         },
         "final_files_predicted": predicted_files,
         "ground_truth":          ground_truth,
