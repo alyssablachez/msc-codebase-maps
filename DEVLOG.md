@@ -462,3 +462,45 @@ BATCH COMPLETE
     submitted         40  (53%)
     max_turns         35  (47%)
 ================================================================
+
+## 2026-07-04
+-Ran together_ai/openai/gpt-oss-120b
+=================================================================
+BATCH COMPLETE
+  Trials    75/75 succeeded  (0 failed)
+  Cost      $0.4447
+  Time      36m40s  (avg 29s/trial)
+
+  Stop reasons:
+    end_turn          69  (92%)
+    submitted          6  (8%)
+=================================================================
+
+
+## 2026-07-07
+- Attempted final fixes to get gpt-oss models hosted by together AI to use tools with my harness, but no success
+- Re-ran all missing trials from the 12 paired models by hand
+
+## 2026-07-08
+- Started visual exploration of the data collected from 12 models and 3 map conditions (none, ast, ast compact) on requests codebase & 5 issues
+-- results_all.csv
+-- notebooks/results_barplots
+- Created a models/model_costs file to record pricing for the various models
+- Altered the harness with the following bug fixes: 
+-- Fix submit_answer bare list crash: handle models that pass [\"file.py\"]
+  instead of {\"files\": [\"file.py\"]} (affected Qwen VL-30B)
+-- Fix FINAL_ANSWER_PROMPT overwrite bug: fall back to last assistant turn
+  content when final response has finish_reason=tool_calls (Category B fix,
+  affected gpt-oss models)
+-- Strengthen FINAL_ANSWER_PROMPT wording to prevent models treating it as
+  an invitation to continue tool use
+-- Add cache-busting random token prefix to system prompt for all providers
+-- Add hit_turn_cap and submission_type fields to result JSON metrics
+-- Add retry logic to run_batch.py: up to 2 retries with 30s backoff,
+  900s timeout per trial
+-- Remove run_trial_together.py and run_trial_cached.py (superseded)
+- Reviewed plan to have 3 codebases for each level, and decided instead to go for 5 codebases with 3 issues for each size level
+- Settled on panel of codebases, excluding several based on %python, large degree of ML-specific issues, non-English issues, low number of issues
+- Selecting the 3 issues for each codebase, biasing towards issues with a decent length body
+
+
