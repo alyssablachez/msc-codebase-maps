@@ -22,9 +22,27 @@ from git_utils import checkout, current_head, git, restore
 from package_resolver import resolve_package_dir
 
 
-def _get_commits_for_file(repo_dir, base_commit, rel_path):
-    result = git(repo_dir, ["log", "--format=%H", base_commit, "--", rel_path])
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+def _get_all_commits_and_files(repo_dir, base_commit, source_files_set):
+    """Get commit→files and file→commits mappings in one git call."""
+    result = git(repo_dir, [
+        "log", "--format=%H", "--name-only", base_commit
+    ])
+
+    commit_to_files = defaultdict(set)
+    file_to_commits = defaultdict(list)
+    current_commit = None
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if len(line) == 40 and all(c in '0123456789abcdef' for c in line):
+            current_commit = line
+        elif current_commit and line in source_files_set:
+            commit_to_files[current_commit].add(line)
+            file_to_commits[line].append(current_commit)
+
+    return dict(file_to_commits), dict(commit_to_files)
 
 
 def main():
@@ -38,6 +56,8 @@ def main():
                         help="Package name (auto-detected if omitted)")
     parser.add_argument("--top-n", type=int, default=3,
                         help="Number of top co-change partners to show per file (default: 3)")
+    parser.add_argument("--skip-dirs", nargs="+", default=[],
+                        help="Subdirectory names to skip while recursing (default: none).")
     args = parser.parse_args()
 
     original_head = current_head(args.repo)
@@ -53,8 +73,10 @@ def main():
 
         print(f"Package dir: {pkg_dir}")
 
+        skip = set(args.skip_dirs)
         source_files = set()
         for dirpath, dirs, filenames in os.walk(pkg_dir):
+            dirs[:] = [d for d in dirs if d not in skip]
             for fname in sorted(filenames):
                 if fname.endswith(".py"):
                     filepath = os.path.join(dirpath, fname)
@@ -62,24 +84,15 @@ def main():
                     source_files.add(rel_path)
 
         print(f"Found {len(source_files)} source files; querying git history...")
-
-        # Build commit → {source files changed} by querying each file's history.
-        # Because we query every source file, commit_to_files will be complete:
-        # if commit C touched source files A and B, both queries will register C.
-        file_to_commits = {}
-        commit_to_files = defaultdict(set)
-
-        for rel_path in sorted(source_files):
-            commits = _get_commits_for_file(args.repo, args.commit, rel_path)
-            file_to_commits[rel_path] = commits
-            for c in commits:
-                commit_to_files[c].add(rel_path)
+        file_to_commits, commit_to_files = _get_all_commits_and_files(
+            args.repo, args.commit, source_files
+        )
 
         # Compute co-change counts per file
         co_changes = {}
         for rel_path in source_files:
             co_counts = defaultdict(int)
-            for c in file_to_commits[rel_path]:
+            for c in file_to_commits.get(rel_path, []):
                 for other in commit_to_files[c]:
                     if other != rel_path:
                         co_counts[other] += 1

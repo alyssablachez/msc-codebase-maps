@@ -25,10 +25,13 @@ def resolve_package_dir(repo_dir, package_name=None):
         for c in candidates:
             if os.path.isdir(c):
                 return c
-        raise ValueError(
-            f"Could not find package '{package_name}' in {repo_dir} "
-            f"(tried src/{package_name}/ and {package_name}/)"
+        print(
+            f"WARNING: No package directory found in {repo_dir} — "
+            f"falling back to repo root. This typically means the "
+            f"repository had a flat structure at this commit with no "
+            f"package directory."
         )
+        return repo_dir
 
     found = []
 
@@ -50,10 +53,13 @@ def resolve_package_dir(repo_dir, package_name=None):
         _scan(src_dir)
 
     if not found:
-        raise ValueError(
-            f"Could not auto-detect a Python package in {repo_dir}. "
-            "Pass --package-name to specify it explicitly."
+        print(
+            f"WARNING: No package directory found in {repo_dir} — "
+            f"falling back to repo root. This typically means the "
+            f"repository had a flat structure at this commit with no "
+            f"package directory."
         )
+        return repo_dir
 
     # Prefer shorter paths (repo root over src/), then alphabetical
     found.sort(key=lambda p: (len(p.split(os.sep)), p))

@@ -21,15 +21,30 @@ from git_utils import checkout, current_head, git, restore
 from package_resolver import resolve_package_dir
 
 
-def _count_edits(repo_dir, base_commit, rel_path):
-    result = git(repo_dir, ["log", "--oneline", base_commit, "--", rel_path])
-    return sum(1 for line in result.stdout.splitlines() if line.strip())
+def _get_all_file_stats(repo_dir, base_commit, source_files):
+    """Get edit counts and last edit dates for all files in one git call."""
+    result = git(repo_dir, [
+        "log", "--format=COMMIT %H %ci", "--name-only", base_commit
+    ])
 
+    counts = {p: 0 for p in source_files}
+    last_dates = {p: "unknown" for p in source_files}
+    source_set = set(source_files)
 
-def _last_edit_date(repo_dir, base_commit, rel_path):
-    result = git(repo_dir, ["log", "-1", base_commit, "--format=%ci", "--", rel_path])
-    date_str = result.stdout.strip()
-    return date_str.split()[0] if date_str else "unknown"
+    current_date = None
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("COMMIT "):
+            parts = line.split(" ", 2)
+            current_date = parts[2].split()[0] if len(parts) > 2 else "unknown"
+        elif line in source_set:
+            counts[line] += 1
+            if last_dates[line] == "unknown":
+                last_dates[line] = current_date
+
+    return counts, last_dates
 
 
 def main():
@@ -41,6 +56,8 @@ def main():
     parser.add_argument("--out", required=True, help="Output text file path")
     parser.add_argument("--package-name", default=None,
                         help="Package name (auto-detected if omitted)")
+    parser.add_argument("--skip-dirs", nargs="+", default=[],
+                        help="Subdirectory names to skip while recursing (default: none).")
     args = parser.parse_args()
 
     original_head = current_head(args.repo)
@@ -56,8 +73,10 @@ def main():
 
         print(f"Package dir: {pkg_dir}")
 
+        skip = set(args.skip_dirs)
         source_files = []
         for dirpath, dirs, filenames in os.walk(pkg_dir):
+            dirs[:] = [d for d in dirs if d not in skip]
             for fname in sorted(filenames):
                 if fname.endswith(".py"):
                     filepath = os.path.join(dirpath, fname)
@@ -65,13 +84,12 @@ def main():
                     source_files.append(rel_path)
 
         print(f"Found {len(source_files)} source files; querying git history...")
+        counts, last_dates = _get_all_file_stats(args.repo, args.commit, source_files)
 
-        file_stats = []
-        for rel_path in source_files:
-            n = _count_edits(args.repo, args.commit, rel_path)
-            date = _last_edit_date(args.repo, args.commit, rel_path)
-            file_stats.append((rel_path, n, date))
-
+        file_stats = [
+            (rel_path, counts[rel_path], last_dates[rel_path])
+            for rel_path in source_files
+        ]
         file_stats.sort(key=lambda x: -x[1])
 
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)

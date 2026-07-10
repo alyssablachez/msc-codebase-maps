@@ -16,6 +16,7 @@ import time
 from collections import defaultdict
 
 import pandas as pd
+import yaml
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(_ROOT, "scripts")
@@ -56,7 +57,8 @@ PACKAGE_MAP = {
     "pandas":                 "pandas",
 }
 
-STATS_CSV = os.path.join(_ROOT, "repo_maps", "map_generation_stats.csv")
+STATS_CSV        = os.path.join(_ROOT, "repo_maps", "map_generation_stats.csv")
+SKIP_CONFIG_YAML = os.path.join(_ROOT, "data", "repo_skip_config.yaml")
 STATS_COLS = [
     "repo", "tier", "issue_idx", "role",
     "base_commit", "commit_date",
@@ -67,6 +69,16 @@ STATS_COLS = [
     "cochange_map_chars", "cochange_map_tokens",
     "status", "error_message", "duration_seconds",
 ]
+
+
+def load_skip_dirs(repo, issue_idx):
+    """Return the effective list of skip-dir names for a specific issue."""
+    with open(SKIP_CONFIG_YAML, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    defaults = cfg.get("defaults", {}).get("skip_dirs", [])
+    key = f"{repo}/{issue_idx}"
+    extra = cfg.get("issues", {}).get(key, {}).get("extra_skip_dirs", [])
+    return defaults + extra
 
 
 def run(cmd):
@@ -148,8 +160,10 @@ def main():
             repo_dir = os.path.join(_ROOT, REPO_DIR_MAP[repo])
             subset = pkl_df[pkl_df["repo_name"] == repo].reset_index(drop=True)
             commit = subset.iloc[int(row["issue_idx"])]["base_commit"]
+            skip = load_skip_dirs(repo, int(row["issue_idx"]))
             print(f"  {repo:<28} issue={row['issue_idx']:>3}  "
-                  f"commit={commit[:8]}  pkg={PACKAGE_MAP[repo]}")
+                  f"commit={commit[:8]}  pkg={PACKAGE_MAP[repo]}"
+                  f"  skip=[{', '.join(skip[:4])}{'...' if len(skip) > 4 else ''}]")
         return
 
     os.makedirs(os.path.dirname(STATS_CSV), exist_ok=True)
@@ -186,13 +200,18 @@ def main():
         # Commit date
         stat["commit_date"] = commit_date(repo_dir, base_commit)
 
+        skip_dirs = load_skip_dirs(repo, issue_idx)
+
         # ── 1. AST map ────────────────────────────────────────────────────────
         ast_ok = False
-        rc, stdout, stderr, _ = run([
+        cmd_ast = [
             sys.executable, os.path.join(SCRIPTS, "generate_ast_map.py"),
             "--repo", repo_dir, "--commit", base_commit,
             "--out", ast_out, "--package-name", pkg_name,
-        ])
+        ]
+        if skip_dirs:
+            cmd_ast += ["--skip-dirs"] + skip_dirs
+        rc, stdout, stderr, _ = run(cmd_ast)
         if rc != 0:
             errors.append(f"ast_map rc={rc}: {stderr.strip()[:300]}")
         else:
@@ -229,11 +248,14 @@ def main():
                 stat["compact_reduction_pct"] = _float(stdout, "Reduction:")
 
         # ── 3. Freq map ───────────────────────────────────────────────────────
-        rc, stdout, stderr, _ = run([
+        cmd_freq = [
             sys.executable, os.path.join(SCRIPTS, "generate_freq_map.py"),
             "--repo", repo_dir, "--commit", base_commit,
             "--out", freq_out, "--package-name", pkg_name,
-        ])
+        ]
+        if skip_dirs:
+            cmd_freq += ["--skip-dirs"] + skip_dirs
+        rc, stdout, stderr, _ = run(cmd_freq)
         if rc != 0:
             errors.append(f"freq_map rc={rc}: {stderr.strip()[:300]}")
         else:
@@ -242,11 +264,14 @@ def main():
             stat["freq_map_tokens"] = chars // 4 if chars is not None else None
 
         # ── 4. Co-change map ──────────────────────────────────────────────────
-        rc, stdout, stderr, _ = run([
+        cmd_co = [
             sys.executable, os.path.join(SCRIPTS, "generate_cochange_map.py"),
             "--repo", repo_dir, "--commit", base_commit,
             "--out", cochange_out, "--package-name", pkg_name,
-        ])
+        ]
+        if skip_dirs:
+            cmd_co += ["--skip-dirs"] + skip_dirs
+        rc, stdout, stderr, _ = run(cmd_co)
         if rc != 0:
             errors.append(f"cochange_map rc={rc}: {stderr.strip()[:300]}")
         else:

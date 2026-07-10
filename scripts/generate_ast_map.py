@@ -137,8 +137,8 @@ def main():
                         help="Package directory name to walk. "
                              "Tries src/<name> then <name> at the repo root. "
                              "Auto-detected from top-level __init__.py dirs if omitted.")
-    parser.add_argument("--skip-dirs", nargs="+", default=["packages"],
-                        help="Subdirectory names to skip while recursing (default: packages).")
+    parser.add_argument("--skip-dirs", nargs="+", default=[],
+                        help="Subdirectory names to skip while recursing (default: none).")
     args = parser.parse_args()
 
     original_head = current_head(args.repo)
@@ -153,12 +153,14 @@ def main():
             sys.exit(1)
 
         skip = set(args.skip_dirs)
+        files_walked = 0
         all_records = []
         for dirpath, dirs, filenames in os.walk(pkg_dir):
             dirs[:] = [d for d in dirs if d not in skip]
             for fname in sorted(filenames):
                 if not fname.endswith(".py"):
                     continue
+                files_walked += 1
                 filepath = os.path.join(dirpath, fname)
                 rel_path = os.path.relpath(filepath, args.repo)
                 all_records.extend(extract_file(filepath, rel_path))
@@ -170,9 +172,11 @@ def main():
 
         char_count = sum(len(json.dumps(r)) + 1 for r in all_records)
         token_estimate = char_count // 4
-        print(f"Wrote {len(all_records)} records to {args.out}")
-        print(f"Character count:  {char_count:,}")
-        print(f"Estimated tokens: {token_estimate:,}")
+        print(f"Package dir:       {pkg_dir}")
+        print(f"Files walked:      {files_walked}")
+        print(f"Records extracted: {len(all_records)}")
+        print(f"Character count:   {char_count:,}")
+        print(f"Estimated tokens:  {token_estimate:,}")
     finally:
         print(f"Restoring {original_head[:8]}")
         restore(args.repo, original_head)
