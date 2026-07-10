@@ -503,4 +503,121 @@ BATCH COMPLETE
 - Settled on panel of codebases, excluding several based on %python, large degree of ML-specific issues, non-English issues, low number of issues
 - Selecting the 3 issues for each codebase, biasing towards issues with a decent length body
 
+## 2026-07-09 
+## Issue Selection Methodology
+
+### Overview
+Issues were selected from the MULocBench dataset for each of the 15 codebases in the study. The selection process went through two phases: an initial hand-curated phase (discarded) and a final randomised stratified sampling phase.
+
+### Why Randomised Selection?
+An initial hand-curated selection was explored but discarded on methodological grounds. Hand-curation introduced subjective selection bias — issues were being chosen based on body length preferences, difficulty intuitions, and file spread aesthetics. A reviewer could reasonably ask whether issues were cherry-picked to favour conditions where maps were likely to help, or to produce a particular difficulty profile. Randomised stratified sampling from a principled inclusion pool removes this concern and means results generalise to the broader population of issues in these codebases rather than a subjectively filtered subset.
+
+### Inclusion Criteria (Pool Construction)
+The following criteria were applied mechanically to construct the pool of candidate issues per repository. All criteria are principled exclusions with explicit rationale:
+
+1. **At least one Python source file in ground truth** — issues targeting only config files, JSON, YAML, or non-Python assets are excluded as they do not test Python code localisation
+2. **No absolute paths in ground truth** — e.g. `/home/user/project/file.py` cannot be resolved within the cloned repository and would always score F1=0
+3. **No None values in ground truth** — dataset artifacts where the ground truth entry is null
+4. **English title** — titles with >15% non-ASCII characters excluded (heuristic for non-English issues that may affect model performance inconsistently)
+5. **English body** — bodies with >15% non-ASCII characters excluded for the same reason
+6. **Non-empty body** — body must be at least 20 characters; empty or near-empty bodies provide no signal for the localisation task
+7. **Non-empty title** — must have a meaningful title string
+
+### Source File Filtering
+Ground truth files were filtered to Python source files only for the purposes of pool construction and stratification. Files matching the following patterns were excluded:
+
+- Test files: `test_*`, `*_test.py`, `/tests/`, `/test/`
+- Benchmark files: `benchmark`, `bench_`, `asv_bench`
+- Example files: `/examples/`, `/docs/`, `autogen.py`
+- Config/data files: `setup.py`, `setup.cfg`, `.cfg`, `.toml`, `.ini`, `.json`, `.yml`, `.yaml`
+- Snapshot/validation files: `.snapshot.`, `.validation.`
+- Cython files: `.pyx`, `.pxd`, `.pxi`, `.in`
+- Other: `conftest.py`, `mockserver.py`
+
+This filtering was applied at pool construction time for stratification purposes. The full raw ground truth (including test files) is preserved in `data/issue_selection_random.csv` for reference. The source file filter is re-applied at scoring time consistently across all codebases.
+
+### Stratified Sampling
+For each repository, the pool was stratified by file type based on filtered source files:
+- **Single-file issues**: ground truth contains exactly one source file after filtering
+- **Multi-file issues**: ground truth contains two or more source files after filtering
+
+Three issues were sampled per repository:
+1. **Single** — one issue sampled randomly from the single-file stratum
+2. **Multi** — one issue sampled randomly from the multi-file stratum  
+3. **Flexible** — one issue sampled randomly from the remaining pool (either file type)
+
+Sampling was performed without replacement. The overlap check ensured no two selected issues shared any ground truth files — if overlap was detected, sampling was retried up to 50 times before flagging a warning.
+
+**Random seed: 88** (document this for reproducibility)
+
+### Manual Override
+**Deep-Live-Cam** was exempt from random sampling. The usable pool contained only 8 issues, with 5 of them targeting `modules/ui.py` — making it impossible to select three non-overlapping issues via random sampling. The three available non-overlapping issues were selected directly:
+- [1] single — `modules/processors/frame/face_enhancer.py`
+- [11] multi — `modules/ui.py` + `modules/core.py`
+- [0] flexible — `modules/ui.py`
+
+This limitation is noted in the methodology: Deep-Live-Cam has a narrow issue distribution concentrated in the UI module, which is a known constraint of this codebase.
+
+### Ground Truth Resolution
+**gpt-engineer [32]** had a bare filename `ai.py` as ground truth with no directory path. This was resolved to `gpt_engineer/core/ai.py` via unique basename matching within the repository (`find repos/gpt-engineer -name "ai.py"` returned exactly one match). This resolution is documented here for transparency.
+
+### Distribution Validation
+Following selection, the distribution of the selected issues was compared against the full pool using Mann-Whitney U tests (non-parametric, appropriate for bounded/skewed distributions) for file count and body length, and Fisher's exact test or chi-square for file type proportions. Tests were run overall and per size tier (small/medium/large). Results confirmed no statistically significant bias in file count or file type distribution between pool and selected. Body length comparison was noted as exploratory given the small selected n=45.
+
+-------------------------------------------
+Finalised Map Design to be Evaluated
+-------------------------------------------
+## Map Design Decisions
+
+### Map Types
+Three map types are generated per issue, all at `base_commit` (the state of 
+the codebase immediately before the fixing PR was merged). Maps are scoped to 
+the resolved package directory only, as determined by `scripts/package_resolver.py`.
+Each map is stored as a separate file at `repo_maps/{repo}/{issue_idx}/`.
+
+### AST Compact Map (`compact_map.txt`)
+- Generated by `scripts/generate_ast_map.py` → `scripts/compact_map.py`
+- Parses the package directory using Python's `ast` module
+- Shows classes, methods, and module-level functions with:
+  - Signatures and line numbers
+  - Docstrings truncated to 80 characters
+- Files sorted alphabetically
+- `--skip-dirs` default is empty — no hardcoded exclusions
+- Two-stage pipeline: raw NDJSON (`ast_map.json`) → compact text (`compact_map.txt`)
+
+### Frequency Map (`freq_map.txt`)
+- Generated by `scripts/generate_freq_map.py`
+- For each source file in the package directory, reports:
+  - Number of commits touching that file up to and including `base_commit`
+  - Date of most recent such commit
+- Covers all source files — no top-N cap
+- Sorted by edit frequency descending (most edited files first)
+- Generated via a single bulk `git log` call for performance
+- Format:
+requests/models.py  [89 edits, last: 2016-11-23]
+requests/sessions.py  [71 edits, last: 2016-11-20]
+### Co-change Map (`cochange_map.txt`)
+- Generated by `scripts/generate_cochange_map.py`
+- For each source file, shows the top 3 files most frequently edited 
+  in the same commit, up to and including `base_commit`
+- Symmetric — if A lists B as a co-change partner, B also lists A
+- Co-change partners restricted to source files within the package 
+  directory only (no test files, no external dependencies)
+- No frequency or date information — co-change relationships only
+- Generated via a single bulk `git log` call for performance
+- Format:
+requests/models.py
+→ requests/sessions.py (23x)
+→ requests/adapters.py (18x)
+→ requests/utils.py (12x)
+### Shared Decisions
+- All maps generated at `base_commit` — no leakage of post-fix information
+- Scope is the resolved package directory, not the full repo
+- Vendored third-party code is included if present within the package 
+  directory at `base_commit` — no special exclusion logic, ensuring 
+  consistency across repos and commits without requiring per-repo knowledge
+- Separate output files per map type ensure clean separation of concerns 
+  in the harness
+- Map generation statistics (commit date, files walked, token counts, 
+  generation time) tracked in `repo_maps/map_generation_stats.csv`
 
