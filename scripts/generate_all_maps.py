@@ -181,6 +181,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true",
                     help="Print plan without running anything")
+    ap.add_argument("--only", nargs="+", default=None,
+                    help="Only (re)generate specific issues, e.g. --only core:20 pandas:26. "
+                         "Stats CSV is merged (not overwritten) and stale rows for issues no "
+                         "longer in issue_selection_final.csv are dropped.")
     args = ap.parse_args()
 
     sel_csv  = os.path.join(_ROOT, "data", "issue_selection_final.csv")
@@ -188,6 +192,20 @@ def main():
                             "all_issues_with_pr_commit_comment_all_project_0922.pkl")
 
     issues = pd.read_csv(sel_csv)
+    all_selected_keys = set(zip(issues["repo"], issues["issue_idx"].astype(int)))
+
+    if args.only:
+        only_keys = set()
+        for spec in args.only:
+            repo, idx = spec.rsplit(":", 1)
+            only_keys.add((repo, int(idx)))
+        missing = only_keys - all_selected_keys
+        if missing:
+            print(f"ERROR: not in issue_selection_final.csv: {missing}", file=sys.stderr)
+            sys.exit(1)
+        issues = issues[
+            issues.apply(lambda r: (r["repo"], int(r["issue_idx"])) in only_keys, axis=1)
+        ].reset_index(drop=True)
 
     with open(pkl_file, "rb") as f:
         pkl_df = pd.DataFrame(pickle.load(f))
@@ -342,10 +360,25 @@ def main():
             print(f"  WARNING: {e}")
 
     # ── Write CSV ─────────────────────────────────────────────────────────────
+    # Merge into any existing stats CSV: drop rows for issues no longer in
+    # issue_selection_final.csv, replace/add rows for issues just (re)run,
+    # leave every other existing row untouched (relevant when --only is used).
+    new_keys = {(s["repo"], s["issue_idx"]) for s in all_stats}
+    kept_old = []
+    if os.path.exists(STATS_CSV):
+        with open(STATS_CSV, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                key = (r["repo"], int(r["issue_idx"]))
+                if key in all_selected_keys and key not in new_keys:
+                    kept_old.append(r)
+
+    merged = kept_old + all_stats
+    merged.sort(key=lambda r: (r["repo"], int(r["issue_idx"])))
+
     with open(STATS_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=STATS_COLS)
         writer.writeheader()
-        writer.writerows(all_stats)
+        writer.writerows(merged)
 
     # ── Summary table ─────────────────────────────────────────────────────────
     elapsed = time.time() - t0

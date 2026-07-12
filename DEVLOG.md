@@ -841,3 +841,74 @@ Finalised at 55k for now as the fixed-budget baseline condition. The
 selective-probe tool idea above is a candidate follow-up experimental
 condition, not yet designed or implemented.
 
+## 2026-07-12 (cont'd 2)
+## Dropped core/17 and core/8, Replaced with core/20 and pandas/26
+
+### Why
+Both issues were structurally unprunable without losing the answer: the
+min-budget analysis above showed core/17 needing 190,391 tokens and core/8
+needing 133,870 tokens just to keep one ground-truth file, an order of
+magnitude past any realistic budget, and losing ground truth across all
+three map types (compact, freq, cochange) at every budget tested.
+
+### Replacement Selection
+- `core/20` (single, tier=large) — from the extra-repo candidate pool
+  (`data/issue_pool_extra_repos.csv`), file_type=single, matching core/17's
+  role. Base commit `f29e0bf5` (2017-04-25) is much earlier/smaller than
+  core/16's — home-assistant's `generated/` dir (the auto-generated lookup
+  tables previously always skipped) doesn't exist yet at this commit, so
+  `extra_skip_dirs: []`.
+- `pandas/26` (extra, tier=large) — from `data/issue_pool_with_loc.csv`,
+  file_type=multi. core/8's "multi" role slot is not backfilled within
+  core; instead pandas gets a 4th issue. The panel is now intentionally
+  asymmetric: core contributes 2 issues (single + flexible), pandas
+  contributes 4 (single + multi + flexible + extra). Total stays 45.
+- `data/repo_skip_config.yaml` updated to match (core/17, core/8 entries
+  removed; core/20, pandas/26 added).
+
+### Regeneration
+- `scripts/generate_all_maps.py` gained an `--only repo:idx [...]` filter
+  so map generation can target specific issues instead of re-running all
+  45 — core alone takes 45-65 minutes per issue on this filesystem (WSL
+  `/mnt/c`, slow for repos with many small files), so a full rerun would
+  have been wasteful. The stats CSV write was changed from an overwrite to
+  a merge (keep untouched rows, replace/add rows for the targeted issues,
+  drop rows for issues no longer in issue_selection_final.csv) so partial
+  reruns stay consistent.
+- The first regeneration attempt was killed by its own timeout mid-checkout,
+  leaving `repos/core_full` detached at core/20's commit with a dirty
+  working tree (interrupted mid-write, no stash/backup involved since this
+  clone is only ever used for automated checkout/archive, never edited by
+  hand) — recovered via `git checkout --force dev` back to the resting
+  branch identified from the reflog.
+- The second attempt completed map generation successfully (core/20 in
+  2586s, pandas/26 in 358s) but crashed writing `map_generation_stats.csv`
+  — the file was open in a Windows program (this repo lives on `/mnt/c`).
+  Rather than repeat the ~45 minute core checkout a third time,
+  `scripts/recover_map_stats.py` was added to recompute the stats row
+  for already-generated issues directly from the map files on disk plus a
+  fast `git archive`-based file/LOC count (no working-tree checkout
+  needed), then merge into the stats CSV once the lock was released.
+- Full downstream pipeline re-run for the new 45-issue set: no-docstring
+  maps, pruned compact maps (30k/50k/55k), pruned freq/cochange maps
+  (55k), and all ground-truth-presence checks. All of these read only
+  already-generated local files (no checkout), so they ran in seconds.
+
+### Result
+The swap fixed the problem it targeted:
+- Worst-case `min_tokens_for_one_gt` across all 45 issues dropped from
+  190,391 (core/17) to **53,692** (now core/16) — comfortably under the
+  55k budget. No issue is structurally unprunable any more.
+- At 55k: freq map and co-change map now lose 0/45 ground-truth files
+  (previously cochange lost 2, both core). Compact map still loses ground
+  truth on 3/45 issues (`pandas/38`, `transformers/5`, `transformers/27`)
+  — none of them `core` issues any more.
+- `core/20` behaves like a normal large-tier issue (needs pruning in the
+  30k-55k range, unlike core/17/core/8's multi-hundred-k requirement).
+  `pandas/26` needs no pruning above 30k tokens at all.
+- Old `repo_maps/core/17/` and `repo_maps/core/8/` map directories deleted.
+
+### Status
+Done. Panel is now: core=2 issues, pandas=4 issues, the other 13 repos
+unchanged at 3 issues each = 45 total.
+
