@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(_ROOT, "scripts"))
 
 from git_utils import checkout, current_head, restore
 from package_resolver import resolve_package_dir
+from source_filter import source_files_only
 
 # ── Repo configuration ────────────────────────────────────────────────────────
 # Pickle repo_name → (folder, package_name, tier)
@@ -58,28 +59,6 @@ TIER = {
 }
 
 SKIP_CONFIG_YAML = os.path.join(_ROOT, "data", "repo_skip_config.yaml")
-
-# ── Source file filter ────────────────────────────────────────────────────────
-
-_SOURCE_EXCLUDE = [
-    "test_", "_test.", "/tests/", "/test/",
-    "benchmark", "bench_",
-    "/examples/", "/docs/",
-    ".snapshot.", ".validation.",
-    "setup.py", "setup.cfg",
-    ".cfg", ".toml", ".ini", ".json", ".yml", ".yaml",
-    ".pyx", ".pxd", ".pxi", ".in",
-    "conftest.py", "mockserver.py",
-]
-
-
-def source_files_only(files):
-    result = []
-    for f in files:
-        norm = f.replace("\\", "/")
-        if not any(pat in norm for pat in _SOURCE_EXCLUDE):
-            result.append(f)
-    return result
 
 
 # ── ASCII heuristic ───────────────────────────────────────────────────────────

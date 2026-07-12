@@ -912,3 +912,80 @@ The swap fixed the problem it targeted:
 Done. Panel is now: core=2 issues, pandas=4 issues, the other 13 repos
 unchanged at 3 issues each = 45 total.
 
+## 2026-07-12 (cont'd 3)
+## Harness Rewrite for Multi-Repo, Parallel Workers + a Source-Filter Bug Fix
+
+### Harness Rewrite
+`harness/run_trial.py` was hardcoded to a single repo ("requests") and a
+flat `results/{model}/task_{n}_{map}_rep{r}.json` layout — rewritten for
+the full 15-repo, 45-issue, multi-worker setup:
+- `--repo-path` / `--issue-idx` replace `--task`; repo name is derived
+  from the repo folder's basename (works regardless of which `worker_N/`
+  parent it's nested under), reusing `generate_all_maps.REPO_DIR_MAP`
+  (reversed) so the mapping can't drift from the map-generation scripts.
+- `--map` choices are now `none, ast_compact, freq, cochange`, each
+  loading the finalised no-docstring, 55k-pruned file
+  (`compact_map_pruned_55k.txt` / `freq_map_pruned_55k.txt` /
+  `cochange_map_pruned_55k.txt`). Missing map file → warns and proceeds
+  with no map rather than failing the trial.
+- Each map type got its own system-prompt description instead of one
+  generic "{map_type} codebase map... lists every class and function"
+  string, which was actively wrong for freq/cochange. New descriptions
+  explicitly warn the model that (a) the list may not be exhaustive
+  (pruning) and (b) appearing in the freq/cochange map is a weak signal,
+  not proof of relevance — aimed at preventing over-indexing on
+  frequently-edited or co-changed files that are just generic/coupled for
+  unrelated reasons.
+- Default-branch restore: repo is now restored to a fixed known-good
+  branch per repo (`DEFAULT_BRANCH`, keyed by folder basename) at trial
+  end, rather than to whatever commit was checked out when the trial
+  started. Self-healing against exactly the kind of crash hit earlier
+  this session with `core_full` (interrupted mid-checkout, left detached
+  at the wrong commit) — a later trial on that worker copy no longer
+  inherits a broken prior state.
+- Result path: `results/{model}/{repo}/{issue_idx}/{map_type}/rep{n}.json`.
+- `issue_selection_final.csv`'s `body` column was blank for 43/45 rows
+  (only core/20 and pandas/26, added by hand, had it) — backfilled from
+  the pickle so the harness never needs to load the 3.5MB pickle at
+  trial-run time, only the lightweight CSV.
+
+### Source-File Filter Bug
+Auditing `issue_selection_final.csv` against the generated maps surfaced
+a bug in `source_files_only()` (the filter that reduces a raw ground-truth
+file list to the Python-source subset used for scoring — per the
+methodology, `ground_truth` stores the full raw list and this filter is
+meant to be applied at scoring time, consistently). It excluded via
+substring match on patterns like `"/tests/"` and `"/examples/"`, both
+requiring a leading slash — so a file sitting directly at the top of an
+excluded directory (e.g. `tests/caching_ai.py`, `examples/cifar10_cnn.py`,
+no other path prefix) silently survived the filter.
+
+Fixed by prepending `/` to the path before matching (`scripts/source_filter.py`,
+new single canonical copy — previously duplicated identically in both
+`build_issue_pool_with_loc.py` and `build_issue_pool_extra_repos.py`, now
+both import it). Wired into `run_trial.py`'s `compute_scores()`, which now
+filters both `predicted` and `ground_truth` before computing precision/
+recall/F1 — a model isn't penalised on precision for correctly not
+predicting a test/example/doc file either. Result JSON keeps both the raw
+and filtered lists (`ground_truth` / `ground_truth_scorable`,
+`final_files_predicted` / `final_files_predicted_scorable`) for auditability.
+
+**Impact on the 45 selected issues: negligible.** Only `gpt-engineer/12`
+is affected (`tests/caching_ai.py` now correctly excluded, 6→5 scorable
+ground-truth files) and its `multi` classification is unchanged — no
+re-selection needed.
+
+**Impact on the unused candidate pools** (`data/issue_pool_with_loc.csv`,
+`data/issue_pool_extra_repos.csv` — issues that passed eligibility but
+were never sampled into the 45): 8 issues would now have zero scorable
+source files and should have been excluded from the pool entirely (all
+of them are example/doc-only issues — `flask/11`, `keras/21`, `keras/24`,
+`scikit-learn/0`, `scikit-learn/34`, `transformers/12`, `transformers/28`,
+`transformers/29`); 5 more would have their single/multi label change
+after dropping non-source entries (`scrapy/4`, `scrapy/45`,
+`scikit-learn/4`, `scikit-learn/20`, `transformers/26`). **Not fixed** —
+these pool CSVs are not used going forward, and a full rebuild would cost
+hours (the build scripts do a real per-issue `git checkout`, and the pool
+includes many `core`/`transformers` issues at ~45-65 min each on this
+filesystem). Documented here only, in case the pool is ever revisited.
+

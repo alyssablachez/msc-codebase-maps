@@ -2,13 +2,15 @@
 Run a single file-localisation trial using an LLM agent with tool access.
 
 Usage:
-    python3 harness/run_trial.py --model claude-sonnet-4-6 --task 0 --map none
-    python3 harness/run_trial.py --model claude-sonnet-4-6 --task 4 --map ast --max-turns 15
+    python3 harness/run_trial.py --model claude-sonnet-4-6 \
+        --repo-path repos/worker_1/requests_full --issue-idx 7 --map ast_compact
+    python3 harness/run_trial.py --model claude-sonnet-4-6 \
+        --repo-path repos/worker_2/core_full --issue-idx 20 --map cochange --rep 1 --worker-id 2
 """
 import argparse
+import ast
 import json
 import os
-import pickle
 import re
 import subprocess
 import sys
@@ -20,14 +22,50 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from git_utils import checkout, current_head, restore
+from generate_all_maps import REPO_DIR_MAP
+from source_filter import source_files_only
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKL_FILE  = os.path.join(_ROOT, "data", "all_issues_with_pr_commit_comment_all_project_0922.pkl")
-REPO_DIR  = os.path.join(_ROOT, "repos", "requests_full")
-MAPS_DIR  = os.path.join(_ROOT, "repo_maps", "requests")
+_ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SEL_CSV     = os.path.join(_ROOT, "data", "issue_selection_final.csv")
+MAPS_ROOT   = os.path.join(_ROOT, "repo_maps")
 RESULTS_DIR = os.path.join(_ROOT, "results")
+LOGS_DIR    = os.path.join(_ROOT, "logs")
+
+# Folder basename (leaf dir of --repo-path) -> canonical repo name used in
+# issue_selection_final.csv / repo_maps/. Derived from generate_all_maps.py's
+# REPO_DIR_MAP so the two never drift apart.
+FOLDER_TO_REPO = {os.path.basename(v): k for k, v in REPO_DIR_MAP.items()}
+
+# Default branch to restore each repo worker copy to after a trial, keyed by
+# folder basename (works regardless of which worker_N/ parent it's nested
+# under). Verified against each repo's actual origin/HEAD.
+DEFAULT_BRANCH = {
+    "requests_full":               "main",
+    "thefuck_full":                "master",
+    "flask_full":                  "main",
+    "fastapi_full":                "master",
+    "gpt_engineer_full":           "main",
+    "scrapy_full":                 "master",
+    "rich_full":                   "main",
+    "stable_diffusion_webui_full": "master",
+    "keras_full":                  "master",
+    "localstack_full":             "main",
+    "ytdlp_full":                  "master",
+    "pandas_full":                 "main",
+    "scikit_learn_full":           "main",
+    "transformers_full":           "main",
+    "core_full":                   "dev",
+}
+
+# Map condition -> filename within repo_maps/{repo}/{issue_idx}/. All point
+# to the finalised, no-docstring, 55k-token-budget-pruned versions.
+MAP_FILES = {
+    "ast_compact": "compact_map_pruned_55k.txt",
+    "freq":        "freq_map_pruned_55k.txt",
+    "cochange":    "cochange_map_pruned_55k.txt",
+}
 
 # ── tool schemas ──────────────────────────────────────────────────────────────
 
@@ -227,6 +265,26 @@ def execute_tool(name, args, repo_dir):
         return f"Error executing {name}: {exc}"
 
 
+# ── map loading ───────────────────────────────────────────────────────────────
+
+def load_map_content(repo, issue_idx, map_type):
+    """Return the map file's text content, or None if map_type is 'none' or
+    the file doesn't exist (trial proceeds with no map either way)."""
+    if map_type == "none":
+        return None
+    filename = MAP_FILES.get(map_type)
+    if filename is None:
+        print(f"WARNING: unknown map type '{map_type}' — proceeding with no map", file=sys.stderr)
+        return None
+    map_file = os.path.join(MAPS_ROOT, repo, str(issue_idx), filename)
+    if not os.path.exists(map_file):
+        print(f"WARNING: map file not found for map={map_type} repo={repo} "
+              f"issue_idx={issue_idx}: {map_file} — proceeding with no map", file=sys.stderr)
+        return None
+    with open(map_file, encoding="utf-8") as f:
+        return f.read().strip()
+
+
 # ── prompts ───────────────────────────────────────────────────────────────────
 
 BASE_SYSTEM = """\
@@ -241,9 +299,45 @@ You have access to four tools:
 Use list_files, read_file, and search to investigate the issue. Once you are reasonably confident you have identified the correct file(s), call submit_answer — you do not need to exhaustively verify every hypothesis. Focus on source files, not tests or documentation.\
 """
 
+# Per-map-type descriptions — each map has different content and different
+# failure modes, so a one-size-fits-all description would misrepresent
+# freq/cochange maps (which are not structural listings).
+MAP_DESCRIPTIONS = {
+    "ast_compact": (
+        "You have been provided with a structural map of the codebase below. It lists every "
+        "class and function in the package, organised by file, with line numbers and "
+        "signatures. Some files may have been omitted if the full map exceeded the size "
+        "budget — treat this as a strong starting point, not an exhaustive list; a relevant "
+        "file, especially one rarely modified, may not appear here. Use it to narrow down "
+        "which files are likely relevant based on class/function names and signatures, "
+        "before using list_files, read_file, or search to investigate further."
+    ),
+    "freq": (
+        "You have been provided with a file edit-frequency map below. For each source file "
+        "in the package, it shows how many historical commits touched that file (up to the "
+        "commit this issue was filed against) and the date of the most recent such edit, "
+        "sorted most-edited first. This list may not include every file in the codebase. "
+        "Frequent edits are a weak signal of active/important code, not proof of relevance "
+        "to this specific issue — a file near the top may just be a large, generic module "
+        "that changes often for unrelated reasons, and the correct file may be edited "
+        "rarely. Use it alongside list_files, read_file, and search rather than as a "
+        "substitute for them."
+    ),
+    "cochange": (
+        "You have been provided with a co-change map below. For each source file in the "
+        "package, it lists the (up to) three other files most frequently modified together "
+        "with it in the same historical commit. This list may not include every file in the "
+        "codebase. A co-change relationship reflects historical correlation, not guaranteed "
+        "relevance to this issue — some partners may be coupled for unrelated reasons (e.g. "
+        "a changelog or version file bumped alongside everything else). Use it to find "
+        "candidate files once you've identified a likely one, then verify with read_file or "
+        "search rather than assuming a partner is relevant."
+    ),
+}
+
 MAP_SYSTEM_ADDON = """\
 
-You have been provided with a {map_type} codebase map below. Use it to orient yourself quickly — it lists every class and function in the package with file locations. Cross-reference it with the issue to identify likely relevant files before diving into tool calls.
+{map_description}
 
 <codebase_map>
 {map_content}
@@ -279,7 +373,12 @@ def _log_response(log_file, label, response):
 # ── scoring ───────────────────────────────────────────────────────────────────
 
 def compute_scores(predicted, ground_truth):
-    p, t = set(predicted), set(ground_truth)
+    """Score against the source-file subset of ground truth (see
+    scripts/source_filter.py) — ground_truth as stored is the full raw file
+    list and may include tests/docs/non-Python files that no map or tool in
+    this harness can surface. predicted is filtered the same way so a model
+    isn't penalised on precision for correctly ignoring such files either."""
+    p, t = set(source_files_only(predicted)), set(source_files_only(ground_truth))
     if not t:
         return {"precision": None, "recall": None, "f1": None}
     if not p:
@@ -300,56 +399,69 @@ def compute_scores(predicted, ground_truth):
 def main():
     parser = argparse.ArgumentParser(description="Run a single file-localisation trial")
     parser.add_argument("--model",     default="claude-sonnet-4-6")
-    parser.add_argument("--task",      type=int, required=True,
-                        help="Task index into the requests subset of MuLocBench")
-    parser.add_argument("--map",       choices=["none", "ast", "ctags", "ast_compact"], default="none")
+    parser.add_argument("--repo-path", required=True,
+                        help="Path to the repo worker copy, "
+                             "e.g. /home/afb225/study1/repos/worker_1/requests_full")
+    parser.add_argument("--issue-idx", type=int, required=True,
+                        help="Issue index within its repo, matching issue_selection_final.csv")
+    parser.add_argument("--map",       choices=["none", "ast_compact", "freq", "cochange"],
+                        default="none")
     parser.add_argument("--max-turns", type=int, default=20)
     parser.add_argument("--rep",       type=int, default=0,
                         help="Repetition index, appended to the output filename.")
+    parser.add_argument("--worker-id", type=int, default=None,
+                        help="Which worker (1-5) is running this trial, for traceability.")
     args = parser.parse_args()
 
+    # ── resolve repo ──────────────────────────────────────────────────────────
+    repo_dir = os.path.abspath(args.repo_path)
+    folder_basename = os.path.basename(os.path.normpath(repo_dir))
+    repo_name = FOLDER_TO_REPO.get(folder_basename)
+    if repo_name is None:
+        print(f"ERROR: unrecognized repo folder '{folder_basename}' "
+              f"(from --repo-path={args.repo_path}); not in FOLDER_TO_REPO", file=sys.stderr)
+        sys.exit(1)
+
+    default_branch = DEFAULT_BRANCH.get(folder_basename)
+    if default_branch is None:
+        print(f"WARNING: no default branch configured for '{folder_basename}', "
+              f"falling back to 'main'", file=sys.stderr)
+        default_branch = "main"
+
+    # ── load issue ────────────────────────────────────────────────────────────
+    sel_df = pd.read_csv(SEL_CSV)
+    match = sel_df[(sel_df["repo"] == repo_name) & (sel_df["issue_idx"] == args.issue_idx)]
+    if match.empty:
+        print(f"ERROR: issue not found in {SEL_CSV}: repo={repo_name} "
+              f"issue_idx={args.issue_idx}", file=sys.stderr)
+        sys.exit(1)
+    sel_row = match.iloc[0]
+
+    base_commit  = sel_row["base_commit"]
+    issue_title  = sel_row["title"]
+    issue_body   = str(sel_row["body"]).strip() if pd.notna(sel_row["body"]) else ""
+    ground_truth = ast.literal_eval(sel_row["ground_truth"])
+
     safe_model = args.model.replace("/", "_")
-    logs_dir = os.path.join(_ROOT, "logs")
+    logs_dir = os.path.join(LOGS_DIR, safe_model, repo_name, str(args.issue_idx), args.map)
     os.makedirs(logs_dir, exist_ok=True)
-    log_file = os.path.join(logs_dir, f"raw_responses_{safe_model}_{args.task}_{args.map}_rep{args.rep}.jsonl")
+    log_file = os.path.join(logs_dir, f"rep{args.rep}.jsonl")
 
-    # ── load task ─────────────────────────────────────────────────────────────
-    with open(PKL_FILE, "rb") as f:
-        data = pickle.load(f)
-    df = pd.DataFrame(data)
-    req = df[df["repo_name"] == "requests"].reset_index(drop=True)
-    row = req.iloc[args.task]
-
-    base_commit  = row["base_commit"]
-    issue_title  = row["title"]
-    issue_body   = (row["body"] or "").strip()
-    loctype      = row.get("loctype", {})
-    ground_truth = loctype.get("code", []) if isinstance(loctype, dict) else []
-
-    print(f"Task {args.task}: {issue_title}")
+    print(f"Repo:         {repo_name} (worker={args.worker_id}, path={repo_dir})")
+    print(f"Issue idx:    {args.issue_idx} — {issue_title}")
     print(f"Commit:       {base_commit[:8]}")
     print(f"Map:          {args.map}")
     print(f"Ground truth: {ground_truth}")
     print()
 
     # ── load map ──────────────────────────────────────────────────────────────
-    map_content = None
-    if args.map != "none":
-        if args.map == "ast_compact":
-            map_file = os.path.join(MAPS_DIR, f"task_{args.task}", "compact_map.txt")
-        else:
-            map_file = os.path.join(MAPS_DIR, f"task_{args.task}", f"{args.map}_map.json")
-        if not os.path.exists(map_file):
-            print(f"ERROR: map file not found: {map_file}", file=sys.stderr)
-            sys.exit(1)
-        with open(map_file, encoding="utf-8") as f:
-            map_content = f.read().strip()
+    map_content = load_map_content(repo_name, args.issue_idx, args.map)
 
     # ── build system prompt ───────────────────────────────────────────────────
     system_prompt = BASE_SYSTEM
     if map_content:
         system_prompt += "\n" + MAP_SYSTEM_ADDON.format(
-            map_type=args.map.upper(),
+            map_description=MAP_DESCRIPTIONS[args.map],
             map_content=map_content,
         )
 
@@ -357,9 +469,9 @@ def main():
     user_message = f"[trial:{trial_token}]\n## Issue: {issue_title}\n\n{issue_body}"
 
     # ── checkout repo ─────────────────────────────────────────────────────────
-    original_head = current_head(REPO_DIR)
-    print(f"Checking out {base_commit[:8]} (was {original_head[:8]})")
-    checkout(REPO_DIR, base_commit)
+    pre_trial_head = current_head(repo_dir)
+    print(f"Checking out {base_commit[:8]} (worker repo was at {pre_trial_head[:8]})")
+    checkout(repo_dir, base_commit)
 
     messages = [
         {"role": "system",  "content": system_prompt},
@@ -470,7 +582,7 @@ def main():
                     submitted = True
                     break
 
-                result = execute_tool(name, tc_args, REPO_DIR)
+                result = execute_tool(name, tc_args, repo_dir)
                 print(f"    {name}({tc_args}) → {len(result)} chars")
 
                 tool_msg = {
@@ -526,22 +638,26 @@ def main():
 
     finally:
         wall_time = time.time() - start_time
-        print(f"Restoring HEAD to {original_head[:8]}")
-        restore(REPO_DIR, original_head)
+        print(f"Restoring {folder_basename} to default branch '{default_branch}'")
+        restore(repo_dir, default_branch)
 
     # ── score ─────────────────────────────────────────────────────────────────
     scores = compute_scores(predicted_files, ground_truth)
 
     # ── save result ───────────────────────────────────────────────────────────
-    out_dir  = os.path.join(RESULTS_DIR, safe_model)
+    out_dir = os.path.join(RESULTS_DIR, safe_model, repo_name, str(args.issue_idx), args.map)
     os.makedirs(out_dir, exist_ok=True)
-    out_file = os.path.join(out_dir, f"task_{args.task}_{args.map}_rep{args.rep}.json")
+    out_file = os.path.join(out_dir, f"rep{args.rep}.json")
 
     result = {
         "model":      args.model,
-        "task_idx":   args.task,
+        "repo":       repo_name,
+        "issue_idx":  args.issue_idx,
+        "tier":       sel_row["tier"],
+        "role":       sel_row["role"],
         "map_type":   args.map,
         "rep":        args.rep,
+        "worker_id":  args.worker_id,
         "issue_title": issue_title,
         "base_commit": base_commit,
         "metrics": {
@@ -561,7 +677,9 @@ def main():
             "trial_token":         trial_token,
         },
         "final_files_predicted": predicted_files,
+        "final_files_predicted_scorable": source_files_only(predicted_files),
         "ground_truth":          ground_truth,
+        "ground_truth_scorable": source_files_only(ground_truth),
         "scores":                scores,
         "transcript":            transcript,
     }
@@ -574,7 +692,8 @@ def main():
     print()
     print("=" * 55)
     print(f"{'Model':<{w}} {args.model}")
-    print(f"{'Task':<{w}} {args.task} — {issue_title}")
+    print(f"{'Repo':<{w}} {repo_name}")
+    print(f"{'Issue':<{w}} {args.issue_idx} — {issue_title}")
     print(f"{'Map':<{w}} {args.map}")
     print(f"{'Turns':<{w}} {num_turns} ({stop_reason})")
     print(f"{'Tokens':<{w}} {total_input_tokens:,} in / {total_output_tokens:,} out")
