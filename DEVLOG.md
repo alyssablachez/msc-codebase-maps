@@ -989,3 +989,100 @@ hours (the build scripts do a real per-issue `git checkout`, and the pool
 includes many `core`/`transformers` issues at ~45-65 min each on this
 filesystem). Documented here only, in case the pool is ever revisited.
 
+## 2026-07-12 (cont'd 4)
+## Harness Validation, Study Archival, and the Batch Runner
+
+### Rewritten Harness: Live Validation
+Ran a real single trial end-to-end (`mistral/ministral-3b-latest` against
+`requests/7`, `ast_compact` map) to confirm the rewrite actually works,
+not just compiles:
+- Repo folder → canonical repo name resolution correct.
+- Issue lookup (title/body/ground_truth/base_commit) pulled correctly
+  from `issue_selection_final.csv`, no pickle dependency at runtime.
+- Map loading worked; model referenced map content before falling back to
+  `search`.
+- `repos/requests_full` was sitting in a leftover detached-HEAD state
+  from an earlier session — checkout to the issue's `base_commit` worked
+  regardless, and the new default-branch restore logic (restore to a
+  fixed known-good branch per repo, not to whatever was checked out
+  before the trial started) correctly left the repo cleanly on `main`
+  afterward. This is exactly the self-healing behaviour it was designed
+  for, confirmed working on a real leftover-bad-state case rather than
+  just in theory.
+- Scoring correct: `ground_truth`/`predicted` both passed through
+  `source_files_only()`, F1 = 1.0, both raw and filtered lists saved in
+  the result JSON.
+- Result/log paths matched the new nested layout
+  (`results/{model}/{repo}/{issue_idx}/{map_type}/rep{n}.json`).
+- Cost was $0.00000 (ministral-3b is essentially free) — kept as a
+  permanent baseline sanity-check result rather than deleted.
+
+### Archived the Exploratory Study into study_0/
+Before any new trials could safely run, the complete pre-rewrite study
+output needed separating from what the new harness would start writing
+at the same repo-relative paths:
+- `results/` (1215 files) → `study_0/results/`
+- `logs/` (1229 files, mostly gitignored except 72 stray tracked files)
+  → `study_0/logs/`
+- `repo_maps/requests/`'s non-numeric entries (loose whole-repo
+  `requests_ast_map.json`/`requests_ctags_map*.json`, and the old
+  `task_0`/`task_4`/`task_12`/`task_14`/`task_15` directories from the
+  pre-rewrite task-indexed harness) → `study_0/repo_maps/requests/`.
+  `repo_maps/requests/` now contains only the current numeric issue
+  directories (7, 12, 13).
+- Root-level `results_all.csv`, `results_summary_devstral_medium_pooled.csv`,
+  `results_summary_tables.txt` → `study_0/`.
+- Two gotchas hit during the move, both from `.gitignore` patterns with a
+  `/` in the middle (e.g. `!results/**/*.json`, `logs/`) being anchored
+  to the repo root — they don't apply to the same directory name nested
+  under `study_0/`, so files there fell back under the blanket `*.json`
+  ignore rule and needed `git add -f` to stay tracked at the new
+  location. Also caught (post-commit) that a `git add -A` scoped to only
+  the new-side pathspecs misses staging the old-side deletion for paths
+  outside those pathspecs — 3 root CSV/txt files were briefly duplicated
+  in the tree until a follow-up commit staged their deletion explicitly.
+
+### Batch Runner Rewrite (run_batch.py) + Supporting run_trial.py Changes
+`run_batch.py` was rewritten for the full 45-issue × 4-map-condition,
+multi-worker setup: loads `issue_selection_final.csv`, builds the trial
+list (skip if result exists, skip-with-warning if a non-`none` map file
+is missing), worker+rep-seeded shuffle, sequential execution with 900s
+timeout / 2 retries / 30s backoff, progress logging, a full batch summary
+(tokens incl. cached, cost, stop-reason breakdown, failures), and a saved
+batch log at `logs/batch_{worker_id}_{rep}_{model}_{date}.log`.
+
+This required two small additive changes to `run_trial.py` first, since
+the spec's `--repos-base`/`--maps-base`/`--results-base` only work if the
+trial subprocess actually reads/writes at those same locations:
+- `--maps-base`/`--results-base` optional overrides (default: unchanged
+  repo-relative behaviour), so the batch runner's skip-logic and the
+  actual trial output agree on where things live.
+- `total_cached_tokens` added to the metrics, read from litellm's
+  normalised `usage.prompt_tokens_details.cached_tokens`. Confirmed via
+  two live trials that this is populated correctly in both directions
+  (0 when caching didn't apply, 25,472 on a repeat run against the same
+  prefix).
+
+Default base paths (`/home/afb225/study1/...`) point at a native Linux
+filesystem location that doesn't exist yet on this WSL dev machine — the
+plan (not yet executed) is to copy the repos/maps there to avoid the WSL
+`/mnt/c` checkout slowness hit repeatedly this session (`core_full`
+alone: 45-65 min per checkout). `run_batch.py` is being prepared ahead of
+that move, not run against it yet.
+
+**Live end-to-end test of the batch runner**: no real `worker_1..5`
+directories exist on this machine yet, so a temporary `worker_1`
+directory of symlinks to the already-cloned repos was created under
+`/tmp`, and 179 of the 180 possible (issue × map) result slots were
+stubbed as "already done" so the batch runner would only actually
+execute one real trial. Confirmed: correct skip counts (179 skipped / 1
+run), correct worker-path resolution through the symlink, the one real
+trial ran through the full harness correctly, and the printed summary
+matched the saved batch log file exactly. All test artifacts (symlinks,
+stubs, the real trial's result/log, the batch log) cleaned up afterward.
+
+### Status
+Harness and batch runner both validated end-to-end on this machine.
+Nothing committed yet for this round of changes. Next step when ready:
+the native-filesystem move, then real batch runs.
+

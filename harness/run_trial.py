@@ -267,7 +267,7 @@ def execute_tool(name, args, repo_dir):
 
 # ── map loading ───────────────────────────────────────────────────────────────
 
-def load_map_content(repo, issue_idx, map_type):
+def load_map_content(repo, issue_idx, map_type, maps_root=MAPS_ROOT):
     """Return the map file's text content, or None if map_type is 'none' or
     the file doesn't exist (trial proceeds with no map either way)."""
     if map_type == "none":
@@ -276,7 +276,7 @@ def load_map_content(repo, issue_idx, map_type):
     if filename is None:
         print(f"WARNING: unknown map type '{map_type}' — proceeding with no map", file=sys.stderr)
         return None
-    map_file = os.path.join(MAPS_ROOT, repo, str(issue_idx), filename)
+    map_file = os.path.join(maps_root, repo, str(issue_idx), filename)
     if not os.path.exists(map_file):
         print(f"WARNING: map file not found for map={map_type} repo={repo} "
               f"issue_idx={issue_idx}: {map_file} — proceeding with no map", file=sys.stderr)
@@ -357,6 +357,16 @@ Your answer:\
 """
 
 
+def _cached_tokens(response):
+    """Extract cached prompt tokens from a litellm response, if the provider
+    reports them (e.g. via usage.prompt_tokens_details.cached_tokens)."""
+    try:
+        details = response.usage.prompt_tokens_details
+        return getattr(details, "cached_tokens", None) or 0
+    except AttributeError:
+        return 0
+
+
 # ── debug logging ─────────────────────────────────────────────────────────────
 
 def _log_response(log_file, label, response):
@@ -411,7 +421,16 @@ def main():
                         help="Repetition index, appended to the output filename.")
     parser.add_argument("--worker-id", type=int, default=None,
                         help="Which worker (1-5) is running this trial, for traceability.")
+    parser.add_argument("--maps-base", default=None,
+                        help="Override the root directory maps are read from "
+                             "(default: repo_maps/ relative to this repo).")
+    parser.add_argument("--results-base", default=None,
+                        help="Override the root directory results are written to "
+                             "(default: results/ relative to this repo).")
     args = parser.parse_args()
+
+    maps_root   = args.maps_base   if args.maps_base   else MAPS_ROOT
+    results_root = args.results_base if args.results_base else RESULTS_DIR
 
     # ── resolve repo ──────────────────────────────────────────────────────────
     repo_dir = os.path.abspath(args.repo_path)
@@ -455,7 +474,7 @@ def main():
     print()
 
     # ── load map ──────────────────────────────────────────────────────────────
-    map_content = load_map_content(repo_name, args.issue_idx, args.map)
+    map_content = load_map_content(repo_name, args.issue_idx, args.map, maps_root=maps_root)
 
     # ── build system prompt ───────────────────────────────────────────────────
     system_prompt = BASE_SYSTEM
@@ -480,6 +499,7 @@ def main():
 
     total_input_tokens  = 0
     total_output_tokens = 0
+    total_cached_tokens = 0
     total_cost          = 0.0
     num_turns           = 0
     stop_reason         = "max_turns"
@@ -501,6 +521,7 @@ def main():
 
             total_input_tokens  += response.usage.prompt_tokens
             total_output_tokens += response.usage.completion_tokens
+            total_cached_tokens += _cached_tokens(response)
             try:
                 total_cost += litellm.completion_cost(completion_response=response)
             except Exception:
@@ -611,6 +632,7 @@ def main():
 
             total_input_tokens  += final_resp.usage.prompt_tokens
             total_output_tokens += final_resp.usage.completion_tokens
+            total_cached_tokens += _cached_tokens(final_resp)
             try:
                 total_cost += litellm.completion_cost(completion_response=final_resp)
             except Exception:
@@ -645,7 +667,7 @@ def main():
     scores = compute_scores(predicted_files, ground_truth)
 
     # ── save result ───────────────────────────────────────────────────────────
-    out_dir = os.path.join(RESULTS_DIR, safe_model, repo_name, str(args.issue_idx), args.map)
+    out_dir = os.path.join(results_root, safe_model, repo_name, str(args.issue_idx), args.map)
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, f"rep{args.rep}.json")
 
@@ -663,6 +685,7 @@ def main():
         "metrics": {
             "total_input_tokens":  total_input_tokens,
             "total_output_tokens": total_output_tokens,
+            "total_cached_tokens": total_cached_tokens,
             "total_cost":          round(total_cost, 6),
             "num_turns":           num_turns,
             "wall_time_seconds":   round(wall_time, 2),
@@ -696,7 +719,8 @@ def main():
     print(f"{'Issue':<{w}} {args.issue_idx} — {issue_title}")
     print(f"{'Map':<{w}} {args.map}")
     print(f"{'Turns':<{w}} {num_turns} ({stop_reason})")
-    print(f"{'Tokens':<{w}} {total_input_tokens:,} in / {total_output_tokens:,} out")
+    print(f"{'Tokens':<{w}} {total_input_tokens:,} in / {total_output_tokens:,} out "
+          f"({total_cached_tokens:,} cached)")
     print(f"{'Cost':<{w}} ${total_cost:.5f}")
     print(f"{'Time':<{w}} {wall_time:.1f}s")
     print()
