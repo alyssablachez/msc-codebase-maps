@@ -10,17 +10,37 @@ Usage:
 import argparse
 import json
 import os
+import re
 from collections import defaultdict
 
-MAX_DOC = 80
+MAX_DOC = 200  # safety cap for run-on sentences
 INDENT = "  "
+
+# Sentence boundary: punctuation followed by whitespace or end of string.
+_SENT_END = re.compile(r'[.!?](?:\s|$)')
+# Abbreviations whose trailing period is NOT a sentence end.
+_ABBREV = re.compile(
+    r'\b(?:e\.g|i\.e|vs|etc|dr|mr|mrs|ms|prof|cf|fig|no|approx)\.$',
+    re.IGNORECASE,
+)
+
+
+def _first_sentence(doc):
+    """Return the first full sentence, or the full string if none found."""
+    for m in _SENT_END.finditer(doc):
+        candidate = doc[:m.start() + 1]  # include the punctuation
+        if _ABBREV.search(candidate):
+            continue
+        return candidate
+    return doc
 
 
 def _truncate(doc):
     if not doc:
         return None
     doc = doc.strip()
-    return doc[:MAX_DOC] + "..." if len(doc) > MAX_DOC else doc
+    sentence = _first_sentence(doc)
+    return sentence if len(sentence) <= MAX_DOC else sentence[:MAX_DOC] + "..."
 
 
 def _class_header(rec):
