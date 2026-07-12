@@ -621,3 +621,54 @@ requests/models.py
 - Map generation statistics (commit date, files walked, token counts, 
   generation time) tracked in `repo_maps/map_generation_stats.csv`
 
+## 2026-07-10 / 2026-07-11
+## Codebase Size Audit and Extra-Repo Pool
+
+### Motivation
+After finalising the 45-issue selection, audited whether the small/medium/large
+tier labels assigned to the 15 codebases actually reflect codebase size, and
+whether the "large" tier covers a wide enough size range for the study.
+
+### Size Audits
+- `scripts/audit_repo_sizes_current.py` — measures Python and total text LOC
+  for each of the 15 repos as currently checked out on disk (whole repo and
+  main source package dir), independent of any specific issue's base_commit.
+- `scripts/audit_codebase_sizes.py` — per-issue audit across all 45 selected
+  issues, computing whole-repo and package-dir LOC at each issue's
+  `base_commit` via `git archive`, to check whether tier labels are
+  consistent with actual size at the commit each issue was scored against
+  (not just current HEAD).
+- `scripts/add_loc_to_stats.py` — folds LOC figures into the map generation
+  stats table.
+- Finding: the existing "large" tier tops out around ~220k LOC
+  (`data/issue_pool_with_loc_summary.txt`), leaving no representation of
+  substantially larger codebases.
+
+### Extended Issue Pool with LoC
+- `scripts/build_issue_pool_with_loc.py` — rebuilt the full usable-issue pool
+  for all 15 existing repos (same usability filters as the original
+  selection pool) with per-issue package-dir Python LoC measured at
+  `base_commit`. 378 usable issues total. Confirms tier ordering: small
+  (95 issues, mean ~5.3k LoC) < medium (83 issues, mean ~14k LoC) < large
+  (200 issues, mean ~108k LoC, max 220k).
+- `scripts/build_issue_pool_extra_repos.py` — identical pipeline applied to
+  4 candidate repos not in the original panel: `youtube-dl`, `ComfyUI`,
+  `transformers`, `home-assistant/core`. 70 usable issues found
+  (`data/issue_pool_extra_repos.csv` / `_summary.txt`):
+  - youtube-dl: 14 usable / 14 total
+  - ComfyUI: 3 usable / 10 total
+  - transformers: 33 usable / 44 total
+  - core (home-assistant): 20 usable / 26 total
+  - LoC range 4.3k–942k, mean ~343k — pushes well past the existing
+    "large" tier ceiling. ComfyUI (~17k mean) is the only one landing in
+    "medium"; the other three are all "large" or beyond.
+- Tier labels in `build_issue_pool_extra_repos.py` are placeholders pending
+  review of this LoC output — not yet reconciled with the main 15-repo
+  selection or issue_selection_final.csv.
+
+### Status
+Exploratory — results not yet merged into the finalised issue selection.
+Next step is deciding whether to add an extra size tier (e.g. "extra-large")
+using one or more of these candidate repos, or to treat this purely as a
+validation check on the existing tier boundaries.
+

@@ -8,10 +8,12 @@ Usage:
 """
 import argparse
 import csv
+import io
 import os
 import pickle
 import subprocess
 import sys
+import tarfile
 import time
 from collections import defaultdict
 
@@ -26,17 +28,17 @@ REPO_DIR_MAP = {
     "thefuck":                "repos/thefuck_full",
     "flask":                  "repos/flask_full",
     "gpt-engineer":           "repos/gpt_engineer_full",
-    "Deep-Live-Cam":          "repos/deep_live_cam_full",
+    "fastapi":                "repos/fastapi_full",
     "scrapy":                 "repos/scrapy_full",
     "rich":                   "repos/rich_full",
-    "fastapi":                "repos/fastapi_full",
-    "open-interpreter":       "repos/open_interpreter_full",
     "stable-diffusion-webui": "repos/stable_diffusion_webui_full",
-    "yt-dlp":                 "repos/ytdlp_full",
     "keras":                  "repos/keras_full",
-    "scikit-learn":           "repos/scikit_learn_full",
     "localstack":             "repos/localstack_full",
+    "yt-dlp":                 "repos/ytdlp_full",
     "pandas":                 "repos/pandas_full",
+    "scikit-learn":           "repos/scikit_learn_full",
+    "transformers":           "repos/transformers_full",
+    "core":                   "repos/core_full",
 }
 
 PACKAGE_MAP = {
@@ -44,17 +46,17 @@ PACKAGE_MAP = {
     "thefuck":                "thefuck",
     "flask":                  "flask",
     "gpt-engineer":           "gpt_engineer",
-    "Deep-Live-Cam":          "modules",
+    "fastapi":                "fastapi",
     "scrapy":                 "scrapy",
     "rich":                   "rich",
-    "fastapi":                "fastapi",
-    "open-interpreter":       "interpreter",
     "stable-diffusion-webui": "modules",
-    "yt-dlp":                 "yt_dlp",
     "keras":                  "keras",
-    "scikit-learn":           "sklearn",
     "localstack":             "localstack",
+    "yt-dlp":                 "yt_dlp",
     "pandas":                 "pandas",
+    "scikit-learn":           "sklearn",
+    "transformers":           "transformers",
+    "core":                   "homeassistant",
 }
 
 STATS_CSV        = os.path.join(_ROOT, "repo_maps", "map_generation_stats.csv")
@@ -67,8 +69,51 @@ STATS_COLS = [
     "compact_map_chars", "compact_map_tokens", "compact_reduction_pct",
     "freq_map_chars", "freq_map_tokens",
     "cochange_map_chars", "cochange_map_tokens",
+    "python_loc", "total_loc",
     "status", "error_message", "duration_seconds",
 ]
+
+
+def pkg_tree_path(repo_dir, commit, pkg_name):
+    """Return the git tree path for the package (e.g. 'src/flask', 'requests', or '')."""
+    for candidate in [f"src/{pkg_name}", pkg_name]:
+        r = subprocess.run(
+            ["git", "-C", repo_dir, "ls-tree", "--name-only", commit, candidate + "/"],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return candidate
+    return ""
+
+
+def count_loc(repo_dir, commit, tree_path):
+    """Return (python_loc, total_loc) using git archive — no checkout needed."""
+    cmd = ["git", "-C", repo_dir, "archive", commit]
+    if tree_path:
+        cmd.append(tree_path + "/")
+    r = subprocess.run(cmd, capture_output=True)
+    if r.returncode != 0:
+        return None, None
+    python_loc = 0
+    total_loc  = 0
+    try:
+        with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
+            for member in tar.getmembers():
+                if not member.isfile():
+                    continue
+                f = tar.extractfile(member)
+                if f is None:
+                    continue
+                content = f.read()
+                if b"\x00" in content[:1024]:
+                    continue
+                lines = content.count(b"\n")
+                total_loc += lines
+                if member.name.endswith(".py"):
+                    python_loc += lines
+    except Exception:
+        return None, None
+    return python_loc, total_loc
 
 
 def load_skip_dirs(repo, issue_idx):
@@ -138,7 +183,7 @@ def main():
                     help="Print plan without running anything")
     args = ap.parse_args()
 
-    sel_csv  = os.path.join(_ROOT, "data", "issue_selection_random.csv")
+    sel_csv  = os.path.join(_ROOT, "data", "issue_selection_final.csv")
     pkl_file = os.path.join(_ROOT, "data",
                             "all_issues_with_pr_commit_comment_all_project_0922.pkl")
 
@@ -278,6 +323,12 @@ def main():
             chars = file_chars(cochange_out)
             stat["cochange_map_chars"]  = chars
             stat["cochange_map_tokens"] = chars // 4 if chars is not None else None
+
+        # ── 5. LOC ────────────────────────────────────────────────────────────
+        tree_path = pkg_tree_path(repo_dir, base_commit, pkg_name)
+        py_loc, tot_loc = count_loc(repo_dir, base_commit, tree_path)
+        stat["python_loc"] = py_loc
+        stat["total_loc"]  = tot_loc
 
         stat["duration_seconds"] = round(time.time() - issue_t0, 1)
         stat["status"]        = "failed" if errors else "success"
