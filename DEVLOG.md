@@ -767,3 +767,77 @@ on given the ground-truth-loss tradeoffs above; (3) how to handle
 `core/17`/`core/8` (structurally unprunable without losing the answer) and
 `fastapi/20` (AST blind spot) in the final study design.
 
+## 2026-07-12 (cont'd)
+## Finalising Pruned Maps at 55k, Extended to Freq/Co-change
+
+### What Was Done
+Settled on 55k tokens as the working cutoff and extended the same
+least-frequently-edited-first pruning rule (previously only applied to the
+compact map) to the frequency map and co-change map, since both can also
+blow the budget for the largest repos:
+
+- `scripts/generate_pruned_aux_maps.py` — prunes `freq_map.txt` and
+  `cochange_map.txt` per issue, independently of each other and of the
+  compact map (a file kept in the pruned compact map is not necessarily
+  kept in the pruned freq/cochange map, since per-file token cost differs
+  by map type). Freq map pruning is a straight prefix-cut (it's already
+  sorted by edit count); co-change map is re-ranked by edit frequency, then
+  cut, then re-rendered alphabetically to match the existing format.
+- `scripts/check_aux_pruned_ground_truth.py` — same ground-truth-loss check
+  as `check_pruned_ground_truth.py`, applied to the freq/cochange outputs.
+- Also ran `check_pruned_ground_truth.py --token-budget 55000` (previously
+  only checked at 30k/50k).
+
+### Results at 55k
+Only the three `core` issues need any pruning at all for freq/cochange —
+every other repo's freq and co-change maps stay under 55k tokens even
+though their compact maps don't. Co-change is the most expensive format per
+file (~3x the size of the freq map for the same file set), so it gets
+pruned hardest among the three map types.
+
+| map type  | issues pruned | issues losing ≥1 GT file | which                                      |
+|---|---|---|---|
+| compact   | 10/45          | 5/45  | pandas/38, transformers/5, transformers/27, core/17, core/8 |
+| freq      | 2/45 (core/17, core/8) | 0/45 | — |
+| cochange  | 3/45 (core/17, core/8, core/16) | 2/45 | core/17, core/8 |
+
+**`core/17` and `core/8` are the only issues that lose ground truth across
+all three map types.** Every other affected issue (`pandas/38`,
+`transformers/5`, `transformers/27`) only loses its ground-truth file from
+the *compact* map — the frequency and co-change maps for those same issues
+still surface the correct file, since those formats cost far fewer tokens
+per file and survive pruning much further down the edit-frequency tail.
+
+### Implication: Argument for a Selective-Probe Tool
+This is the clearest evidence yet that flat token-budget pruning is the
+wrong lever, not just an implementation detail to tune. The core problem:
+handing the model one fixed, pre-truncated map forces a single global
+cutoff decided in advance, with no way for the model to trade "more files,
+less detail" against "fewer files, more detail" based on what the actual
+issue needs. Two concrete symptoms observed above:
+- The compact map is by far the most expensive format per file (full
+  signatures + structure), so it gets cut earliest and loses ground truth
+  most often — even though it's also the most informative format when a
+  file *is* included.
+- `core/17`/`core/8` need 134k-190k tokens (from the 2026-07-12 min-budget
+  analysis above) just to reach one correct file under this frequency
+  ordering — no single fixed budget in a realistic range recovers them,
+  because the useful signal (which file is relevant) isn't correlated with
+  edit frequency for these two issues specifically.
+
+Both symptoms point the same direction: instead of pre-pruning a static
+map to fit a token budget, give the model a **tool to query the map
+on-demand** — e.g. list files (freq/cochange only, cheap), then request
+the full compact-map entry (signatures, docstrings) for specific files it
+already suspects are relevant, rather than paying the compact-map token
+cost for every file up front. This would let the model spend its context
+budget adaptively per issue instead of accepting whatever a fixed
+frequency-based prefix happens to include, and should directly fix the
+`core/17`/`core/8` failure mode where the answer file is real but
+buried too deep in edit-frequency rank to survive any fixed-budget cutoff.
+
+### Status
+Finalised at 55k for now as the fixed-budget baseline condition. The
+selective-probe tool idea above is a candidate follow-up experimental
+condition, not yet designed or implemented.
+
