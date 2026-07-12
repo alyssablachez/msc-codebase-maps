@@ -672,3 +672,98 @@ Next step is deciding whether to add an extra size tier (e.g. "extra-large")
 using one or more of these candidate repos, or to treat this purely as a
 validation check on the existing tier boundaries.
 
+## 2026-07-12
+## Tackling the Map Size Problem: No-Docstring and Pruned Compact Maps
+
+### Motivation
+The audit above confirmed some compact maps are far too large to use as-is
+(`core/17` reaches 652k tokens with docstrings). Started reducing map size
+without regenerating the underlying AST data.
+
+### Version 2: No-Docstring Compact Map
+- `scripts/compact_map_nodoc.py` — same block format as
+  `scripts/compact_map.py` (reuses its `_class_header`/`_fn_line` helpers),
+  but omits all docstring lines. Renders directly from the existing
+  `ast_map.json`, no AST re-parsing needed.
+- `scripts/generate_nodoc_maps.py` — batch-generated `compact_map_nodoc.txt`
+  for all 45 issues. Sizes recorded in `repo_maps/compact_nodoc_stats.csv`
+  (original vs. nodoc chars/tokens, % reduction).
+- Reduction ranged ~1% (fastapi — docstring-sparse) to ~49% (core —
+  docstring-heavy).
+
+### Version 3: Frequency-Pruned Compact Map
+- `scripts/generate_pruned_maps.py` — built on top of the no-docstring map.
+  Files are dropped one at a time, least-edited-first (per each issue's
+  `freq_map.txt`), until the map is under a token budget. Equivalently:
+  keep files in descending edit-frequency order, taking the largest prefix
+  that fits (always keeps at least the single most-edited file, even if it
+  alone exceeds budget).
+- Kept files are rendered alphabetically in the output, matching the
+  existing map convention.
+- Parameterised by `--token-budget`; 30k keeps the original unsuffixed
+  filenames (`compact_map_pruned.txt`, `compact_pruned_stats.csv`) for
+  backward compatibility, other budgets get a `_{N}k` suffix so multiple
+  budgets coexist (e.g. `compact_map_pruned_50k.txt`).
+- At **30k tokens**: 15/45 issues require pruning (mostly yt-dlp, pandas,
+  scikit-learn, transformers, core).
+- At **50k tokens**: 12/45 issues require pruning.
+
+### Ground-Truth-in-Pruned Check
+- `scripts/check_pruned_ground_truth.py` — compares each issue's
+  `ground_truth` files against the files dropped during pruning.
+  Also parameterised by `--token-budget`.
+- **At 30k**: 9/45 issues (20%) lose ≥1 ground-truth file to pruning
+  (9/15 of the issues that get pruned at all). Of those 9, 5 lose *every*
+  ground-truth file (`yt-dlp/23`, `pandas/35`, `pandas/38`, `core/17`,
+  `core/16`) — the pruned condition has zero chance of localising
+  correctly for these regardless of model quality.
+- **At 50k**: 6/45 issues lose ≥1 ground-truth file; 3 lose all
+  (`pandas/38`, `core/17`, `core/16`).
+- Results: `data/pruned_ground_truth_check.csv` (30k) and
+  `data/pruned_ground_truth_check_50k.csv` (50k).
+
+### Minimum Budget to Retain ≥1 Ground-Truth File
+- `scripts/min_budget_for_gt.py` — for every issue, walks the same
+  descending-edit-frequency file order and finds the cumulative token size
+  at which the *first* ground-truth file is reached. This is the minimum
+  budget under which frequency-pruning would keep at least one correct
+  answer file. Output: `data/min_budget_for_gt.csv`.
+- Worst cases (a single very large/rarely-edited codebase can force the
+  minimum budget close to the size of the full map):
+
+  | repo | issue | role | min tokens for ≥1 GT file | full map size |
+  |---|---|---|---|---|
+  | core | 17 | single | 190,391 | 337,766 |
+  | core | 8 | multi | 133,870 | 282,257 |
+  | core | 16 | flexible | 53,692 | 155,996 |
+  | pandas | 38 | flexible | 52,911 | 89,453 |
+  | yt-dlp | 23 | flexible | 42,218 | 78,780 |
+  | pandas | 35 | single | 39,566 | 53,361 |
+  | scikit-learn | 45 | multi | 34,161 | 50,433 |
+  | transformers | 5 | multi | 33,609 | 95,590 |
+  | scikit-learn | 5 | flexible | 28,899 | 46,547 |
+  | transformers | 27 | flexible | 28,731 | 222,549 |
+
+  A budget of ~53,700 tokens would guarantee ≥1 ground-truth file survives
+  for every issue except `core/17` and `core/8`, which need 134k–190k
+  tokens — i.e. pruning essentially cannot help those two without
+  defeating its own purpose.
+
+### Separate Finding: AST-Map Blind Spot (not a pruning artifact)
+- `fastapi/20`'s ground truth is `fastapi/background.py`, a one-line
+  re-export module (`from starlette.background import BackgroundTasks as
+  BackgroundTasks  # noqa`) with zero classes/functions. It never appears
+  in the AST-based map **at any budget, pruned or not** — files with no
+  top-level defs are invisible to AST-based compact maps by construction.
+  This is a structural limitation of the map type, not of the
+  frequency-pruning approach, and needs a separate decision (exclude the
+  issue from map-based conditions, or document as a known limitation).
+
+### Status
+Exploratory. Open decisions: (1) whether the 3rd map version should prune
+from the no-docstring base (as implemented) or from the original
+with-docstring compact map instead; (2) what token budget to standardise
+on given the ground-truth-loss tradeoffs above; (3) how to handle
+`core/17`/`core/8` (structurally unprunable without losing the answer) and
+`fastapi/20` (AST blind spot) in the final study design.
+

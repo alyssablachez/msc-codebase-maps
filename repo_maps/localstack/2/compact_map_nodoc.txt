@@ -1,0 +1,3779 @@
+localstack/aws/api/core.py
+class ServiceRequest(TypedDict) L19
+
+class ServiceException(Exception) L26
+
+class CommonServiceException(ServiceException) L36
+  __init__(self, code, message, status_code=400, sender_fault=False) L44
+
+class HttpRequest(_SansIORequest) L55
+  __init__(self, method='GET', path='', headers=None, body=None, scheme='http', root_path='/', query_string=b'', remote_addr=None) L61
+  stream(self) L100
+  data(self) L104
+  json(self) L108
+  form(self) L112
+  values(self) L116
+  files(self) L120
+  url_root(self) L124
+  get_data(self, cache=True, as_text=False, parse_form_data=False) L127
+  get_json(self, force=False, silent=False, cache=True) L145
+  _load_form_data(self) L165
+  close(self) L168
+
+class HttpResponse(Response) L172
+  update_from(self, other) L173
+  set_json(self, doc) L178
+  to_readonly_response_dict(self) L181
+
+class ServiceOperation(NamedTuple) L192
+
+class RequestContext L197
+  __init__(self) L205
+  service_operation(self) L215
+
+handler(operation=None, context=True, expand=True) L222
+wrapper(fn) L227
+operation_marker(*args, **kwargs) L229
+
+localstack/aws/protocol/parser.py
+class RequestParserError(Exception) L114
+
+class RequestParser(abc.ABC) L120
+  __init__(self, service) L133
+  parse(self, request) L137
+  _parse_shape(self, request, shape, node) L148
+  _parse_list(self, request, shape, node) L203
+  _parse_integer(self, _, __, node) L211
+  _parse_float(self, _, __, node) L215
+  _parse_blob(self, _, __, node) L219
+  _parse_timestamp(self, _, shape, node) L223
+  _parse_boolean(self, _, __, node) L227
+  _noop_parser(self, _, __, node) L236
+  _convert_str_to_timestamp(self, value, timestamp_format=None) L243
+  _timestamp_iso8601(date_string) L252
+  _timestamp_unixtimestamp(timestamp_string) L256
+  _timestamp_rfc822(datetime_string) L260
+
+class QueryRequestParser(RequestParser) L264
+  parse(self, request) L276
+  _process_member(self, request, member_name, member_shape, node) L288
+  _parse_structure(self, request, shape, node) L301
+  _parse_map(self, request, shape, node) L318
+  _parse_list(self, request, shape, node) L363
+  _get_first(node) L402
+  _filter_node(name, node) L408
+  _get_serialized_name(self, shape, default_name) L413
+
+class BaseRestRequestParser(RequestParser) L421
+  __init__(self, service) L428
+  parse(self, request) L441
+  _parse_payload(self, request, shape, member_shapes, final_parsed) L451
+  _parse_non_payload_attrs(self, request, member_shapes, final_parsed) L482
+  _parse_header_map(shape, headers) L504
+  _initial_body_parse(self, body_contents) L515
+  _create_event_stream(self, request, shape) L526
+
+class RestXMLRequestParser(BaseRestRequestParser) L531
+  __init__(self, service_model) L540
+  _initial_body_parse(self, xml_string) L544
+  _parse_structure(self, request, shape, node) L549
+  _parse_map(self, request, shape, node) L578
+  _parse_list(self, request, shape, node) L600
+  _node_tag(self, node) L610
+  _member_key_name(shape, member_name) L614
+  _parse_xml_string_to_dom(self, xml_string) L628
+  _build_name_to_xml_node(self, parent_node) L639
+  _create_event_stream(self, request, shape) L662
+
+class BaseJSONRequestParser(RequestParser, ABC) L667
+  _parse_structure(self, request, shape, value) L675
+  _parse_map(self, request, shape, value) L697
+  _parse_body_as_json(self, body_contents) L711
+  _parse_boolean(self, request, shape, node) L721
+
+class JSONRequestParser(BaseJSONRequestParser) L725
+  parse(self, request) L736
+  _do_parse(self, request, shape) L744
+  _handle_event_stream(self, request, shape, event_name) L754
+  _handle_json_body(self, request, raw_body, shape) L758
+
+class RestJSONRequestParser(BaseRestRequestParser, BaseJSONRequestParser) L765
+  _initial_body_parse(self, body_contents) L776
+  _create_event_stream(self, request, shape) L779
+
+class EC2RequestParser(QueryRequestParser) L783
+  _get_serialized_name(self, shape, default_name) L795
+
+_text_content(func) L86
+_get_text_content(self, request, shape, node_or_string) L98
+create_parser(service) L808
+
+localstack/aws/protocol/serializer.py
+class ResponseSerializer(abc.ABC) L96
+  serialize_to_response(self, response, operation_model) L107
+  serialize_error_to_response(self, error, operation_model) L130
+  _serialize_payload(self, parameters, serialized, shape, shape_members, operation_model) L184
+  _serialize_error(self, error, code, sender_fault, serialized, shape, operation_model) L196
+  _create_default_response(operation_model) L208
+  _timestamp_iso8601(value) L221
+  _timestamp_unixtimestamp(value) L229
+  _timestamp_rfc822(self, value) L232
+  _convert_timestamp_to_str(self, value, timestamp_format=None) L237
+  _get_serialized_name(shape, default_name) L249
+  _get_base64(self, value) L256
+  _prepare_additional_traits_in_response(self, response, operation_model) L266
+
+class BaseXMLResponseSerializer(ResponseSerializer) L284
+  _serialize_payload(self, parameters, serialized, shape, shape_members, operation_model) L296
+  _serialize_error(self, error, code, sender_fault, serialized, shape, operation_model) L338
+  _add_error_tags(code, error, error_tag, sender_fault) L362
+  _serialize_body_params(self, params, shape, operation_model) L376
+  _serialize_body_params_to_xml(self, params, shape, operation_model) L383
+  _encode_payload(self, body) L395
+  _serialize(self, shape, params, xmlnode, name) L400
+  _serialize_type_structure(self, xmlnode, params, shape, name) L412
+  _serialize_type_list(self, xmlnode, params, shape, name) L439
+  _serialize_type_map(self, xmlnode, params, shape, name) L454
+  _serialize_type_boolean(xmlnode, params, _, name) L495
+  _serialize_type_blob(self, xmlnode, params, _, name) L507
+  _serialize_type_timestamp(self, xmlnode, params, shape, name) L513
+  _default_serialize(xmlnode, params, _, name) L522
+  _prepare_additional_traits_in_xml(self, root) L526
+
+class BaseRestResponseSerializer(ResponseSerializer, ABC) L535
+  _prepare_additional_traits_in_response(self, response, operation_model) L541
+
+class RestXMLResponseSerializer(BaseRestResponseSerializer, BaseXMLResponseSerializer) L550
+  _serialize_error(self, error, code, sender_fault, serialized, shape, operation_model) L562
+
+class QueryResponseSerializer(BaseXMLResponseSerializer) L590
+  _serialize_body_params_to_xml(self, params, shape, operation_model) L600
+  _prepare_additional_traits_in_xml(self, root) L621
+
+class EC2ResponseSerializer(QueryResponseSerializer) L629
+  _serialize_error(self, error, code, sender_fault, serialized, shape, operation_model) L639
+  _prepare_additional_traits_in_xml(self, root) L672
+
+class JSONResponseSerializer(ResponseSerializer) L686
+  _serialize_error(self, error, code, sender_fault, serialized, shape, operation_model) L698
+  _serialize_payload(self, parameters, serialized, shape, shape_members, operation_model) L711
+  _serialize(self, body, value, shape, key=None) L727
+  _serialize_type_structure(self, body, value, shape, key) L732
+  _serialize_type_map(self, body, value, shape, key) L752
+  _serialize_type_list(self, body, value, shape, key) L758
+  _default_serialize(body, value, _, key) L771
+  _serialize_type_timestamp(self, body, value, shape, key) L774
+  _serialize_type_blob(self, body, value, _, key) L779
+  _prepare_additional_traits_in_response(self, response, operation_model) L782
+
+class RestJSONResponseSerializer(BaseRestResponseSerializer, JSONResponseSerializer) L790
+
+add_md5_header(response) L275
+create_serializer(service) L804
+
+localstack/aws/proxy.py
+class AwsApiListener(ProxyListener) L21
+  __init__(self, api, delegate) L24
+  forward_request(self, method, path, data, headers) L28
+  create_request_context(self, request) L40
+  to_server_response(self, response) L48
+
+get_region(request) L12
+get_account_id(_) L16
+
+localstack/aws/scaffold.py
+class ShapeNode L51
+  __init__(self, service, shape) L55
+  is_request(self) L61
+  name(self) L72
+  is_exception(self) L76
+  is_primitive(self) L81
+  is_enum(self) L85
+  dependencies(self) L89
+  _print_structure_declaration(self, output, doc=True, quote_types=False) L101
+  _print_as_class(self, output, base, doc=True, quote_types=False) L117
+  _print_as_typed_dict(self, output, doc=True, quote_types=False) L134
+  print_shape_doc(self, output, shape) L145
+  print_declaration(self, output, doc=True, quote_types=False) L156
+  get_order(self) L197
+
+is_keyword(name) L25
+is_bad_param_name(name) L29
+to_valid_python_name(spec_name) L39
+generate_service_types(output, service, doc=True) L214
+generate_service_api(output, service, doc=True) L267
+generate(service, doc, save) L353
+
+localstack/aws/skeleton.py
+class HandlerAttributes(NamedTuple) L32
+
+class ServiceRequestDispatcher L82
+  __init__(self, fn, operation, pass_context=True, expand_parameters=True) L88
+  __call__(self, context, request) L100
+
+class Skeleton L120
+  __init__(self, service, implementation) L124
+  invoke(self, context) L134
+
+create_skeleton(service, delegate) L25
+create_dispatch_table(delegate) L43
+
+localstack/aws/spec.py
+list_services(model_type='service-2') L9
+load_service(service, version=None, model_type='service-2') L13
+
+localstack/cli/localstack.py
+create_with_plugins() L13
+_setup_cli_debug() L24
+localstack(debug) L37
+localstack_config() L43
+localstack_status(ctx) L53
+cmd_status_docker() L61
+cmd_status_services() L67
+cmd_start(docker, host, no_banner, detached) L94
+cmd_stop() L128
+cmd_logs(follow) L150
+cmd_wait(timeout=None) L190
+cmd_config_validate(file) L205
+cmd_ssh() L224
+infra() L245
+cmd_infra_start(ctx, *args, **kwargs) L253
+print_docker_status() L257
+print_service_table(services) L296
+print_version() L322
+print_banner() L326
+
+localstack/cli/lpm.py
+cli() L15
+_do_install(pkg) L37
+install(package, parallel) L55
+list_packages() L84
+
+localstack/cli/main.py
+main() L4
+
+localstack/cli/plugin.py
+class LocalstackCli L11
+  __call__(self, *args, **kwargs) L14
+
+class LocalstackCliPlugin(Plugin) L18
+  load(self, cli) L21
+  attach(self, cli) L25
+
+load_cli_plugins(cli) L33
+
+localstack/cli/plugins.py
+cli() L16
+find(where, exclude, include, output) L28
+cmd_list(namespace) L61
+load(namespace, name) L81
+cache(namespace) L100
+
+localstack/config.py
+class ServiceProviderConfig L629
+  __init__(self, default_value) L633
+  get_provider(self, service) L637
+  set_provider_if_not_exists(self, service, provider) L640
+  set_provider(self, service, provider) L644
+  bulk_set_provider_if_not_exists(self, services, provider) L647
+  __getitem__(self, item) L651
+  __setitem__(self, key, value) L654
+  __len__(self) L657
+  __iter__(self) L660
+
+eval_log_type(env_var_name) L35
+is_env_true(env_var_name) L41
+is_env_not_false(env_var_name) L46
+has_docker() L258
+is_linux() L267
+ping(host) L393
+in_docker() L404
+parse_service_ports() L503
+populate_configs(service_ports=None) L533
+service_port(service_key) L569
+get_protocol() L580
+external_service_url(service_key, host=None) L584
+get_edge_port_http() L589
+get_edge_url(localstack_hostname=None, protocol=None) L593
+load_config_file(config_file=None) L609
+save_config_file(config, config_file=None) L622
+
+localstack/contrib/thundra.py
+class LambdaExecutorPluginThundra(LambdaExecutorPlugin) L406
+  should_apply(self, context) L407
+  prepare_invocation(self, context) L436
+
+_get_apikey(env_vars) L62
+_ensure_java_agent_initialized() L78
+_get_latest_java_agent_version(metadata_url) L86
+_init_java_agent_configs() L102
+_install_java_agent() L121
+_is_java8_lambda(func_details) L128
+_is_java_lambda_with_support_version(lambda_details) L133
+_prepare_invocation_for_java_lambda(context) L138
+_ensure_node_agent_initialized() L193
+_get_latest_node_agent_version() L200
+_init_node_agent_configs() L208
+_install_node_agent() L231
+_is_node_lambda_with_support_version(func_details) L247
+_prepare_invocation_for_node_lambda(context) L256
+_ensure_python_agent_initialized() L296
+_get_latest_python_agent_version() L303
+_init_python_agent_configs() L318
+_install_python_agent() L341
+_is_python_lambda_with_support_version(func_details) L357
+_prepare_invocation_for_python_lambda(context) L366
+
+localstack/dashboard/infra.py
+_connect(service, env=None, region=None) L51
+get_kinesis_streams(filter='.*', pool={}, env=None, region=None) L55
+get_kinesis_shards(stream_name=None, stream_details=None, env=None, region=None) L75
+get_sqs_queues(filter='.*', pool={}, env=None, region=None) L89
+get_sns_topics(filter='.*', pool=None, env=None, region=None) L106
+get_lambda_functions(filter='.*', details=False, pool={}, env=None, region=None) L127
+handle(func) L133
+get_lambda_event_sources(func_name=None, env=None, region=None) L160
+get_lambda_code(func_name, retries=1, cache_time=None, env=None, region=None) L173
+get_elasticsearch_domains(filter='.*', pool={}, env=None, region=None) L223
+handle(domain) L229
+get_dynamo_dbs(filter='.*', pool={}, env=None, region=None) L247
+handle(table) L253
+parse_notification_configuration(notification_config, pool=None) L271
+get_s3_buckets(filter='.*', pool={}, details=False, env=None, region=None) L299
+handle(bucket) L303
+get_firehose_streams(filter='.*', pool={}, env=None, region=None) L329
+read_kinesis_iterator(shard_iterator, max_results=10, env=None, region=None) L350
+get_kinesis_events(stream_name, shard_id, max_results=10, env=None) L356
+find_node_by_attribute(graph, key, value) L371
+find_node_by_id(graph, node_id) L378
+find_edges_for_source(graph, node_id) L382
+get_graph(name_filter='.*', env=None, **kwargs) L386
+extract_endpoints(code_map, pool={}) L469
+resolve_string_or_variable(string, code_map) L512
+
+localstack/plugins.py
+configure_edge_port(container) L10
+
+localstack/runtime/hooks.py
+class HookManager(PluginManager) L45
+  load_all_sorted(self, propagate_exceptions=False) L46
+  run_in_order(self, *args, **kwargs) L57
+  __str__(self) L64
+  __repr__(self) L67
+
+hook(namespace, priority=0, **kwargs) L13
+wrapper(fn) L18
+hook_spec(namespace) L25
+
+localstack/services/acm/acm_starter.py
+apply_patches() L9
+describe(self) L10
+wrap_request_certificate(backend) L64
+request_certificate(self, domain_name, domain_validation_options, *args, **kwargs) L65
+start_acm(port=None, asynchronous=False, update_listener=None) L81
+
+localstack/services/apigateway/apigateway_listener.py
+class ApiGatewayVersion(Enum) L83
+
+class AuthorizationError(Exception) L92
+
+class ApiInvocationContext L96
+  __init__(self, method, path, data, headers, api_id=None, stage=None, context=None, auth_info=None) L129
+  resource_id(self) L157
+  invocation_path(self) L161
+  path_with_query_string(self) L167
+  path_with_query_string(self, new_path) L172
+  query_params(self) L176
+  integration_uri(self) L182
+  auth_context(self) L187
+  auth_identity(self) L196
+  is_websocket_request(self) L202
+  is_v1(self) L206
+
+class ProxyListenerApiGateway(ProxyListener) L211
+  forward_request(self, method, path, data, headers) L212
+  return_response(self, method, path, data, headers, response) L259
+
+run_authorizer(invocation_context, authorizer) L308
+authorize_invocation(invocation_context) L313
+validate_api_key(api_key, stage) L322
+is_api_key_valid(is_api_key_required, headers, stage) L343
+update_content_length(response) L354
+apply_request_parameters(uri, integration, path_params) L359
+apply_template(integration, req_res_type, data, path_params={}, query_params={}, headers={}, context={}) L372
+_params(name=None) L390
+apply_response_parameters(invocation_context) L405
+set_api_id_stage_invocation_path(invocation_context) L428
+extract_api_id_from_hostname_in_url(hostname) L490
+invoke_rest_api_from_request(invocation_context) L497
+invoke_rest_api(invocation_context) L506
+invoke_rest_api_integration(invocation_context) L551
+invoke_rest_api_integration_backend(invocation_context, integration) L565
+get_target_resource_details(invocation_context) L893
+get_target_resource_method(invocation_context) L904
+get_stage_variables(api_id, stage) L915
+get_event_request_context(invocation_context) L924
+apply_request_response_templates(data, templates, content_type=None, as_json=False) L975
+is_test_invoke_method(method, path) L998
+
+localstack/services/apigateway/apigateway_starter.py
+apply_patches() L31
+apigateway_models_Stage_init(self, cacheClusterEnabled=False, cacheClusterSize=None, **kwargs) L32
+apigateway_models_backend_delete_method(self, function_id, resource_id, method_type) L48
+apigateway_models_resource_delete_integration(self, method_type) L55
+apigateway_models_Integration_init(self, integration_type, uri, http_method, request_templates=None, pass_through_behavior='WHEN_NO_MATCH', cache_key_parameters=[], *args, **kwargs) L61
+apigateway_models_backend_put_rest_api(self, function_id, body, query_params) L92
+apigateway_response_restapis_individual(self, request, full_url, headers) L98
+apigateway_response_resource_methods(self, request, *args, **kwargs) L146
+apigateway_response_integrations(self, request, *args, **kwargs) L171
+apigateway_response_integration_responses(self, request, *args, **kwargs) L211
+apigateway_response_resource_method_responses(self, request, *args, **kwargs) L231
+apigateway_response_usage_plan_individual(self, request, full_url, headers, *args, **kwargs) L252
+backend_update_deployment(self, function_id, deployment_id, patch_operations) L280
+backend_model_apply_operations(self, patch_operations) L289
+method_apply_operations(self, patch_operations) L318
+method_response_apply_operations(self, patch_operations) L336
+stage_apply_operations(self, patch_operations) L349
+cast_value(value, value_type) L370
+apigateway_models_resource_get_integration(self, method_type) L403
+apigateway_models_RestAPI_to_dict(self) L422
+apigateway_response_restapis(self, request, full_url, headers) L447
+individual_deployment(self, request, full_url, headers, *args, **kwargs) L462
+create_rest_api(self, *args, tags={}, **kwargs) L477
+start_apigateway(port=None, backend_port=None, asynchronous=None, update_listener=None) L511
+
+localstack/services/apigateway/helpers.py
+class APIGatewayRegion(RegionBackend) L53
+  __init__(self) L72
+
+make_json_response(message) L88
+make_error_response(message, code=400, error_type=None) L92
+make_accepted_response() L99
+get_api_id_from_path(path) L105
+get_account() L117
+update_account(data) L122
+handle_accounts(method, path, data, headers) L128
+get_authorizer_id_from_path(path) L141
+_find_authorizer(api_id, authorizer_id) L146
+normalize_authorizer(data) L150
+get_authorizers(path) L161
+add_authorizer(path, data) L185
+update_authorizer(path, data) L199
+delete_authorizer(path) L220
+handle_authorizers(method, path, data, headers) L235
+get_documentation_part_id_from_path(path) L252
+_find_documentation_part(api_id, documentation_part_id) L257
+get_documentation_parts(path) L261
+add_documentation_part(path, data) L285
+update_documentation_part(path, data) L298
+delete_documentation_part(path) L318
+handle_documentation_parts(method, path, data, headers) L333
+get_domain_from_path(path) L352
+get_base_path_from_path(path) L357
+get_base_path_mapping(path) L361
+add_base_path_mapping(path, data) L385
+update_base_path_mapping(path, data) L399
+delete_base_path_mapping(path) L429
+handle_base_path_mappings(method, path, data, headers) L447
+get_cert_id_from_path(path) L467
+get_client_certificate(path) L472
+add_client_certificate(path, data) L481
+update_client_certificate(path, data) L492
+delete_client_certificate(path) L502
+handle_client_certificates(method, path, data, headers) L511
+get_vpc_links(path) L530
+add_vpc_link(path, data) L544
+update_vpc_link(path, data) L553
+delete_vpc_link(path) L563
+get_vpc_link_id_from_path(path) L574
+handle_vpc_links(method, path, data, headers) L579
+get_validator_id_from_path(path) L596
+_find_validator(api_id, validator_id) L601
+get_validators(path) L608
+add_validator(path, data) L631
+update_validator(path, data) L644
+delete_validator(path) L667
+handle_validators(method, path, data, headers) L684
+gateway_response_to_response_json(item, api_id) L702
+get_gateway_responses(api_id) L717
+get_gateway_response(api_id, response_type) L743
+put_gateway_response(api_id, response_type, data) L755
+delete_gateway_response(api_id, response_type) L767
+update_gateway_response(api_id, response_type, data) L776
+handle_gateway_responses(method, path, data, headers) L790
+to_authorizer_response_json(api_id, data) L814
+to_validator_response_json(api_id, data) L818
+to_documentation_part_response_json(api_id, data) L822
+to_base_mapping_response_json(domain_name, base_path, data) L826
+to_account_response_json(data) L831
+to_vpc_link_response_json(data) L835
+to_client_cert_response_json(data) L839
+to_response_json(model_type, data, api_id=None, self_link=None, id_attr=None) L843
+find_api_subentity_by_id(api_id, entity_id, map_name) L864
+gateway_request_url(api_id, stage_name, path) L871
+tokenize_path(path) L880
+extract_path_params(path, extracted_path) L884
+extract_query_string_params(path) L903
+get_cors_response(headers) L920
+get_rest_api_paths(rest_api_id, region_name=None) L933
+get_resource_for_path(path, path_map) L947
+path_matches_pattern(path, api_path) L967
+connect_api_gateway_to_sqs(gateway_name, stage_name, queue_arn, path, region_name=None) L980
+apply_json_patch_safe(subject, patch_operations, in_place=True, return_list=False) L1016
+import_api_from_openapi_spec(rest_api, function_id, body, query_params) L1071
+get_or_create_path(path) L1079
+add_path(path, parts, parent_id='') L1095
+
+localstack/services/awslambda/lambda_api.py
+class LambdaRegion(RegionBackend) L137
+  __init__(self) L145
+
+class ClientError(Exception) L151
+  __init__(self, msg, code=400) L152
+  get_response(self) L157
+
+class EventSourceListener L163
+  get(cls, source_type) L167
+  source_type() L175
+  start(self) L179
+  process_event(self, event) L183
+  start_listeners(event_source_mapping) L188
+  process_event_via_listener(service_type, event) L203
+  _process(*args) L209
+
+class EventSourceListenerSQS(EventSourceListener) L216
+  source_type() L225
+  start(self) L228
+  get_matching_event_sources(self) L238
+  process_event(self, event) L241
+  _listener_loop(self, *args) L265
+  _process_messages_for_event_source(self, source, messages) L314
+  _send_event_to_lambda(self, queue_arn, queue_url, lambda_arn, messages, region) L329
+  delete_messages(result, func_arn, event, error=None, dlq_sent=None, **kwargs) L330
+
+cleanup() L386
+func_arn(function_name, remove_qualifier=True) L393
+func_qualifier(function_name, qualifier=None) L400
+check_batch_size_range(source_arn, batch_size=None) L411
+build_mapping_obj(data) L428
+format_timestamp(timestamp=None) L454
+format_timestamp_for_event_source_mapping() L459
+add_event_source(data) L464
+update_event_source(uuid_value, data) L472
+delete_event_source(uuid_value) L499
+use_docker() L508
+fix_proxy_path_params(path_params) L527
+message_attributes_to_lower(message_attrs) L535
+process_apigateway_invocation(func_arn, path, payload, stage, api_id, headers={}, is_base64_encoded=False, resource_path=None, method=None, path_params={}, query_string_params=None, stage_variables={}, request_context={}, event_context={}) L546
+construct_invocation_event(method, path, headers, data, query_string_params={}, is_base64_encoded=False) L593
+process_sns_notification(func_arn, topic_arn, subscription_arn, message, message_id, message_attributes, unsubscribe_url, subject='') L612
+process_kinesis_records(records, stream_name) L655
+chunks(lst, n) L656
+get_event_sources(func_name=None, source_arn=None) L705
+_arn_match(mapped, searched) L715
+get_function_version(arn, version) L734
+publish_new_function_version(arn) L740
+do_list_versions(arn) L761
+do_update_alias(arn, alias, version, description=None) L769
+run_lambda(func_arn, event, context={}, version=None, suppress_output=False, asynchronous=False, callback=None, lock_discriminator=None) L782
+load_source(name, file) L841
+exec_lambda_code(script, handler_function='handler', lambda_cwd=None, lambda_env=None) L845
+_do_exec_lambda_code() L849
+get_handler_function_from_name(handler_name, runtime=None) L899
+error_response(msg, code=500, error_type='InternalFailure') L906
+get_zip_bytes(function_code) L911
+get_java_handler(zip_file_content, main_file, lambda_function=None) L937
+execute(event, context) L951
+set_archive_code(code, lambda_name, zip_file_content=None) L968
+set_function_code(lambda_function) L1010
+_set_and_configure() L1011
+do_set_function_code(lambda_function) L1023
+generic_handler(*_) L1024
+execute(event, context) L1138
+execute_go(event, context) L1150
+do_list_functions() L1161
+format_func_details(lambda_function, version=None, always_add_version=False) L1188
+forward_to_fallback_url(func_arn, data) L1226
+get_lambda_policy(function, qualifier=None) L1263
+get_lambda_policy_name(resource_name, qualifier=None) L1296
+lookup_function(function, region, request_url) L1301
+not_found_error(ref=None, msg=None) L1313
+delete_lambda_function(function_name) L1324
+before_request() L1357
+create_function() L1365
+get_function(function) L1438
+list_functions() L1461
+delete_function(function) L1475
+update_function_code(function) L1489
+get_function_code(function) L1515
+get_function_configuration(function) L1536
+update_function_configuration(function) L1552
+generate_policy_statement(sid, action, arn, sourcearn, principal) L1605
+generate_policy(sid, action, arn, sourcearn, principal) L1627
+add_permission(function) L1639
+add_permission_policy_statement(resource_name, resource_arn, resource_arn_qualified, qualifier=None) L1647
+remove_permission(function, statement) L1706
+get_policy(function) L1722
+invoke_function(function) L1731
+_create_response(invocation_result, status_code=200, headers={}) L1769
+get_event_source_mappings() L1857
+get_event_source_mapping(mapping_uuid) L1878
+create_event_source_mapping() L1896
+update_event_source_mapping(mapping_uuid) L1914
+delete_event_source_mapping(mapping_uuid) L1935
+publish_version(function) L1948
+list_versions(function) L1957
+create_alias(function) L1966
+update_alias(function, name) L1985
+get_alias(function, name) L2000
+list_aliases(function) L2011
+delete_alias(function, name) L2022
+function_concurrency(version, function) L2035
+list_tags(version, arn) L2056
+tag_resource(version, arn) L2066
+untag_resource(version, arn) L2080
+put_function_event_invoke_config(function) L2092
+get_function_event_invoke_config(function) L2131
+delete_function_event_invoke_config(function) L2158
+get_function_code_signing_config(function) L2171
+put_function_code_signing_config(function) L2190
+delete_function_code_signing_config(function) L2217
+create_code_signing_config() L2232
+get_code_signing_config(arn) L2273
+delete_code_signing_config(arn) L2300
+update_code_signing_config(arn) L2312
+serve(port) L2357
+on_config_change(config_key, config_newvalue) L2370
+register_config_listener() L2386
+
+localstack/services/awslambda/lambda_executors.py
+class InvocationException(Exception) L106
+  __init__(self, message, log_output=None, result=None) L107
+
+class LambdaContext(object) L113
+  __init__(self, lambda_function, qualifier=None, context=None) L116
+  get_remaining_time_in_millis(self) L132
+
+class AdditionalInvocationOptions L137
+  __init__(self, files_to_add=None, env_updates=None, updated_command=None, updated_handler=None) L151
+
+class InvocationResult L164
+  __init__(self, result, log_output='') L165
+
+class InvocationContext L172
+  __init__(self, lambda_function, event, environment=None, context=None, lambda_command=None, docker_flags=None, function_version=None, invocation_type=None) L183
+
+class LambdaExecutorPlugin L205
+  initialize(self) L210
+  should_apply(self, context) L215
+  prepare_invocation(self, context) L219
+  process_result(self, context, result) L226
+  init_function_configuration(self, lambda_function) L232
+  init_function_code(self, lambda_function) L236
+  get_plugins(cls) L241
+
+class LambdaInvocationForwarderPlugin(LambdaExecutorPlugin) L248
+  should_apply(self, context) L251
+  prepare_invocation(self, context) L256
+  _forward_to_url(self, forward_url, lambda_function, event, context, invocation_type) L269
+  _forward_url(self, context) L324
+
+class LambdaAsyncLocks L343
+  __init__(self) L347
+  assure_lock_present(self, key, lock) L351
+
+class LambdaExecutor(object) L361
+  __init__(self) L364
+  _prepare_environment(self, lambda_function) L368
+  execute(self, func_arn, lambda_function, event, context=None, version=None, asynchronous=False, callback=None, lock_discriminator=None) L379
+  do_execute(*args) L393
+  _run(func_arn=None) L395
+  _execute(self, lambda_function, inv_context) L443
+  startup(self) L447
+  cleanup(self, arn=None) L451
+  provide_file_to_lambda(self, local_file, inv_context) L455
+  apply_plugin_patches(self, inv_context) L460
+  process_result_via_plugins(self, inv_context, invocation_result) L519
+
+class ContainerInfo L530
+  __init__(self, name, entry_point) L533
+
+class LambdaExecutorContainers(LambdaExecutor) L538
+  execute_in_container(self, lambda_function, inv_context, stdin=None, background=False) L541
+  run_lambda_executor(self, lambda_function, inv_context) L550
+  prepare_event(self, environment, event_body) L663
+  _execute(self, lambda_function, inv_context) L669
+  provide_file_to_lambda(self, local_file, inv_context) L730
+
+class LambdaExecutorReuseContainers(LambdaExecutorContainers) L744
+  __init__(self) L747
+  execute_in_container(self, lambda_function, inv_context, stdin=None, background=False) L760
+  invoke_lambda(self, lambda_function, inv_context, lambda_docker_ip=None) L817
+  _should_use_stay_open_mode(self, lambda_docker_ip, check_port=False) L849
+  _get_lambda_stay_open_url(self, lambda_docker_ip) L860
+  _execute(self, func_arn, *args, **kwargs) L863
+  startup(self) L870
+  cleanup(self, arn=None) L876
+  prime_docker_container(self, lambda_function, env_vars, lambda_cwd, docker_flags=None) L883
+  wait_up() L927
+  create_container(self, lambda_function, env_vars, lambda_cwd, docker_flags=None) L951
+  destroy_docker_container(self, func_arn) L1009
+  get_all_container_names(self) L1032
+  destroy_existing_docker_containers(self) L1046
+  get_docker_container_status(self, func_arn) L1058
+  get_docker_container_network(self, func_arn) L1074
+  idle_container_destroyer(self) L1093
+  start_idle_container_destroyer_interval(self) L1111
+  get_container_prefix(self) L1120
+  get_container_name(self, func_arn) L1127
+
+class LambdaExecutorSeparateContainers(LambdaExecutorContainers) L1136
+  __init__(self) L1137
+  prepare_event(self, environment, event_body) L1142
+  execute_in_container(self, lambda_function, inv_context, stdin=None, background=False) L1147
+
+class LambdaExecutorLocal(LambdaExecutor) L1216
+  _execute_in_custom_runtime(self, cmd, lambda_function=None) L1217
+  _execute(self, lambda_function, inv_context) L1274
+  do_execute() L1300
+  provide_file_to_lambda(self, local_file, inv_context) L1369
+  execute_java_lambda(self, event, context, main_file, lambda_function=None) L1373
+  execute_javascript_lambda(self, event, context, main_file, lambda_function=None) L1414
+  set_default_env_variables() L1437
+  reset_default_env_variables(env_vars_before) L1445
+  execute_go_lambda(self, event, context, main_file, lambda_function=None) L1452
+
+class Util L1466
+  get_java_opts(cls) L1470
+  get_host_path_for_path_in_docker(cls, path) L1486
+  format_windows_path(cls, path) L1490
+  docker_image_for_lambda(cls, lambda_function) L1498
+  get_java_classpath(cls, archive) L1515
+  mountable_tmp_file() L1542
+  inject_endpoints_into_env(env_vars) L1548
+
+handle_error(lambda_function, event, error, asynchronous=False) L329
+
+localstack/services/awslambda/lambda_starter.py
+start_lambda(port=None, asynchronous=False) L8
+stop_lambda() L18
+check_lambda(expect_shutdown=False, print_error=False) L28
+
+localstack/services/awslambda/lambda_utils.py
+multi_value_dict_for_list(elements) L57
+get_lambda_runtime(runtime_details) L70
+is_provided_runtime(runtime_details) L79
+get_handler_file_from_name(handler_name, runtime=None) L85
+is_java_lambda(lambda_details) L105
+is_nodejs_runtime(lambda_details) L110
+is_python_runtime(lambda_details) L115
+store_lambda_logs(lambda_function, log_output, invocation_time=None, container_id=None) L120
+get_main_endpoint_from_container() L135
+rm_docker_container(container_name_or_id, check_existence=False, safe=False) L154
+get_record_from_event(event, key) L168
+
+localstack/services/cloudformation/cloudformation_api.py
+class StackSet(object) L41
+  __init__(self, metadata={}) L44
+  stack_set_name(self) L52
+
+class StackInstance(object) L56
+  __init__(self, metadata={}) L59
+
+class Stack(object) L65
+  __init__(self, metadata=None, template=None) L66
+  describe_details(self) L106
+  set_stack_status(self, status) L130
+  add_stack_event(self, resource_id, physical_res_id, status) L137
+  set_resource_status(self, resource_id, status, physical_res_id=None) L150
+  _set_resource_status_details(self, resource_id, physical_res_id=None) L159
+  resource_status(self, resource_id) L179
+  resource_states(self) L184
+  stack_name(self) L190
+  stack_id(self) L194
+  resources(self) L199
+  add_params(defaults=True) L203
+  template_resources(self) L242
+  tags(self) L246
+  imports(self) L250
+  _collect(o, **kwargs) L251
+  outputs(self) L263
+  stack_parameters(self, defaults=True) L292
+  template_parameters(self) L329
+  conditions(self) L333
+  mappings(self) L337
+  exports_map(self) L341
+  nested_stacks(self) L348
+  status(self) L358
+  resource_types(self) L362
+  resource(self, resource_id) L365
+  _lookup(self, resource_map, resource_id) L368
+  copy(self) L377
+
+class StackChangeSet(Stack) L381
+  __init__(self, params=None, template=None) L382
+  change_set_id(self) L400
+  change_set_name(self) L404
+  resources(self) L408
+  changes(self) L414
+
+class CloudFormationRegion(RegionBackend) L419
+  __init__(self) L420
+  exports(self) L427
+
+create_stack(req_params) L456
+create_stack_set(req_params) L492
+create_stack_instances(req_params) L502
+delete_stack(req_params) L555
+delete_stack_set(req_params) L563
+update_stack(req_params) L575
+update_stack_set(req_params) L595
+describe_stacks(req_params) L614
+list_stacks(req_params) L631
+describe_stack_resource(req_params) L660
+describe_stack_resources(req_params) L671
+list_stack_resources(req_params) L689
+list_stack_instances(req_params) L697
+create_change_set(req_params) L712
+execute_change_set(req_params) L796
+list_change_sets(req_params) L814
+list_stack_sets(req_params) L824
+describe_change_set(req_params) L831
+describe_stack_set(req_params) L842
+describe_stack_set_operation(req_params) L854
+list_exports(req_params) L875
+list_imports(req_params) L881
+validate_template(req_params) L892
+describe_stack_events(req_params) L902
+delete_change_set(req_params) L912
+get_template(req_params) L926
+get_template_summary(req_params) L938
+serve(port, quiet=True) L968
+handle_request() L975
+error_response(msg, code, code_string, xmlns=XMLNS_CF) L1026
+error_response(*args, **kwargs) L1030
+not_found_error(message, error_type=None) L1035
+stack_not_found_error(stack_name, error_type=None) L1040
+clone_stack_params(stack_params) L1045
+find_stack(stack_name) L1053
+find_change_set(cs_name, stack_name=None) L1060
+_response(action, result) L1073
+_get_status_filter_members(req_params) L1081
+
+localstack/services/cloudformation/cloudformation_starter.py
+get_entity_id(entity, resource_json=None) L23
+update_physical_resource_id(resource) L57
+start_cloudformation(port=None, asynchronous=False) L104
+
+localstack/services/cloudformation/deployment_utils.py
+dump_json_params(param_func=None, *param_names) L20
+replace(params, **kwargs) L21
+param_defaults(param_func, defaults) L34
+replace(params, **kwargs) L35
+remove_none_values(params) L45
+remove_nones(o, **kwargs) L48
+params_list_to_dict(param_name, key_attr_name='Key', value_attr_name='Value') L62
+do_replace(params, **kwargs) L63
+lambda_keys_to_lower(key=None) L74
+merge_parameters(func1, func2) L78
+str_or_none(o) L84
+params_dict_to_list(param_name, key_attr_name='Key', value_attr_name='Value', wrapper=None) L88
+do_replace(params, **kwargs) L89
+params_select_attributes(*attrs) L100
+do_select(params, **kwargs) L101
+param_json_to_str(name) L111
+_convert(params, **kwargs) L112
+get_cfn_response_mod_file() L121
+lambda_select_params(*selected) L128
+select_parameters(*param_names) L133
+is_none_or_empty_value(value) L137
+generate_default_name(stack_name, logical_resource_id) L141
+generate_default_name_without_stack(logical_resource_id) L148
+pre_create_default_name(key) L154
+_pre_create_default_name(resource_id, resources, resource_type, func, stack_name) L155
+
+localstack/services/cloudformation/models/apigateway.py
+class GatewayResponse(GenericBaseModel) L14
+  cloudformation_type() L16
+  fetch_state(self, stack_name, resources) L19
+  get_deploy_templates() L29
+
+class GatewayRequestValidator(GenericBaseModel) L44
+  cloudformation_type() L46
+  get_physical_resource_id(self, attribute=None, **kwargs) L49
+  fetch_state(self, stack_name, resources) L52
+  add_defaults(resource, stack_name) L62
+  get_deploy_templates() L70
+
+class GatewayRestAPI(GenericBaseModel) L88
+  cloudformation_type() L90
+  get_physical_resource_id(self, attribute=None, **kwargs) L93
+  fetch_state(self, stack_name, resources) L96
+  add_defaults(resource, stack_name) L104
+  get_deploy_templates(cls) L112
+  _api_id(params, resources, resource_id, **kwargs) L113
+  _create(resource_id, resources, resource_type, func, stack_name) L117
+
+class GatewayDeployment(GenericBaseModel) L141
+  cloudformation_type() L143
+  fetch_state(self, stack_name, resources) L146
+  get_physical_resource_id(self, attribute=None, **kwargs) L159
+  get_deploy_templates() L163
+
+class GatewayResource(GenericBaseModel) L177
+  cloudformation_type() L179
+  fetch_state(self, stack_name, resources) L182
+  get_deploy_templates() L212
+  get_apigw_resource_params(params, **kwargs) L213
+
+class GatewayMethod(GenericBaseModel) L239
+  cloudformation_type() L241
+  fetch_state(self, stack_name, resources) L244
+  update_resource(self, new_resource, stack_name, resources) L273
+  get_physical_resource_id(self, attribute=None, **kwargs) L295
+  get_deploy_templates(cls) L305
+  _subresources(resource_id, resources, resource_type, func, stack_name) L313
+
+class GatewayStage(GenericBaseModel) L398
+  cloudformation_type() L400
+  fetch_state(self, stack_name, resources) L403
+  get_physical_resource_id(self, attribute=None, **kwargs) L413
+  get_deploy_templates() L417
+  get_params(resource_props, stack_name, resources, resource_id) L418
+
+class GatewayUsagePlan(GenericBaseModel) L447
+  cloudformation_type() L449
+  fetch_state(self, stack_name, resources) L452
+  add_defaults(resource, stack_name) L460
+  get_deploy_templates() L468
+  get_physical_resource_id(self, attribute=None, **kwargs) L483
+
+class GatewayApiKey(GenericBaseModel) L487
+  cloudformation_type() L489
+  fetch_state(self, stack_name, resources) L492
+  add_defaults(resource, stack_name) L505
+  get_deploy_templates() L513
+  get_physical_resource_id(self, attribute=None, **kwargs) L530
+
+class GatewayUsagePlanKey(GenericBaseModel) L534
+  cloudformation_type() L536
+  fetch_state(self, stack_name, resources) L539
+  get_deploy_templates() L551
+  get_physical_resource_id(self, attribute=None, **kwargs) L559
+
+class GatewayDomain(GenericBaseModel) L564
+  cloudformation_type() L566
+  fetch_state(self, stack_name, resources) L569
+  get_deploy_templates() L575
+  get_physical_resource_id(self, attribute=None, **kwargs) L583
+
+class GatewayBasePathMapping(GenericBaseModel) L588
+  cloudformation_type() L590
+  fetch_state(self, stack_name, resources) L593
+  get_deploy_templates(cls) L607
+  _create_base_path_mapping(resource_id, resources, *args, **kwargs) L608
+  get_physical_resource_id(self, attribute=None, **kwargs) L623
+
+class GatewayModel(GenericBaseModel) L627
+  cloudformation_type() L629
+  fetch_state(self, stack_name, resources) L632
+  add_defaults(resource, stack_name) L648
+  get_deploy_templates() L656
+
+class GatewayAccount(GenericBaseModel) L669
+  cloudformation_type() L671
+  get_deploy_templates() L675
+
+localstack/services/cloudformation/models/awslambda.py
+class LambdaFunction(GenericBaseModel) L26
+  cloudformation_type() L28
+  fetch_state(self, stack_name, resources) L31
+  get_physical_resource_id(self, attribute=None, **kwargs) L35
+  update_resource(self, new_resource, stack_name, resources) L41
+  add_defaults(resource, stack_name) L75
+  get_lambda_code_param(params, **kwargs) L83
+  get_deploy_templates() L109
+  get_delete_params(params, **kwargs) L110
+  get_environment_params(params, **kwargs) L113
+
+class LambdaFunctionVersion(GenericBaseModel) L143
+  cloudformation_type() L145
+  fetch_state(self, stack_name, resources) L148
+  get_deploy_templates() L160
+
+class LambdaEventSourceMapping(GenericBaseModel) L169
+  cloudformation_type() L171
+  fetch_state(self, stack_name, resources) L174
+  _matches(m) L183
+  get_cfn_attribute(self, attribute_name) L198
+  get_physical_resource_id(self, attribute=None, **kwargs) L203
+  get_deploy_templates() L207
+
+class LambdaPermission(GenericBaseModel) L211
+  cloudformation_type() L213
+  fetch_state(self, stack_name, resources) L216
+  do_fetch_state(self, resource_name, resource_arn) L222
+  get_physical_resource_id(self, attribute=None, **kwargs) L245
+  get_deploy_templates() L250
+  lambda_permission_params(params, **kwargs) L251
+
+class LambdaEventInvokeConfig(GenericBaseModel) L264
+  cloudformation_type() L266
+  fetch_state(self, stack_name, resources) L269
+  get_physical_resource_id(self, attribute=None, **kwargs) L278
+  get_deploy_templates() L286
+
+localstack/services/cloudformation/models/certificatemanager.py
+class CertificateManagerCertificate(GenericBaseModel) L6
+  cloudformation_type() L8
+  fetch_state(self, stack_name, resources) L11
+  get_physical_resource_id(self, attribute=None, **kwargs) L20
+  get_deploy_templates(cls) L24
+  _create_params(params, *args, **kwargs) L25
+
+localstack/services/cloudformation/models/cloudformation.py
+class CloudFormationStack(GenericBaseModel) L6
+  cloudformation_type() L8
+  get_physical_resource_id(self, attribute=None, **kwargs) L11
+  fetch_state(self, stack_name, resources) L14
+  add_defaults(resource, stack_name) L23
+  get_deploy_templates(cls) L31
+  get_nested_stack_params(params, **kwargs) L32
+
+localstack/services/cloudformation/models/cloudwatch.py
+class CloudWatchAlarm(GenericBaseModel) L6
+  cloudformation_type() L8
+  get_physical_resource_id(self, attribute=None, **kwargs) L11
+  _response_name(self) L14
+  _create_function_name(self) L18
+  fetch_state(self, stack_name, resources) L21
+  add_defaults(resource, stack_name) L28
+  get_deploy_templates(cls) L36
+  get_delete_params(params, **kwargs) L37
+
+class CloudWatchCompositeAlarm(CloudWatchAlarm) L46
+  cloudformation_type() L48
+  _response_name(self) L51
+  _create_function_name(self) L55
+
+localstack/services/cloudformation/models/dynamodb.py
+class DynamoDBTable(GenericBaseModel) L51
+  cloudformation_type() L53
+  get_physical_resource_id(self, attribute=None, **kwargs) L56
+  fetch_state(self, stack_name, resources) L62
+  get_deploy_templates(cls) L68
+  _pre_create(resource_id, resources, resource_type, func, stack_name) L69
+  _generate_res_name() L73
+
+get_ddb_provisioned_throughput(params, **kwargs) L8
+get_ddb_global_sec_indexes(params, **kwargs) L20
+get_ddb_kinesis_stream_specification(params, **kwargs) L44
+
+localstack/services/cloudformation/models/ec2.py
+class EC2RouteTable(GenericBaseModel) L8
+  cloudformation_type() L10
+  fetch_state(self, stack_name, resources) L13
+  get_physical_resource_id(self, attribute=None, **kwargs) L27
+  get_deploy_templates() L31
+
+class EC2Route(GenericBaseModel) L49
+  cloudformation_type() L51
+  fetch_state(self, stack_name, resources) L54
+  get_physical_resource_id(self, attribute=None, **kwargs) L76
+  get_deploy_templates() L85
+
+class EC2InternetGateway(GenericBaseModel) L106
+  cloudformation_type() L108
+  fetch_state(self, stack_name, resources) L111
+  get_physical_resource_id(self, attribute=None, **kwargs) L118
+  get_deploy_templates() L122
+  _create_params(params, **kwargs) L123
+
+class EC2SubnetRouteTableAssociation(GenericBaseModel) L138
+  cloudformation_type() L140
+  fetch_state(self, stack_name, resources) L143
+  get_physical_resource_id(self, attribute=None, **kwargs) L158
+  get_deploy_templates() L162
+
+class EC2VPCGatewayAttachment(GenericBaseModel) L179
+  cloudformation_type() L181
+  fetch_state(self, stack_name, resources) L184
+  get_physical_resource_id(self, attribute=None, **kwargs) L204
+  get_deploy_templates(cls) L213
+  _attach_gateway(resource_id, resources, *args, **kwargs) L214
+
+class SecurityGroup(GenericBaseModel) L229
+  cloudformation_type() L231
+  fetch_state(self, stack_name, resources) L234
+  get_physical_resource_id(self, attribute=None, **kwargs) L245
+  add_defaults(resource, stack_name) L253
+  get_deploy_templates() L261
+
+class EC2Subnet(GenericBaseModel) L278
+  cloudformation_type() L280
+  fetch_state(self, stack_name, resources) L283
+  get_physical_resource_id(self, attribute=None, **kwargs) L293
+  get_deploy_templates() L297
+
+class EC2VPC(GenericBaseModel) L317
+  cloudformation_type() L319
+  fetch_state(self, stack_name, resources) L322
+  get_deploy_templates(cls) L328
+  _pre_delete(resource_id, resources, resource_type, func, stack_name) L329
+  get_physical_resource_id(self, attribute=None, **kwargs) L365
+
+class EC2NatGateway(GenericBaseModel) L369
+  cloudformation_type() L371
+  fetch_state(self, stack_name, resources) L374
+  get_deploy_templates() L391
+  get_physical_resource_id(self, attribute=None, **kwargs) L407
+
+class EC2Instance(GenericBaseModel) L411
+  cloudformation_type() L413
+  fetch_state(self, stack_name, resources) L416
+  update_resource(self, new_resource, stack_name, resources) L422
+  _get_state(self, client=None) L435
+  get_physical_resource_id(self, attribute=None, **kwargs) L443
+  get_cfn_attribute(self, attribute_name) L446
+  get_deploy_templates() L461
+
+localstack/services/cloudformation/models/elasticsearch.py
+class ElasticsearchDomain(GenericBaseModel) L12
+  cloudformation_type() L14
+  get_physical_resource_id(self, attribute=None, **kwargs) L17
+  fetch_state(self, stack_name, resources) L23
+  _domain_name(self) L30
+  get_deploy_templates() L34
+
+es_add_tags_params(params, **kwargs) L6
+
+localstack/services/cloudformation/models/events.py
+class EventConnection(GenericBaseModel) L18
+  cloudformation_type() L20
+  fetch_state(self, stack_name, resources) L23
+  get_cfn_attribute(self, attribute_name) L28
+  get_deploy_templates(cls) L38
+
+class EventBus(GenericBaseModel) L45
+  cloudformation_type() L47
+  fetch_state(self, stack_name, resources) L50
+  get_cfn_attribute(self, attribute_name) L57
+  get_deploy_templates(cls) L66
+
+class EventsRule(GenericBaseModel) L73
+  cloudformation_type() L75
+  get_cfn_attribute(self, attribute_name) L78
+  get_physical_resource_id(self, attribute=None, **kwargs) L83
+  fetch_state(self, stack_name, resources) L86
+  add_defaults(resource, stack_name) L92
+  get_deploy_templates(cls) L100
+  events_put_rule_params(params, **kwargs) L101
+  wrap_in_lists(o, **kwargs) L113
+
+class EventBusPolicy(GenericBaseModel) L149
+  cloudformation_type(cls) L151
+  get_deploy_templates(cls) L155
+  _create(resource_id, resources, resource_type, func, stack_name) L156
+  _delete(resource_id, resources, resource_type, func, stack_name) L193
+
+localstack/services/cloudformation/models/iam.py
+class IAMManagedPolicy(GenericBaseModel) L23
+  cloudformation_type() L25
+  get_physical_resource_id(self, attribute=None, **kwargs) L28
+  fetch_state(self, stack_name, resources) L31
+  add_defaults(resource, stack_name) L35
+  get_deploy_templates(cls) L43
+  _create(resource_id, resources, resource_type, func, stack_name, *args, **kwargs) L44
+
+class IAMUser(GenericBaseModel) L65
+  cloudformation_type() L67
+  get_physical_resource_id(self, attribute=None, **kwargs) L70
+  get_resource_name(self) L73
+  fetch_state(self, stack_name, resources) L76
+  update_resource(self, new_resource, stack_name, resources) L80
+  get_deploy_templates() L90
+  _post_create(resource_id, resources, resource_type, func, stack_name) L91
+  _pre_delete(resource_id, resources, resource_type, func, stack_name) L116
+
+class IAMRole(GenericBaseModel, MotoRole) L159
+  cloudformation_type() L161
+  get_resource_name(self) L164
+  fetch_state(self, stack_name, resources) L167
+  update_resource(self, new_resource, stack_name, resources) L171
+  add_defaults(resource, stack_name) L207
+  _post_create(resource_id, resources, resource_type, func, stack_name) L215
+  _pre_delete(resource_id, resources, resource_type, func, stack_name) L257
+  get_deploy_templates(cls) L290
+
+class IAMPolicy(GenericBaseModel) L321
+  cloudformation_type() L323
+  fetch_state(self, stack_name, resources) L326
+  get_deploy_templates(cls) L330
+  _create(resource_id, resources, resource_type, func, stack_name, *args, **kwargs) L331
+  get_policy_state(obj, stack_name, resources, managed_policy=False) L353
+  _filter(pols) L354
+
+class InstanceProfile(GenericBaseModel) L394
+  cloudformation_type() L396
+  fetch_state(self, stack_name, resources) L399
+  get_physical_resource_id(self, attribute=None, **kwargs) L407
+  add_defaults(resource, stack_name) L411
+  get_deploy_templates() L419
+  _add_roles(resource_id, resources, resource_type, func, stack_name) L420
+  _pre_delete(resource_id, resources, resource_type, func, stack_name) L433
+
+class IAMGroup(GenericBaseModel) L469
+  cloudformation_type() L471
+  get_physical_resource_id(self, attribute=None, **kwargs) L474
+  get_resource_name(self) L477
+  fetch_state(self, stack_name, resources) L480
+  update_resource(self, new_resource, stack_name, resources) L486
+  get_deploy_templates() L495
+  _post_create(resource_id, resources, resource_type, func, stack_name) L496
+  _pre_delete(resource_id, resources, resource_type, func, stack_name) L513
+
+localstack/services/cloudformation/models/kinesis.py
+class KinesisStreamConsumer(GenericBaseModel) L5
+  cloudformation_type() L7
+  get_physical_resource_id(self, attribute=None, **kwargs) L10
+  fetch_state(self, stack_name, resources) L13
+  get_deploy_templates() L21
+
+class KinesisStream(GenericBaseModel) L28
+  cloudformation_type() L30
+  get_physical_resource_id(self, attribute=None, **kwargs) L33
+  fetch_state(self, stack_name, resources) L36
+  get_deploy_templates() L42
+  get_delete_params(params, **kwargs) L43
+
+localstack/services/cloudformation/models/kinesisfirehose.py
+class FirehoseDeliveryStream(GenericBaseModel) L6
+  cloudformation_type() L8
+  fetch_state(self, stack_name, resources) L11
+  get_deploy_templates() L19
+
+localstack/services/cloudformation/models/kms.py
+class KMSKey(GenericBaseModel) L8
+  cloudformation_type() L10
+  fetch_state(self, stack_name, resources) L13
+  get_physical_resource_id(self, attribute=None, **kwargs) L38
+  add_defaults(resource, stack_name) L45
+  get_deploy_templates(cls) L54
+  _create(resource_id, resources, resource_type, func, stack_name) L55
+
+class KMSAlias(GenericBaseModel) L102
+  cloudformation_type() L104
+  fetch_state(self, stack_name, resources) L107
+  get_deploy_templates() L117
+
+localstack/services/cloudformation/models/logs.py
+class LogsLogGroup(GenericBaseModel) L6
+  cloudformation_type() L8
+  get_cfn_attribute(self, attribute_name) L11
+  get_physical_resource_id(self, attribute=None, **kwargs) L17
+  fetch_state(self, stack_name, resources) L22
+  add_defaults(resource, stack_name) L30
+  get_deploy_templates() L38
+
+class LogsLogStream(GenericBaseModel) L51
+  cloudformation_type() L53
+  get_cfn_attribute(self, attribute_name) L56
+  get_physical_resource_id(self, attribute=None, **kwargs) L59
+  fetch_state(self, stack_name, resources) L62
+  add_defaults(resource, stack_name) L73
+  get_deploy_templates() L81
+
+class LogsSubscriptionFilter(GenericBaseModel) L94
+  cloudformation_type() L96
+  get_physical_resource_id(self, attribute=None, **kwargs) L99
+  fetch_state(self, stack_name, resources) L102
+  get_deploy_templates() L114
+
+localstack/services/cloudformation/models/redshift.py
+class RedshiftCluster(GenericBaseModel) L6
+  cloudformation_type() L8
+  get_physical_resource_id(self, attribute=None, **kwargs) L11
+  fetch_state(self, stack_name, resources) L14
+  add_defaults(resource, stack_name) L23
+  get_deploy_templates() L31
+
+localstack/services/cloudformation/models/resourcegroups.py
+class ResourceGroupsGroup(GenericBaseModel) L6
+  cloudformation_type() L8
+  fetch_state(self, stack_name, resources) L11
+  get_physical_resource_id(self, attribute=None, **kwargs) L17
+  get_deploy_templates(cls) L23
+
+localstack/services/cloudformation/models/route53.py
+class Route53RecordSet(GenericBaseModel) L6
+  cloudformation_type() L8
+  get_physical_resource_id(self, attribute=None, **kwargs) L11
+  fetch_state(self, stack_name, resources) L14
+  get_deploy_templates() L24
+  param_change_batch(params, **kwargs) L25
+
+localstack/services/cloudformation/models/s3.py
+class S3BucketPolicy(GenericBaseModel) L20
+  cloudformation_type() L22
+  get_physical_resource_id(self, attribute=None, **kwargs) L25
+  fetch_state(self, stack_name, resources) L29
+  get_deploy_templates() L35
+
+class S3Bucket(GenericBaseModel, FakeBucket) L48
+  get_resource_name(self) L49
+  normalize_bucket_name(bucket_name) L53
+  add_defaults(resource, stack_name) L57
+  get_deploy_templates(cls) L65
+  convert_acl_cf_to_s3(acl) L66
+  s3_bucket_notification_config(params, **kwargs) L70
+  get_bucket_location_config(**kwargs) L113
+  _pre_delete(resource_id, resources, resource_type, func, stack_name) L119
+  _add_bucket_tags(resource_id, resources, resource_type, func, stack_name) L136
+  fetch_state(self, stack_name, resources) L170
+  get_cfn_attribute(self, attribute_name) L190
+  _get_bucket_name(self) L196
+
+localstack/services/cloudformation/models/secretsmanager.py
+class SecretsManagerSecret(GenericBaseModel) L18
+  cloudformation_type() L20
+  get_physical_resource_id(self, attribute, **kwargs) L23
+  get_cfn_attribute(self, attribute_name) L26
+  fetch_state(self, stack_name, resources) L31
+  generate_secret_value(length, excl_lower, excl_upper, excl_chars, excl_numbers, excl_punct, incl_spaces, req_each) L40
+  add_defaults(resource, stack_name) L77
+  get_deploy_templates(cls) L85
+  _create_params(params, **kwargs) L86
+
+class SecretsManagerSecretTargetAttachment(GenericBaseModel) L127
+  cloudformation_type() L129
+  get_physical_resource_id(self, attribute, **kwargs) L132
+  fetch_state(self, stack_name, resources) L135
+
+class SecretsManagerRotationSchedule(GenericBaseModel) L140
+  cloudformation_type() L142
+  get_physical_resource_id(self, attribute, **kwargs) L145
+  fetch_state(self, stack_name, resources) L148
+
+class SecretsManagerResourcePolicy(GenericBaseModel) L153
+  cloudformation_type() L155
+  get_physical_resource_id(self, attribute, **kwargs) L158
+  fetch_state(self, stack_name, resources) L161
+  get_deploy_templates() L169
+  create_params(params, **kwargs) L170
+
+localstack/services/cloudformation/models/sns.py
+class SNSTopic(GenericBaseModel) L18
+  cloudformation_type() L20
+  get_physical_resource_id(self, attribute=None, **kwargs) L23
+  fetch_state(self, stack_name, resources) L26
+  add_defaults(resource, stack_name) L38
+  get_deploy_templates(cls) L46
+  _create_params(params, *args, **kwargs) L47
+  _topic_arn(params, resources, resource_id, **kwargs) L66
+  _add_topics(resource_id, resources, resource_type, func, stack_name) L70
+
+class SNSSubscription(GenericBaseModel) L100
+  cloudformation_type() L102
+  get_physical_resource_id(self, attribute=None, **kwargs) L105
+  fetch_state(self, stack_name, resources) L108
+  get_deploy_templates() L124
+  sns_subscription_arn(params, resources, resource_id, **kwargs) L125
+  sns_subscription_params(params, **kwargs) L129
+  attr_val(val) L130
+
+retrieve_topic_arn(sns_client, topic_name) L12
+
+localstack/services/cloudformation/models/sqs.py
+class QueuePolicy(GenericBaseModel) L23
+  cloudformation_type(cls) L25
+  get_deploy_templates(cls) L29
+  _create(resource_id, resources, resource_type, func, stack_name) L30
+  _delete(resource_id, resources, *args, **kwargs) L46
+
+class SQSQueue(GenericBaseModel, MotoQueue) L66
+  cloudformation_type(cls) L68
+  get_resource_name(self) L71
+  get_physical_resource_id(self, attribute=None, **kwargs) L74
+  fetch_state(self, stack_name, resources) L88
+  add_defaults(resource, stack_name) L109
+  get_deploy_templates(cls) L117
+  _queue_url(params, resources, resource_id, **kwargs) L118
+
+localstack/services/cloudformation/models/ssm.py
+class SSMParameter(GenericBaseModel) L11
+  cloudformation_type() L13
+  get_physical_resource_id(self, attribute=None, **kwargs) L16
+  fetch_state(self, stack_name, resources) L19
+  add_defaults(resource, stack_name) L25
+  get_deploy_templates() L31
+
+localstack/services/cloudformation/models/stepfunctions.py
+class SFNActivity(GenericBaseModel) L12
+  cloudformation_type() L14
+  fetch_state(self, stack_name, resources) L17
+  get_deploy_templates() L26
+
+class SFNStateMachine(GenericBaseModel) L39
+  cloudformation_type() L41
+  get_resource_name(self) L44
+  get_physical_resource_id(self, attribute=None, **kwargs) L47
+  fetch_state(self, stack_name, resources) L50
+  update_resource(self, new_resource, stack_name, resources) L61
+  add_defaults(resource, stack_name) L75
+  get_deploy_templates(cls) L83
+  _create_params(params, **kwargs) L84
+  _get_definition(params) L85
+
+_apply_substitutions(definition, substitutions) L111
+
+localstack/services/cloudformation/service_models.py
+class DependencyNotYetSatisfied(Exception) L21
+  __init__(self, resource_ids, message=None) L24
+
+class GenericBaseModel(CloudFormationModel) L31
+  __init__(self, resource_json, region_name=None, **params) L41
+  get_resource_name(self) L57
+  get_physical_resource_id(self, attribute=None, **kwargs) L61
+  fetch_state(self, stack_name, resources) L66
+  update_resource(self, new_resource, stack_name, resources) L71
+  cloudformation_type(cls) L78
+  get_deploy_templates() L83
+  add_defaults(resource, stack_name) L89
+  get_cfn_attribute(self, attribute_name) L97
+  fetch_and_update_state(self, *args, **kwargs) L115
+  fetch_state_if_missing(self, *args, **kwargs) L128
+  set_resource_state(self, state) L133
+  update_state(self, details) L137
+  physical_resource_id(self) L144
+  logical_resource_id(self) L149
+  props(self) L154
+  resource_id(self) L162
+  update_from_cloudformation_json(cls, original_resource, new_resource_name, cloudformation_json, region_name) L167
+  create_from_cloudformation_json(cls, resource_name, resource_json, region_name) L181
+  resolve_refs_recursively(cls, stack_name, value, resources) L189
+
+localstack/services/cloudwatch/cloudwatch_listener.py
+class ProxyListenerCloudWatch(ProxyListener) L16
+  forward_request(self, method, path, data, headers) L17
+  return_response(self, method, path, data, headers, response) L50
+  fix_date_format(self, response, timestamp_tag, pattern, replacement) L84
+
+localstack/services/cloudwatch/cloudwatch_starter.py
+apply_patches() L7
+put_composite_alarm(self) L19
+start_cloudwatch(port=None, asynchronous=False, update_listener=None) L26
+
+localstack/services/configservice/configservice_starter.py
+start_configservice(port=None, asynchronous=False) L4
+
+localstack/services/dynamodb/dynamodb_listener.py
+class DynamoDBRegion(RegionBackend) L60
+  __init__(self) L66
+
+class ProxyListenerDynamoDB(ProxyListener) L73
+  __init__(self) L76
+  table_exists(ddb_client, table_name) L80
+  action_should_throttle(self, action, actions) L83
+  should_throttle(self, action) L87
+  forward_request(self, method, path, data, headers) L104
+  return_response(self, method, path, data, headers, response) L320
+  prepare_request_headers(self, headers) L611
+  _replace(regex, replace) L612
+  prepare_batch_write_item_records(self, record, data) L626
+  prepare_transact_write_item_records(self, record, data) L687
+  prepare_records_to_forward_to_ddb_stream(self, records) L758
+  delete_all_event_source_mappings(self, table_arn) L775
+  _thread_local(name, default=None) L788
+
+get_sse_kms_managed_key() L795
+get_sse_description(data) L810
+handle_special_request(method, path, data, headers) L825
+create_global_table(data) L836
+describe_global_table(data) L851
+list_global_tables(data) L862
+update_global_table(data) L871
+is_index_query_valid(table_name, index_query_type) L902
+has_event_sources_or_streams_enabled(table_name, cache={}) L911
+get_table_schema(table_name) L937
+find_existing_item(put_item, table_name=None) L947
+get_error_message(message, error_type) L984
+get_table_not_found_error() L990
+fix_headers_for_updated_response(response) L997
+update_response_content(response, content, status_code=None) L1002
+update_put_item_response_content(data, response_content) L1009
+calculate_crc32(response) L1018
+create_dynamodb_stream(data, latest_stream_label) L1022
+forward_to_lambda(records) L1038
+forward_to_ddb_stream(records) L1053
+forward_to_kinesis_stream(records) L1057
+dynamodb_extract_keys(item, table_name) L1081
+dynamodb_get_table_stream_specification(table_name) L1101
+is_kinesis_stream_exists(stream_arn) L1112
+dynamodb_enable_kinesis_streaming_destination(data, table_def) L1126
+dynamodb_disable_kinesis_streaming_destination(data, table_def) L1167
+error_response(message=None, error_type=None, code=400) L1192
+error_response_throughput() L1206
+
+localstack/services/dynamodb/dynamodb_starter.py
+check_dynamodb(expect_shutdown=False, print_error=False) L15
+start_dynamodb(port=None, asynchronous=True, update_listener=None) L33
+restart_dynamodb() L50
+
+localstack/services/dynamodb/server.py
+class DynamodbServer(Server) L16
+  __init__(self, port, host='localhost') L25
+  in_memory(self) L37
+  jar_path(self) L41
+  library_path(self) L45
+  _create_shell_command(self) L48
+  do_start_thread(self) L72
+  _log_listener(self, line, **_kwargs) L87
+
+create_dynamodb_server(port=None) L91
+
+localstack/services/dynamodbstreams/dynamodbstreams_api.py
+class DynamoDBStreamsBackend(RegionBackend) L21
+  __init__(self) L26
+
+add_dynamodb_stream(table_name, latest_stream_label=None, view_type='NEW_AND_OLD_IMAGES', enabled=True) L30
+get_stream_for_table(table_arn) L58
+forward_events(records) L64
+delete_streams(table_arn) L81
+post_request() L96
+error_response(message=None, error_type=None, code=400) L165
+get_kinesis_stream_name(table_name) L176
+table_name_from_stream_arn(stream_arn) L180
+table_name_from_table_arn(table_arn) L184
+stream_name_from_stream_arn(stream_arn) L188
+shard_id(stream_arn, kinesis_shard_id) L193
+kinesis_shard_id(dynamodbstream_shard_id) L201
+serve(port, quiet=True) L206
+
+localstack/services/dynamodbstreams/dynamodbstreams_starter.py
+start_dynamodbstreams(port=None, asynchronous=False) L4
+
+localstack/services/ec2/ec2_listener.py
+class ProxyListenerEC2(ProxyListener) L32
+  return_response(self, method, path, data, headers, response) L33
+
+fix_creation_date(method, path, response) L10
+fix_error_tag(response) L25
+
+localstack/services/ec2/ec2_starter.py
+patch_ec2() L23
+patch_revoke_security_group_egress(backend) L24
+revoke_security_group_egress(*args, **kwargs) L27
+patch_delete_nat_gateway(backend) L37
+delete_nat_gateway(nat_gateway_id) L38
+describe_reserved_instances_offerings(self) L51
+purchase_reserved_instances_offering(self) L55
+describe_reserved_instances(self) L59
+describe_vpc_endpoint_services(self) L78
+describe_prefix_lists(self) L144
+_parse_search_filters(self) L178
+modify_vpc_endpoint(self) L193
+create_vpc_endpoint_service_configuration(self) L230
+delete_vpc_endpoints(self) L261
+start_ec2(port=None, asynchronous=False, update_listener=None) L272
+
+localstack/services/edge.py
+class ProxyListenerEdge(ProxyListener) L70
+  __init__(self, service_manager=None) L71
+  forward_request(self, method, path, data, headers) L75
+  return_response(self, method, path, data, headers, response, request_handler=None) L185
+  _require_service(self, api) L212
+
+class Terminator(object) L608
+  stop(self, quiet=True) L609
+
+do_forward_request(api, method, path, data, headers, port=None) L222
+do_forward_request_inmem(api, method, path, data, headers, port=None) L233
+do_forward_request_network(port, method, path, data, headers, target_url=None) L261
+get_auth_string(method, path, headers, data=None) L271
+get_api_from_headers(headers, method=None, path=None, data=None) L314
+extract_service_name_from_auth_header(headers) L376
+is_s3_form_data(data_bytes) L386
+get_api_from_custom_rules(method, path, data, headers) L397
+_in_path_or_payload(search_str) L419
+get_service_port_for_account(service, headers) L499
+is_trace_logging_enabled(headers) L507
+do_start_edge(bind_address, port, use_ssl, asynchronous=False) L516
+can_use_sudo() L538
+ensure_can_use_sudo() L546
+start_component(component, port=None, use_ssl=True, asynchronous=False) L554
+start_dns_server(asynchronous=False) L562
+start_edge(port=None, use_ssl=True, asynchronous=False) L593
+run_process_as_sudo(component, port, asynchronous=False, env_vars=None) L623
+run_command(*_) L651
+env_vars_to_string(env_vars) L659
+
+localstack/services/es/cluster.py
+class Directories(NamedTuple) L51
+
+class ElasticsearchCluster(Server) L135
+  __init__(self, port=9200, host='localhost', version=None, directories=None) L136
+  version(self) L146
+  health(self) L149
+  do_start_thread(self) L152
+  _log_listener(self, line, **_kwargs) L179
+  _create_run_command(self, additional_settings=None) L182
+  _create_env_vars(self) L213
+  _settings_compatibility(self, settings) L219
+  _resolve_directories(self) L225
+  _init_directories(self) L229
+
+class ProxiedElasticsearchCluster(Server) L233
+  __init__(self, port=9200, host='localhost', version=None, directories=None) L239
+  version(self) L250
+  is_up(self) L253
+  health(self) L263
+  do_start_thread(self) L270
+  do_shutdown(self) L296
+
+class CustomEndpoint L300
+  __init__(self, enabled, endpoint) L304
+
+class EdgeProxiedElasticsearchCluster(Server) L314
+  __init__(self, url, version=None, directories=None) L320
+  version(self) L335
+  url(self) L339
+  is_up(self) L342
+  health(self) L352
+  do_run(self) L359
+  do_shutdown(self) L378
+
+get_elasticsearch_health_status(url) L59
+resolve_directories(version, cluster_path, data_root=None) L74
+init_directories(dirs) L102
+build_elasticsearch_run_command(es_bin, settings) L130
+
+localstack/services/es/cluster_manager.py
+class DomainKey L43
+  arn(self) L49
+  from_arn(arn) L53
+
+class ClusterManager L112
+  __init__(self) L115
+  create(self, arn, create_domain_request) L118
+  get(self, arn) L139
+  remove(self, arn) L142
+  is_up(self, arn) L149
+  _create_cluster(self, arn, url, version, create_domain_request) L153
+  shutdown_all(self) L159
+
+class SingletonClusterManager(ClusterManager) L165
+  __init__(self) L179
+  create(self, arn, create_domain_request) L185
+  _create_cluster(self, arn, url, version, create_domain_request) L189
+  remove(self, arn) L203
+
+class ClusterEndpoint(FakeEndpointProxyServer) L218
+  __init__(self, cluster, endpoint) L223
+  health(self) L227
+
+class MultiplexingClusterManager(ClusterManager) L231
+  __init__(self) L243
+  _create_cluster(self, arn, url, version, create_domain_request) L249
+  _start_async(*_) L257
+  remove(self, arn) L265
+
+class MultiClusterManager(ClusterManager) L279
+  _create_cluster(self, arn, url, version, create_domain_request) L284
+
+create_cluster_manager() L27
+build_cluster_endpoint(domain_key, custom_endpoint=None) L65
+determine_custom_endpoint(domain_endpoint_options) L93
+
+localstack/services/es/es_api.py
+class ElasticsearchServiceBackend(RegionBackend) L64
+  __init__(self) L72
+
+cluster_manager() L57
+_run_cluster_startup_monitor(cluster, domain_name, region) L77
+_create_cluster(domain_name, data) L89
+_remove_cluster(domain_name) L118
+error_response(error_type, code=400, message='Unknown error.') L125
+get_domain_arn(domain_name, region=None, account_id=None) L136
+parse_domain_arn(arn) L142
+get_domain_config_status() L146
+get_domain_config(domain_name) L156
+get_domain_status(domain_name, deleted=False) L254
+list_domain_names() L303
+create_domain() L310
+describe_domain(domain_name) L343
+describe_domains() L354
+domain_config(domain_name) L372
+delete_domain(domain_name) L380
+list_es_versions() L401
+get_compatible_versions() L409
+add_list_tags() L433
+serve(port, quiet=True) L447
+
+localstack/services/es/es_starter.py
+start_elasticsearch_service(port=None, asynchronous=False) L5
+
+localstack/services/es/versions.py
+get_install_version(version) L48
+get_download_url(version) L62
+fetch_latest_versions() L74
+
+localstack/services/events/events_listener.py
+class EventsBackend(RegionBackend) L32
+  __init__(self) L33
+
+class ProxyListenerEvents(ProxyListener) L150
+  forward_request(self, method, path, data, headers) L153
+  return_response(self, method, path, data, headers, response, request_handler=None) L177
+
+fix_account_id(response) L40
+fix_date_format(response) L46
+_create_and_register_temp_dir() L53
+_dump_events_to_files(events_with_added_uuid) L60
+_get_events_tmp_dir() L69
+get_scheduled_rule_func(data) L73
+func(*args, **kwargs) L74
+convert_schedule_to_cron(schedule) L98
+handle_put_rule(data) L118
+handle_delete_rule(rule_name) L134
+handle_disable_rule(rule_name) L142
+
+localstack/services/events/events_starter.py
+filter_event_with_target_input_path(target, event) L31
+handle_prefix_filtering(event_pattern, value) L39
+handle_numeric_conditions(conditions, value) L60
+filter_event_based_on_event_format(self, rule, event) L74
+filter_event(event_pattern_filter, event) L75
+process_events(event, targets) L130
+apply_patches() L140
+rule_model_generate_arn(self, name) L142
+events_handler_put_rule(self) L149
+events_handler_delete_rule(self) L161
+events_handler_put_events(self) L176
+start_scheduler() L227
+start_events(port=None, asynchronous=None, update_listener=None) L231
+get_two_lists_intersection(lst1, lst2) L251
+identify_content_base_parameter_in_pattern(parameters) L256
+filter_event_with_content_base_parameter(pattern_value, event_value) L267
+check_valid_numeric_content_base_rule(list_of_operators) L332
+
+localstack/services/events/scheduler.py
+class Job(object) L12
+  __init__(self, job_func, schedule, enabled) L13
+  run(self) L19
+  should_run_now(self) L26
+  do_run(self) L31
+
+class JobScheduler(object) L35
+  __init__(self) L39
+  add_job(self, job_func, schedule, enabled=True) L43
+  disable_job(self, job_id) L48
+  cancel_job(self, job_id) L54
+  loop(self, *args) L62
+  start_loop(self) L73
+  instance(cls) L78
+  start(cls) L84
+
+localstack/services/firehose/firehose_api.py
+class FirehoseBackend(RegionBackend) L64
+  __init__(self) L68
+
+get_delivery_stream_names() L72
+get_delivery_stream_tags(stream_name, exclusive_start_tag_key=None, limit=50) L80
+preprocess_records(processor, records) L99
+add_missing_record_attributes(records) L120
+_get_entry(obj, key) L121
+next_sequence_number() L141
+put_record(stream_name, record) L149
+put_records(stream_name, records) L154
+get_s3_object_path(stream_name, prefix) L242
+get_destination(stream_name, destination_id) L253
+update_destination(stream_name, destination_id, s3_update=None, elasticsearch_update=None, http_update=None, version_id=None) L264
+process_records(records, shard_id, fh_d_stream) L285
+create_stream(stream_name, delivery_stream_type='DirectPut', delivery_stream_type_configuration=None, s3_destination=None, elasticsearch_destination=None, http_destination=None, tags=None) L290
+delete_stream(stream_name) L355
+get_stream(stream_name, format_s3_dest=False) L370
+is_extended_s3_destination(s3_dest) L382
+error_not_found(stream_name) L386
+error_response(msg, code=500, error_type='InternalFailure') L391
+post_request() L396
+serve(port, quiet=True) L482
+
+localstack/services/firehose/firehose_starter.py
+start_firehose(port=None, asynchronous=False) L4
+
+localstack/services/generic_proxy.py
+class ProxyListener(object) L103
+  forward_request(self, method, path, data, headers) L107
+  return_response(self, method, path, data, headers, response, request_handler=None) L124
+  get_forward_url(self, method, path, data, headers) L137
+
+class RegionBackend(object) L149
+  get(cls, region=None) L158
+  regions(cls) L171
+  get_current_request_region(cls) L178
+  reset(cls) L182
+
+class DuplexSocket(ssl.SSLSocket) L441
+  accept(self) L444
+  is_ssl_socket(newsock) L457
+  peek_ssl_header() L460
+
+class GenericProxy(object) L485
+  create_ssl_cert(cls, serial_number=None) L488
+  get_flask_ssl_context(cls, serial_number=None) L493
+
+class UrlMatchingForwarder(ProxyListener) L500
+  __init__(self, base_url, forward_url) L506
+  forward_request(self, method, path, data, headers) L511
+  do_forward(self, method, url, headers, data) L527
+  matches(self, host, path) L530
+  build_forward_url(self, host, path) L554
+
+class EndpointProxy(ProxyListener) L573
+  __init__(self, base_url, forward_url) L574
+  forward_request(self, method, path, data, headers) L581
+  register(self) L584
+  unregister(self) L587
+
+class FakeEndpointProxyServer(Server) L594
+  __init__(self, endpoint) L601
+  url(self) L609
+  do_run(self) L612
+  do_shutdown(self) L619
+
+append_cors_headers(request_headers=None, response=None) L194
+http_exception_to_response(e) L228
+cors_error_response() L239
+_is_in_allowed_origins(allowed_origins, origin) L245
+is_cors_origin_allowed(headers, allowed_origins=None) L252
+should_enforce_self_managed_service(method, path, headers, data) L266
+modify_and_forward(method=None, path=None, data_bytes=None, headers=None, forward_base_url=None, listeners=None, request_handler=None, client_address=None, server_address=None) L283
+is_full_url(url) L312
+build_x_forwarded_for(headers, client_address, server_address) L430
+_accept_connection2(self, protocol_factory, conn, extra, sslcontext, *args, **kwargs) L624
+get_cert_pem_file_path() L643
+start_proxy_server(port, bind_address=None, forward_url=None, use_ssl=None, update_listener=None, quiet=False, params=None, asynchronous=True) L647
+handler(request, data) L659
+install_predefined_cert_if_available() L694
+serve_flask_app(app, port, host=None, cors=True, asynchronous=False) L703
+noecho(*args, **kwargs) L715
+_run(*_) L725
+
+localstack/services/iam/iam_listener.py
+class ProxyListenerIAM(ProxyListener) L16
+  forward_request(self, method, path, data, headers) L17
+  return_response(self, method, path, data, headers, response) L24
+
+localstack/services/iam/iam_starter.py
+class AWSManagedPolicyUSGov(AWSManagedPolicy) L413
+  arn(self) L415
+
+apply_patches() L113
+_validate_resource_syntax(statement, *args, **kwargs) L122
+iam_response_get_user(self) L130
+iam_response_delete_policy(self) L153
+iam_backend_detach_role_policy(policy_arn, role_name) L164
+iam_response_simulate_principal_policy(self) L176
+build_evaluation(action_name, resource_name, policy_statements) L177
+policy__init__(self, name, default_version_id=None, description=None, document=None, **kwargs) L211
+iam_response_list_roles(self) L221
+inline_policy_unapply_policy(self, backend) L246
+update_group(self) L257
+list_instance_profile_tags(self) L272
+tag_instance_profile(self) L286
+untag_instance_profile(self) L297
+tag_policy(self) L309
+untag_policy(self) L320
+role_arn(self) L335
+create_service_linked_role(self) L341
+delete_service_linked_role(self) L382
+get_service_linked_role_deletion_status(self) L397
+start_iam(port=None, asynchronous=False, update_listener=None) L426
+
+localstack/services/infra.py
+class MyHTTPSConnectionPool(connectionpool.HTTPSConnectionPool) L84
+  __init__(self, *args, **kwargs) L85
+
+class MyHTTPConnectionPool(connectionpool.HTTPConnectionPool) L91
+  __init__(self, *args, **kwargs) L92
+
+class MotoServerProperties L171
+  __init__(self, moto_thread, service_port) L175
+
+patch_urllib3_connection_pool(**constructor_kwargs) L77
+patch_instance_tracker_meta() L101
+new_intance(meta, name, bases, dct) L106
+new_basemodel(cls, *args, **kwargs) L115
+get_multiserver_or_free_service_port() L122
+register_signal_handlers() L128
+signal_handler(sig, frame) L134
+do_run(cmd, asynchronous, print_output=None, env_vars={}, auto_restart=False, strip_color=False) L145
+start_proxy_for_service(service_name, port, backend_port, update_listener, quiet=False, params={}) L180
+start_proxy(port, backend_url=None, update_listener=None, quiet=False, params={}, use_ssl=None) L204
+start_moto_server(key, port, name=None, backend_port=None, asynchronous=False, update_listener=None) L217
+start_moto_server_separate(key, port, name=None, backend_port=None, asynchronous=False) L240
+add_service_proxy_listener(api, listener, port=None) L254
+start_local_api(name, port, api, method, asynchronous=False) L258
+stop_infra() L270
+log_startup_message(service) L298
+check_aws_credentials() L302
+terminate_all_processes_in_docker() L317
+print_runtime_information(in_docker=False) L346
+start_infra(asynchronous=False, apis=None) L365
+do_start_infra(asynchronous, apis, is_in_docker) L421
+prepare_environment() L444
+prepare_installation() L456
+preload_services() L461
+start_runtime_components() L491
+
+localstack/services/install.py
+class InstallerRepository(Plugin) L563
+  get_installer(self) L566
+
+class CommunityInstallerRepository(InstallerRepository) L570
+  get_installer(self) L573
+
+class InstallerManager L590
+  __init__(self) L591
+  get_installers(self) L597
+  install(self, package, *args, **kwargs) L605
+
+get_elasticsearch_install_version(version) L123
+get_elasticsearch_install_dir(version) L132
+install_elasticsearch(version=None) L145
+try_install() L179
+install_sqs_provider() L215
+install_elasticmq() L220
+install_kinesis() L232
+install_kinesalite() L241
+install_kinesis_mock() L247
+install_local_kms() L304
+install_stepfunctions_local() L316
+install_dynamodb_local() L357
+install_amazon_kinesis_client_libs() L380
+install_lambda_java_libs() L404
+install_go_lambda_runtime() L411
+install_cloudformation_libs() L440
+install_terraform() L447
+get_terraform_binary() L464
+install_component(name) L471
+install_components(names) L477
+install_all_components() L482
+install_debugpy_and_dependencies() L488
+log_install_msg(component, verbatim=False) L509
+download_and_extract(archive_url, target_dir, retries=0, sleep=3, tmp_archive=None) L514
+download_and_extract_with_retry(archive_url, tmp_archive, target_dir) L541
+main() L614
+
+localstack/services/internal.py
+class HealthResource L24
+  __init__(self, service_manager) L31
+  on_post(self, request) L36
+  on_get(self, request) L42
+  on_put(self, request) L59
+
+class ResourceGraph L79
+  on_post(self, request) L84
+  serve_resource_graph(self, data) L87
+
+class CloudFormationUi L103
+  on_get(self, request) L104
+
+class LocalstackResources(ResourceRouter) L142
+  __init__(self) L147
+  add_default_routes(self) L152
+  add_route(self, path, resource, suffix=None) L166
+
+class LocalstackResourceHandler(ResourceRouterProxyListener) L170
+  __init__(self, resources=None) L177
+  forward_request(self, method, path, data, headers) L180
+
+get_internal_apis() L196
+
+localstack/services/kinesis/kinesis_listener.py
+class KinesisBackend(RegionBackend) L29
+  __init__(self) L30
+
+class ProxyListenerKinesis(ProxyListener) L37
+  forward_request(self, method, path, data, headers) L38
+  forward_request_kinesalite(self, method, path, data, headers, action, encoding_type) L57
+  consumer_matches(c) L82
+  return_response(self, method, path, data, headers, response) L150
+  is_sdk_v2_request(self, headers) L267
+  replace_in_encoded(self, data) L273
+  _replace(_data) L277
+  decode_content(self, data, describe=False) L293
+
+encode_data(data, encoding_type) L308
+encoded_response(data, encoding_type=APPLICATION_JSON, status_code=200) L314
+subscribe_to_shard(data, headers) L322
+send_events() L341
+find_consumer(consumer_arn='', consumer_name='', stream_arn='') L385
+find_stream_for_consumer(consumer_arn) L396
+simple_error_response(msg, code, type_error, encoding_type=APPLICATION_JSON) L406
+kinesis_error_response(data, action, encoding_type) L411
+
+localstack/services/kinesis/kinesis_starter.py
+apply_patches_kinesalite() L31
+start_kinesis(port=None, asynchronous=False, update_listener=None) L41
+_run_proxy_and_command(cmd, port, backend_port, update_listener, asynchronous) L55
+_return_listener(*_) L66
+start_kinesis_mock(port=None, asynchronous=False, update_listener=None) L81
+start_kinesalite(port=None, asynchronous=False, update_listener=None) L143
+check_kinesis(expect_shutdown=False, print_error=False) L179
+restart_kinesis() L202
+
+localstack/services/kms/kms_listener.py
+class ProxyListenerKMS(ProxyListener) L286
+  forward_request(self, method, path, data, headers) L287
+  return_response(self, method, path, data, headers, response) L310
+
+class KMSBackend(RegionBackend) L324
+  __init__(self) L330
+
+verify_key_exists(key_id) L56
+validate_grant(data) L64
+handle_create_grant(data) L78
+filter_if_present(grant, data, filter_key) L93
+filter_grantee_principal(grant, data) L97
+filter_grant_id(grant, data) L101
+handle_list_grants(data) L105
+handle_retire_grant(data) L139
+handle_revoke_grant(data) L155
+handle_list_retirable_grants(data) L165
+handle_get_public_key(data, response) L196
+generate_data_key_pair(data, response) L215
+generate_data_key_pair_without_plaintext(data, response) L222
+_generate_data_key_pair(data) L230
+_get_key_pairs() L266
+set_key_managed(key_id) L274
+
+localstack/services/kms/kms_starter.py
+start_kms_local(port=None, backend_port=None, asynchronous=None, update_listener=None) L21
+start_kms_moto(port=None, backend_port=None, asynchronous=None, update_listener=None) L41
+start_kms(port=None, backend_port=None, asynchronous=None, update_listener=None) L52
+
+localstack/services/logs/logs_listener.py
+class ProxyListenerCloudWatchLogs(ProxyListener) L15
+  forward_request(self, method, path, data, headers) L16
+  return_response(self, method, path, data, headers, response) L30
+  _fix_next_token_request(data) L45
+  _fix_next_token_response(response) L52
+
+publish_log_metrics_for_events(data) L59
+log_events_match_filter_pattern(filter_pattern, log_events) L85
+matches(event) L86
+
+localstack/services/logs/logs_starter.py
+patch_logs() L17
+patch_get_function(backend) L18
+get_function(*args, **kwargs) L21
+patch_put_subscription_filter(backend) L34
+put_subscription_filter(*args, **kwargs) L35
+put_log_events_model(self, log_group_name, log_stream_name, log_events, sequence_token) L92
+start_cloudwatch_logs(port=None, asynchronous=False, update_listener=None) L155
+
+localstack/services/motoserver.py
+class MotoServer(Server) L15
+  __init__(self, port, host='localhost') L16
+  do_run(self) L22
+  do_shutdown(self) L29
+
+get_moto_server(timeout=10) L37
+
+localstack/services/plugins.py
+class PersistenceContext L33
+  __init__(self, state_dir=None, lock=None) L37
+
+class StateSerializer(abc.ABC) L44
+  restore_state(self, context) L48
+  update_state(self, context, request) L53
+  is_write_request(self, request) L58
+  get_lock_for_request(self, request) L62
+  get_context(self) L66
+
+class StateSerializerComposite(StateSerializer) L71
+  __init__(self, serializers=None) L74
+  restore_state(self, context) L77
+  update_state(self, context, request) L81
+  is_write_request(self, request) L85
+  get_lock_for_request(self, request) L88
+  get_context(self) L94
+
+class ServiceException(Exception) L108
+
+class ServiceDisabled(ServiceException) L112
+
+class ServiceStateException(ServiceException) L116
+
+class ServiceLifecycleHook L120
+  on_after_init(self) L121
+  on_before_start(self) L124
+  on_before_stop(self) L127
+  on_exception(self) L130
+
+class Service(object) L134
+  __init__(self, name, start=_default, check=_default, listener=None, active=False, stop=None, lifecycle_hook=None) L135
+  start(self, asynchronous) L154
+  stop(self) L175
+  check(self, expect_shutdown=False, print_error=False) L181
+  name(self) L186
+  is_enabled(self) L189
+
+class ServiceState(Enum) L196
+
+class ServiceContainer L207
+  __init__(self, service, state=ServiceState.UNKNOWN) L217
+  get(self) L223
+  start(self) L226
+  check(self) L237
+  stop(self) L248
+
+class ServiceManager L258
+  __init__(self) L259
+  get_service_container(self, name) L264
+  get_service(self, name) L267
+  add_service(self, service) L271
+  list_available(self) L277
+  exists(self, name) L280
+  is_running(self, name) L283
+  check(self, name) L286
+  check_all(self) L290
+  get_state(self, name) L293
+  get_states(self) L297
+  require(self, name) L301
+  items(self) L339
+  keys(self) L344
+  values(self) L347
+  get(self, key) L350
+  __iter__(self) L353
+
+class ServicePlugin(Plugin) L357
+  create_service(self) L362
+  load(self) L365
+
+class ServicePluginAdapter(ServicePlugin) L370
+  __init__(self, api, create_service, should_load=None) L371
+  should_load(self) L382
+  create_service(self) L387
+
+class ServicePluginErrorCollector(PluginLifecycleListener) L413
+  __init__(self, errors=None) L420
+  get_key(self, plugin_name) L424
+  on_resolve_exception(self, namespace, entrypoint, exception) L429
+  on_init_exception(self, plugin_spec, exception) L432
+  on_load_exception(self, plugin_spec, plugin, exception) L435
+  has_errors(self, api, provider=None) L438
+
+class ServicePluginManager(ServiceManager) L449
+  __init__(self, plugin_manager=None, provider_config=None) L453
+  get_active_provider(self, service) L466
+  list_available(self) L471
+  exists(self, name) L482
+  get_state(self, name) L485
+  get_service_container(self, name) L501
+  api_provider_specs(self) L522
+  _load_service_plugin(self, name) L536
+  _resolve_api_provider_specs(self) L561
+  apis_with_provider(self, provider) L572
+  stop_services(self, services=None) L584
+  stop_all_services(self) L596
+
+aws_provider(api=None, name='default', should_load=None) L391
+wrapper(fn) L398
+factory() L405
+wait_for_infra_shutdown() L614
+check(name) L619
+check_service_health(api, expect_shutdown=False) L628
+local_api_checker(service) L638
+_check(expect_shutdown=False, print_error=False) L651
+
+localstack/services/providers.py
+acm() L5
+apigateway() L12
+cloudformation() L23
+awsconfig() L30
+cloudwatch() L37
+dynamodb() L48
+dynamodbstreams() L60
+ec2() L67
+es() L74
+firehose() L81
+iam() L88
+sts() L95
+kinesis() L102
+kms() L114
+awslambda() L121
+logs() L133
+redshift() L142
+route53() L149
+s3() L158
+secretsmanager() L167
+ses() L179
+sns() L186
+sqs() L193
+ssm() L205
+events() L212
+stepfunctions() L221
+swf() L233
+resourcegroupstaggingapi() L245
+resource_groups() L256
+support() L263
+
+localstack/services/redshift/redshift_starter.py
+apply_patches() L8
+itemize(data, parent_key=None, *args, **kwargs) L12
+fix_keys(o, **kwargs) L16
+start_redshift(port=None, asynchronous=False) L32
+
+localstack/services/resourcegroups/rg_listener.py
+class ProxyListenerRG(ProxyListener) L7
+  forward_request(self, method, path, data, headers) L8
+  return_response(self, method, path, data, headers, response) L15
+
+localstack/services/resourcegroups/rg_starter.py
+start_rg(port=None, asynchronous=False, update_listener=None) L5
+
+localstack/services/resourcegroupstaggingapi/rgta_listener.py
+class ProxyListenerRGSA(ProxyListener) L7
+  forward_request(self, method, path, data, headers) L8
+  return_response(self, method, path, data, headers, response) L15
+
+localstack/services/resourcegroupstaggingapi/rgta_starter.py
+start_rgsa(port=None, asynchronous=False, update_listener=None) L5
+
+localstack/services/route53/route53_listener.py
+class Route53Backend(RegionBackend) L18
+  __init__(self) L19
+
+class ProxyListenerRoute53(PersistingProxyListener) L26
+  api_name(self) L27
+  forward_request(self, method, path, data, headers) L30
+  return_response(self, method, path, data, headers, response) L51
+
+handle_delegation_sets_request(match, method, data) L74
+handle_hosted_zones_by_vpc_request(method, path, data) L108
+_zone(z) L109
+handle_associate_vpc_request(method, path, data) L130
+_match(z) L152
+
+localstack/services/route53/route53_starter.py
+apply_patches() L13
+list_hosted_zones_by_name_response(self, request, full_url, headers) L15
+get_or_delete_health_check(self, request, full_url, headers) L34
+start_route53(port=None, asynchronous=False, update_listener=None) L58
+
+localstack/services/routing.py
+class Request L11
+  host(self) L18
+  json(self) L21
+
+class RoutingRule L26
+  url(self) L32
+  matches(self, request) L35
+
+class Dispatcher L78
+  __init__(self, resource, suffix=None) L87
+  dispatch(self, request) L92
+  get_method_name(self, request) L100
+
+class _NoRoute L107
+  __repr__(self) L108
+  __str__(self) L111
+
+class ResourceRouter L115
+  __init__(self) L125
+  add_route(self, uri_template, resource, suffix=None) L128
+  add_routing_rule(self, rule, resource, suffix=None) L136
+  dispatch(self, request) L139
+  get_matching_route(self, request) L150
+
+class ResourceRouterProxyListener(ProxyListener) L158
+  __init__(self, resources) L165
+  forward_request(self, method, path, data, headers) L169
+
+localstack/services/s3/multipart_content.py
+_iter_multipart_parts(some_bytes, boundary) L7
+expand_multipart_filename(data, headers) L38
+find_multipart_key_value(data, headers, field_name='success_action_redirect') L75
+
+localstack/services/s3/s3_listener.py
+class ProxyListenerS3(PersistingProxyListener) L1103
+  api_name(self) L1104
+  is_s3_copy_request(headers, path) L1108
+  is_create_multipart_request(query) L1112
+  is_multipart_upload(query) L1116
+  get_201_response(key, bucket_name) L1120
+  _update_location(content, bucket_name) L1138
+  is_query_allowable(method, query) L1152
+  parse_policy_expiration_date(expiration_string) L1170
+  forward_request(self, method, path, data, headers) L1180
+  return_response(self, method, path, data, headers, response, request_handler=None) L1336
+
+event_type_matches(events, action, api_method) L134
+filter_rules_match(filters, object_path) L147
+_get_s3_filter(filters) L164
+prefix_with_slash(s) L168
+get_event_message(event_name, bucket_name, file_name='testfile.txt', etag='', version_id=None, file_size=0) L172
+send_notifications(method, bucket_name, object_path, version_id, headers) L219
+send_notification_for_subscriber(notif, bucket_name, object_path, version_id, api_method, action, event_name, headers) L256
+get_cors(bucket_name) L344
+set_cors(bucket_name, cors) L371
+delete_cors(bucket_name) L388
+get_request_payment(bucket_name) L402
+set_request_payment(bucket_name, payer) L423
+convert_origins_into_list(allowed_origins) L456
+get_origin_host(headers) L462
+append_cors_headers(bucket_name, request_method, request_headers, response) L467
+append_aws_request_troubleshooting_headers(response) L543
+add_accept_range_header(response) L553
+is_object_expired(path) L558
+set_object_expiry(path, headers) L569
+get_object_expiry(path) L573
+add_response_metadata_headers(response) L577
+append_last_modified_headers(response, content=None) L582
+append_list_objects_marker(method, path, data, response) L611
+append_metadata_headers(method, query_map, headers) L627
+fix_location_constraint(response) L634
+fix_range_content_type(bucket_name, path, headers, response) L647
+fix_delete_objects_response(bucket_name, method, parsed_path, data, headers, response) L664
+fix_metadata_key_underscores(request_headers={}, response=None) L692
+fix_creation_date(method, path, response) L713
+fix_delimiter(data, headers, response) L723
+convert_to_chunked_encoding(method, path, response) L734
+unquote(s) L744
+ret304_on_etag(data, headers, response) L750
+remove_xml_preamble(response) L759
+get_lifecycle(bucket_name) L770
+get_replication(bucket_name) L792
+set_lifecycle(bucket_name, lifecycle) L813
+delete_lifecycle(bucket_name) L825
+set_replication(bucket_name, replication) L835
+is_bucket_available(bucket_name) L852
+bucket_exists(bucket_name) L868
+check_content_md5(data, headers) L884
+error_response(message, code, status_code=400) L905
+xml_response(content, status_code=200) L911
+no_such_key_error(resource, requestId=None, status_code=400) L916
+no_such_bucket(bucket_name, requestId=None, status_code=404) L929
+token_expired_error(resource, requestId=None, status_code=400) L944
+expand_redirect_url(starting_url, key, bucket) L957
+is_bucket_specified_in_domain_name(path, headers) L977
+is_object_specific_request(path, headers) L982
+empty_response() L991
+handle_notification_request(bucket, method, data) L998
+handle_get_bucket_notification(bucket) L1007
+_validate_filter_rules(filter_doc) L1034
+_sanitize_notification_filter_rules(filter_doc) L1047
+handle_put_bucket_notification(bucket, data) L1060
+remove_bucket_notification(bucket) L1098
+serve_static_website(headers, path, bucket_name) L1554
+respond_with_key(status_code, key) L1563
+
+localstack/services/s3/s3_starter.py
+class InvalidObjectState(S3ClientError) L230
+  __init__(self, *args, **kwargs) L233
+
+check_s3(expect_shutdown=False, print_error=False) L34
+start_s3(port=None, backend_port=None, asynchronous=None, update_listener=None) L53
+apply_patches() L74
+s3_update_acls(self, request, query, bucket_name, key_name) L83
+Bucket_create_from_cloudformation_json(cls, resource_name, cloudformation_json, region_name) L102
+create_bucket(self, bucket_name, region_name, *args, **kwargs) L117
+get_bucket(self, bucket_name, *args, **kwargs) L125
+_bucket_response_head(self, bucket_name, *args, **kwargs) L134
+_bucket_response_get(self, bucket_name, querystring, *args, **kwargs) L143
+delete_bucket(self, bucket_name, *args, **kwargs) L157
+s3_key_response_post(self, request, body, bucket_name, query, key_name, *args, **kwargs) L166
+s3_key_response_put(self, request, body, bucket_name, query, key_name, headers, *args, **kwargs) L192
+s3_key_response_delete(self, headers, bucket_name, query, key_name, *args, **kwargs) L207
+s3_key_response_get(self, bucket_name, query, key_name, headers, *args, **kwargs) L241
+s3_truncate_result(self, result_keys, max_keys) L259
+s3_bucket_response_delete_keys(self, request, body, bucket_name) L284
+s3_response_handle_range_header(self, request, headers, response_content) L333
+utils_is_delete_keys(request, path, bucket_name) L356
+s3_response_is_delete_keys(self, request, path, bucket_name) L361
+parse_bucket_name_from_url(self, request, url) L376
+subdomain_based_buckets(self, request) L384
+s3_bucket_response_get(self, bucket_name, querystring) L393
+copy_object(self, src_bucket_name, src_key_name, dest_bucket_name, dest_key_name, storage=None, acl=None, src_version_id=None, *args, **kwargs) L418
+
+localstack/services/s3/s3_utils.py
+is_static_website(headers) L80
+uses_host_addressing(headers) L89
+extract_bucket_name(headers, path) L101
+extract_key_name(headers, path) L119
+extract_bucket_and_key_name(headers, path) L137
+normalize_bucket_name(bucket_name) L141
+validate_bucket_name(bucket_name) L147
+get_bucket_hostname(bucket_name) L155
+get_bucket_website_hostname(bucket_name) L162
+get_forwarded_for_host(headers) L169
+is_real_s3_url(url) L175
+get_key_from_s3_url(url, leading_slash=False) L179
+is_expired(expiry_datetime) L187
+authenticate_presign_url(method, path, headers, data=None) L192
+authenticate_presign_url_signv2(method, path, headers, data, url, query_params, request_dict) L332
+authenticate_presign_url_signv4(method, path, headers, data, url, query_params, request_dict) L379
+
+localstack/services/secretsmanager/secretsmanager_listener.py
+class ProxyListenerSecretsManager(PersistingProxyListener) L14
+  api_name(self) L15
+  forward_request(self, method, path, data, headers) L18
+  return_response(self, method, path, data, headers, response) L39
+
+localstack/services/secretsmanager/secretsmanager_starter.py
+apply_patches() L23
+secretsmanager_models_secret_arn(region, secret_id) L24
+get_resource_policy_model(self, secret_id) L38
+get_resource_policy_response(self) L55
+delete_resource_policy_model(self, secret_id) L61
+delete_resource_policy_response(self) L80
+put_resource_policy_model(self, secret_id, resource_policy) L91
+put_resource_policy_response(self) L109
+start_secretsmanager(port=None, asynchronous=None, backend_port=None, update_listener=None) L120
+check_secretsmanager(expect_shutdown=False, print_error=False) L135
+
+localstack/services/ses/ses_listener.py
+class ProxyListenerSES(ProxyListener) L7
+  return_response(self, method, path, data, headers, response, request_handler=None) L8
+  response_has_xmlns(self, xml_string) L24
+
+localstack/services/ses/ses_starter.py
+apply_patches() L47
+get_source_from_raw(raw_data) L48
+email_responses_send_raw_email(self) L58
+email_responses_send_email(self) L78
+list_templates(self) L107
+delete_template(self) L117
+get_identity_verification_attributes(self) L128
+get_email_log_object(source, region, destinations, subject=None, body=None, raw_data=None) L139
+log_email_to_data_dir(id, email) L151
+send_email_save_contents(self, source, subject, body, destinations, region) L160
+send_raw_email_save_contents(self, source, destinations, raw_data, region) L172
+send_templated_email_save_contents(self, source, template, template_data, destinations, region) L184
+start_ses(port=None, backend_port=None, asynchronous=None, update_listener=None) L211
+
+localstack/services/sns/sns_listener.py
+class SNSBackend(RegionBackend) L50
+  __init__(self) L51
+
+class ProxyListenerSNS(PersistingProxyListener) L70
+  api_name(self) L71
+  forward_request(self, method, path, data, headers) L74
+  _extract_tags(topic_arn, req_data, is_create_topic_request, sns_backend) L231
+  _reset_account_id(data) L249
+  return_response(self, method, path, data, headers, response) L260
+  should_persist(self, method, path, data, headers, response) L306
+
+patch_moto() L315
+patch_create_platform_endpoint(self, *args) L316
+unsubscribe_sqs_queue(queue_url) L338
+message_to_subscribers(message_id, message, topic_arn, req_data, headers, subscription_arn=None, skip_checks=False) L349
+wait_for_messages_sent() L361
+message_to_subscriber(message_id, message, topic_arn, req_data, headers, subscription_arn, skip_checks, sns_backend, subscriber, subscriptions) L383
+publish_message(topic_arn, req_data, headers, subscription_arn=None, skip_checks=False) L586
+do_delete_topic(topic_arn) L613
+do_confirm_subscription(topic_arn, token) L619
+do_subscribe(topic_arn, endpoint, protocol, subscription_arn, attributes, filter_policy=None) L626
+do_unsubscribe(subscription_arn) L677
+_get_tags(topic_arn) L685
+do_list_tags_for_resource(topic_arn) L693
+do_tag_resource(topic_arn, tags) L697
+existing_tag_index(item) L702
+do_untag_resource(topic_arn, tag_keys) L718
+get_subscription_by_arn(sub_arn) L728
+make_response(op_name, content='', message_id=None) L737
+make_error(message, code=400, code_string='InvalidParameter') L756
+create_sns_message_body(subscriber, req_data, message_id=None) L770
+create_sqs_message_attributes(subscriber, attributes) L816
+get_message_attributes(req_data) L833
+get_subscribe_attributes(req_data) L863
+is_number(x) L878
+evaluate_numeric_condition(conditions, value) L886
+evaluate_exists_condition(conditions, message_attributes, criteria) L914
+evaluate_condition(value, condition, message_attributes, criteria) L923
+evaluate_filter_policy_conditions(conditions, attribute, message_attributes, criteria) L941
+check_filter_policy(filter_policy, message_attributes) L960
+is_raw_message_delivery(susbcriber) L977
+store_delivery_log(subscriber, success, message, message_id, delivery=None) L981
+
+localstack/services/sns/sns_starter.py
+start_sns(port=None, asynchronous=False, update_listener=None) L4
+
+localstack/services/sqs/elasticmq.py
+class ElasticMQSerer(Server) L41
+  do_start_thread(self) L45
+  _log_listener(self, line, **_kwargs) L80
+
+localstack/services/sqs/sqs_listener.py
+class ProxyListenerSQS(PersistingProxyListener) L287
+  api_name(self) L288
+  forward_request(self, method, path, data, headers) L291
+  return_response(self, method, path, data, headers, response, request_handler) L370
+  get_message_attributes_md5(cls, req_data) L462
+  fix_missing_tag_values(self, req_data) L494
+
+_format_attributes(req_data) L65
+_format_attributes_names(req_data) L78
+_get_attributes_forward_request(method, path, headers, req_data, forward_attrs) L88
+_set_queue_attributes(queue_url, req_data) L99
+_fix_dlq_arn_in_attributes(req_data) L124
+_fix_redrive_policy(match) L136
+_add_queue_attributes(path, req_data, content_str, headers) L143
+_fire_event(req_data, response) L168
+_queue_url(path, req_data, headers) L185
+_list_dead_letter_source_queues(queues, queue_url) L196
+_process_sent_message(path, req_data, headers, response) L208
+format_list_dl_source_queues_response(queues) L241
+get_external_port(headers, request_handler) L256
+validate_empty_message_batch(data, req_data) L275
+is_sqs_queue_url(url) L282
+
+localstack/services/sqs/sqs_starter.py
+check_sqs(expect_shutdown=False, print_error=False) L36
+start_sqs(*args, **kwargs) L59
+patch_moto() L77
+add_message(self, *args, **kwargs) L79
+_set_attributes(self, attributes, now=None) L93
+response_template(self, template_str, *args, **kwargs) L105
+_escape(val) L108
+render(self, *args, **kwargs) L114
+sqs_responses_get_queue_name(self) L134
+start_sqs_moto(port=None, asynchronous=False, update_listener=None) L152
+start_sqs_elasticmq(port=None, asynchronous=False, update_listener=None) L168
+
+localstack/services/ssm/ssm_listener.py
+class ProxyListenerSSM(PersistingProxyListener) L112
+  api_name(self) L113
+  forward_request(self, method, path, data, headers) L116
+
+normalize_name(param_name) L30
+get_secrets_information(name, resource_name) L38
+has_secrets(names) L60
+get_params_and_secrets(names) L66
+notify_event_subscribers(data, target_header) L92
+
+localstack/services/ssm/ssm_starter.py
+start_ssm(port=None, asynchronous=False, update_listener=None) L4
+
+localstack/services/stepfunctions/stepfunctions_listener.py
+class ProxyListenerStepFunctions(ProxyListener) L19
+  forward_request(self, method, path, data, headers) L20
+  return_response(self, method, path, data, headers, response) L34
+  fix_name(obj) L56
+
+localstack/services/stepfunctions/stepfunctions_starter.py
+get_command(backend_port) L22
+start_stepfunctions(port=None, asynchronous=False, update_listener=None) L66
+check_stepfunctions(expect_shutdown=False, print_error=False) L78
+restart_stepfunctions() L97
+
+localstack/services/stepfunctions/stepfunctions_utils.py
+await_sfn_execution_result(execution_arn, timeout_secs=60) L10
+_get_result() L15
+
+localstack/services/sts/sts_listener.py
+class ProxyListenerSTS(ProxyListener) L7
+  forward_request(self, method, path, data, headers) L8
+  return_response(self, method, path, data, headers, response) L15
+
+localstack/services/sts/sts_starter.py
+start_sts(port=None, asynchronous=False, update_listener=None) L5
+
+localstack/services/support/support_starter.py
+start_support(port=None, asynchronous=False) L4
+
+localstack/services/swf/swf_listener.py
+class ProxyListenerSWF(PersistingProxyListener) L8
+  api_name(self) L9
+
+localstack/services/swf/swf_starter.py
+check_swf(expect_shutdown=False, print_error=False) L13
+start_swf(port=None, backend_port=None, asynchronous=None, update_listener=None) L32
+
+localstack/utils/analytics/__init__.py
+_create_global_analytics_bus() L8
+
+localstack/utils/analytics/client.py
+class SessionResponse L18
+  __init__(self, response) L22
+  track_events(self) L25
+
+class AnalyticsClient L29
+  __init__(self, api=None) L32
+  start_session(self, metadata) L41
+  append_events(self, events) L59
+  _create_headers(self) L93
+
+localstack/utils/analytics/event_publisher.py
+class AnalyticsEvent(JsonObject) L49
+  __init__(self, **kwargs) L50
+  timestamp(self) L58
+  machine_id(self) L61
+  process_id(self) L64
+  event_type(self) L67
+  payload(self) L70
+  api_key(self) L73
+
+read_api_key_safe() L77
+_get_config_file(path) L86
+get_config_file_homedir() L91
+get_config_file_tempdir() L95
+get_machine_id() L99
+get_process_id() L134
+poll_and_send_messages(params) L138
+is_travis() L150
+get_hash(name) L154
+fire_event(event_type, payload=None) L163
+
+localstack/utils/analytics/events.py
+class EventMetadata L9
+
+class Event L15
+  asdict(self) L20
+
+class EventHandler(abc.ABC) L24
+  handle(self, event) L29
+
+localstack/utils/analytics/logger.py
+class EventLogger L17
+  __init__(self, handler, session_id=None) L23
+  hash(value) L28
+  event(self, event, payload=None, **kwargs) L31
+  _log(self, event, payload=None) L40
+  _metadata(self) L43
+
+get_hash(value) L9
+
+localstack/utils/analytics/metadata.py
+class ClientMetadata L15
+  __repr__(self) L25
+
+get_version_string() L37
+read_client_metadata() L45
+get_session_id() L59
+get_client_metadata() L64
+get_machine_id() L74
+_generate_session_id() L106
+_get_config_file(path) L110
+get_config_file_homedir() L115
+get_config_file_tempdir() L119
+read_api_key_safe() L123
+get_system() L132
+
+localstack/utils/analytics/publisher.py
+class Publisher(abc.ABC) L19
+  publish(self, events) L24
+
+class AnalyticsClientPublisher(Publisher) L28
+  __init__(self, client=None) L31
+  publish(self, events) L35
+
+class Printer(Publisher) L39
+  publish(self, events) L44
+
+class PublisherBuffer(EventHandler) L49
+  __init__(self, publisher, flush_size=20, flush_interval=10, maxsize=0) L65
+  handle(self, event) L79
+  close(self) L83
+  close_sync(self, timeout=None) L90
+  flush(self) L94
+  checked_flush(self) L98
+  _run_flush_schedule(self, *_) L117
+  run(self, *_) L123
+  _do_flush(self) L143
+
+class GlobalAnalyticsBus(PublisherBuffer) L157
+  __init__(self, client=None, flush_size=20, flush_interval=10, max_buffer_size=1000) L158
+  is_tracking_disabled(self) L180
+  _do_flush(self) L195
+  flush(self) L209
+  handle(self, event) L216
+  _start(self) L234
+  _do_start_retry(self, *_) L243
+  _do_close() L261
+
+localstack/utils/async_utils.py
+class AdaptiveThreadPool(concurrent.futures.ThreadPoolExecutor) L15
+  __init__(self, core_size=None) L21
+  submit(self, fn, *args, **kwargs) L25
+  _run(*tmpargs) L30
+  has_idle_threads(self) L36
+
+class AsyncThread(FuncThread) L51
+  __init__(self, async_func_gen=None, loop=None) L52
+  run_func(self, *args) L60
+  stop(self, quiet=None) L69
+  run_async(cls, func=None, loop=None) L75
+
+run_sync(func, *args, thread_pool=None, **kwargs) L82
+run_coroutine(coroutine, loop=None) L89
+ensure_event_loop() L96
+get_main_event_loop() L106
+get_named_event_loop(name) L110
+async_func_gen(loop, shutdown_event) L115
+receive_from_queue(queue) L123
+get() L124
+
+localstack/utils/auth.py
+class HmacV1QueryAuth(HmacV1Auth) L12
+  __init__(self, credentials, expires=DEFAULT_EXPIRES) L25
+  _get_date(self) L29
+  get_signature(self, string_to_sign) L32
+  get_string_to_sign(self, method, split, headers, expires=None, auth_path=None) L35
+
+class S3SigV4QueryAuth(SigV4QueryAuth) L42
+  add_auth(self, request, x_amz_date) L54
+  _normalize_url_path(self, path) L66
+  payload(self, request) L70
+
+localstack/utils/aws/aws_models.py
+class Component(object) L16
+  __init__(self, id, env=None) L17
+  name(self) L22
+  __repr__(self) L25
+  __str__(self) L28
+
+class KinesisStream(Component) L32
+  __init__(self, id, params=None, num_shards=1, connection=None) L33
+  name(self) L42
+  connect(self, connection) L45
+  describe(self) L48
+  create(self, raise_on_error=False) L52
+  get_status(self) L60
+  put(self, data, key) L64
+  read(self, amount=-1, shard='shardId-000000000001') L69
+  wait_for(self) L86
+  destroy(self) L100
+
+class KinesisShard(Component) L105
+  __init__(self, id) L108
+  print_tree(self, indent='') L115
+  length(self) L120
+  percent(self) L123
+  __str__(self) L126
+  sort(shards) L136
+  compare(x, y) L137
+  max(shards) L150
+
+class FirehoseStream(KinesisStream) L160
+  __init__(self, id) L161
+  name(self) L165
+
+class CodeSigningConfig L169
+  __init__(self, arn, id, signing_profile_version_arns) L170
+
+class LambdaFunction(Component) L179
+  __init__(self, arn) L180
+  set_dead_letter_config(self, data) L210
+  get_function_event_invoke_config(self) L221
+  clear_function_event_invoke_config(self) L250
+  put_function_event_invoke_config(self, data) L262
+  destination_enabled(self) L301
+  get_version(self, version) L304
+  max_version(self) L307
+  name(self) L311
+  region(self) L315
+  arn(self) L318
+  function(self, qualifier=None) L321
+  get_qualifier_version(self, qualifier=None) L324
+  qualifier_exists(self, qualifier) L333
+  __str__(self) L336
+
+class DynamoDB(Component) L340
+  __init__(self, id, env=None) L341
+  name(self) L346
+
+class DynamoDBStream(Component) L350
+  __init__(self, id) L351
+
+class DynamoDBItem(Component) L356
+  __init__(self, id, table=None, keys=None) L357
+  __eq__(self, other) L362
+  __hash__(self) L367
+
+class ElasticSearch(Component) L371
+  __init__(self, id) L372
+  name(self) L377
+
+class SqsQueue(Component) L381
+  __init__(self, id) L382
+  name(self) L385
+
+class SnsTopic(Component) L389
+  __init__(self, id) L390
+  name(self) L393
+
+class S3Bucket(Component) L397
+  __init__(self, id) L398
+  name(self) L402
+
+class S3Notification(Component) L406
+  __init__(self, id) L407
+
+class EventSource(Component) L413
+  __init__(self, id) L414
+  get(obj, pool=None, type=None) L418
+  filter_type(pool, type) L455
+
+localstack/utils/aws/aws_responses.py
+class ErrorResponse(Exception) L40
+  __init__(self, response) L41
+
+class ResourceNotFoundException(JsonRESTError) L45
+  __init__(self, message=None) L50
+
+class LambdaResponse(object) L431
+  __init__(self) L434
+  content(self) L441
+
+class MessageConversion(object) L445
+  fix_date_format(response) L447
+  fix_account_id(response) L454
+  fix_error_codes(method, data, response) L458
+  fix_xml_empty_boolean(response, tag_names) L466
+  booleans_to_lowercase(response, tag_names) L473
+  _reset_account_id(data) L488
+
+flask_error_response_json(msg, code=500, error_type='InternalFailure') L55
+requests_error_response_json(message, code=500, error_type='InternalFailure') L69
+requests_error_response_xml(message, code=400, code_string='InvalidParameter', service=None, xmlns=None) L74
+to_xml(data, memberize=True) L95
+_to_xml(parent_el, data_rest) L100
+requests_response_xml(action, response, xmlns=None, service=None, memberize=True) L126
+requests_error_response_xml_signature_calculation(message, string_to_sign=None, signature=None, expires=None, code=400, code_string='AccessDenied', aws_access_token='temp') L144
+flask_error_response_xml(message, code=500, code_string='InternalFailure', service=None, xmlns=None) L194
+requests_error_response(req_headers, message, code=500, error_type='InternalFailure', service=None, xmlns=None) L207
+is_json_request(req_headers) L223
+is_invalid_html_response(headers, content) L229
+raise_exception_if_error_response(response) L234
+is_response_obj(result, include_lambda_response=False) L247
+get_response_payload(response, as_json=False) L254
+requests_response(content, status_code=200, headers={}) L269
+request_response_stream(stream, status_code=200, headers={}) L283
+flask_to_requests_response(r) L292
+requests_to_flask_response(r) L296
+flask_not_found_error(msg=None) L300
+response_regex_replace(response, search, replace) L305
+set_response_content(response, content, headers=None) L310
+make_requests_error(*args, **kwargs) L321
+make_error(*args, **kwargs) L325
+create_sqs_system_attributes(headers) L329
+extract_tags(req_data) L339
+extract_url_encoded_param_list(req_data, pattern) L350
+parse_urlencoded_data(qs_data, top_level_attribute) L361
+parse_query_string(url_or_qs, multi_values=False) L376
+calculate_crc32(content) L387
+convert_to_binary_event_payload(result, event_type=None, message_type=None) L391
+
+localstack/utils/aws/aws_stack.py
+class Environment(object) L89
+  __init__(self, region=None, prefix=None) L90
+  apply_json(self, j) L97
+  from_string(s) L103
+  from_json(j) L116
+  __str__(self) L123
+
+class Boto3Session(boto3.session.Session) L164
+  resource(self, service, *args, **kwargs) L167
+  client(self, service, *args, **kwargs) L171
+  _fix_endpoint(self, kwargs) L175
+
+class ArnData(TypedDict) L508
+
+get_environment(env=None, region_name=None) L130
+is_local_env(env) L160
+get_boto3_credentials() L180
+get_boto3_session(cache=True) L192
+get_region() L201
+get_local_region() L212
+is_internal_call_context(headers) L220
+get_internal_credential() L227
+set_internal_auth(headers) L231
+get_local_service_url(service_name_or_port) L250
+connect_to_resource(service_name, env=None, region_name=None, endpoint_url=None, *args, **kwargs) L263
+connect_to_service(service_name, client=True, env=None, region_name=None, endpoint_url=None, config=None, verify=False, cache=True, *args, **kwargs) L278
+get_s3_hostname() L348
+render_velocity_template(*args, **kwargs) L362
+generate_presigned_url(*args, **kwargs) L366
+check_valid_region(headers) L383
+set_default_region_in_headers(headers, service=None, region=None) L399
+fix_account_id_in_arns(response, colon_delimiter=':', existing=None, replace=None) L417
+inject_test_credentials_into_env(env) L439
+inject_region_into_env(env, region) L445
+dynamodb_table_exists(table_name, client=None) L449
+sqs_queue_url_for_arn(queue_arn) L460
+get_sqs_queue_url(queue_arn) L481
+extract_region_from_auth_header(headers, use_default=True) L485
+extract_access_key_id_from_auth_header(headers) L495
+parse_arn(arn) L516
+extract_region_from_arn(arn) L527
+extract_service_from_arn(arn) L534
+get_account_id(account_id=None, env=None) L541
+role_arn(role_name, account_id=None, env=None) L550
+policy_arn(policy_name, account_id=None) L560
+iam_resource_arn(resource, role=None, env=None) L567
+get_iam_role(resource, env=None) L574
+secretsmanager_secret_arn(secret_id, account_id=None, region_name=None) L580
+cloudformation_stack_arn(stack_name, stack_id=None, account_id=None, region_name=None) L587
+cf_change_set_arn(change_set_name, change_set_id=None, account_id=None, region_name=None) L593
+dynamodb_table_arn(table_name, account_id=None, region_name=None) L599
+dynamodb_stream_arn(table_name, latest_stream_label, account_id=None) L605
+cloudwatch_alarm_arn(alarm_name, account_id=None, region_name=None) L615
+log_group_arn(group_name, account_id=None, region_name=None) L620
+events_rule_arn(rule_name, account_id=None, region_name=None) L625
+lambda_function_arn(function_name, account_id=None, region_name=None) L630
+lambda_layer_arn(layer_name, version=None, account_id=None) L636
+lambda_function_or_layer_arn(type, entity_name, version=None, account_id=None, region_name=None) L640
+lambda_function_name(name_or_arn) L667
+state_machine_arn(name, account_id=None, region_name=None) L678
+stepfunctions_activity_arn(name, account_id=None, region_name=None) L683
+fix_arn(arn) L688
+cognito_user_pool_arn(user_pool_id, account_id=None, region_name=None) L699
+kinesis_stream_arn(stream_name, account_id=None, region_name=None) L704
+elasticsearch_domain_arn(domain_name, account_id=None, region_name=None) L709
+firehose_stream_arn(stream_name, account_id=None, region_name=None) L714
+es_domain_arn(domain_name, account_id=None, region_name=None) L719
+kms_key_arn(key_id, account_id=None, region_name=None) L724
+code_signing_arn(code_signing_id, account_id=None, region_name=None) L729
+s3_bucket_arn(bucket_name_or_arn, account_id=None) L734
+s3_bucket_name(bucket_name_or_arn) L739
+_resource_arn(name, pattern, account_id=None, region_name=None) L743
+get_events_target_attributes(target) L753
+get_or_create_bucket(bucket_name, s3_client=None) L757
+create_sqs_queue(queue_name, env=None) L765
+sqs_queue_arn(queue_name, account_id=None, region_name=None) L772
+apigateway_restapi_arn(api_id, account_id=None, region_name=None) L779
+sqs_queue_name(queue_arn) L785
+sns_topic_arn(topic_name, account_id=None) L792
+sqs_receive_message(queue_arn) L797
+firehose_name(firehose_arn) L805
+kinesis_stream_name(kinesis_arn) L809
+mock_aws_request_headers(service='dynamodb', region_name=None, access_key=None) L813
+inject_region_into_auth_headers(region, headers) L836
+dynamodb_get_item_raw(request) L845
+create_dynamodb_table(table_name, partition_key, env=None, stream_view_type=None, region_name=None, client=None, sleep_after=2) L859
+get_apigateway_integration(api_id, method, path, env=None) L903
+get_apigateway_resource_for_path(api_id, path, parent=None, resources=None) L920
+get_apigateway_path_for_resource(api_id, resource_id, path_suffix='', resources=None, region_name=None) L936
+create_api_gateway(name, description=None, resources=None, stage_name=None, enabled_api_keys=[], env=None, usage_plan_name=None, region_name=None, auth_creator_func=None) L961
+create_api_gateway_integrations(api_id, resource_id, method, integrations=[], env=None, region_name=None) L1024
+apigateway_invocations_arn(lambda_uri) L1071
+get_elasticsearch_endpoint(domain=None, region_name=None) L1078
+connect_elasticsearch(endpoint=None, domain=None, region_name=None, env=None) L1089
+create_kinesis_stream(stream_name, shards=1, env=None, delete=False) L1127
+kinesis_get_latest_records(stream_name, shard_id, count=10, env=None) L1139
+get_stack_details(stack_name, region_name=None) L1161
+deploy_cf_stack(stack_name, template_body) L1169
+await_stack_status(stack_name, expected_statuses, retries=20, sleep=2, region_name=None) L1176
+check_stack() L1177
+await_stack_completion(stack_name, retries=20, sleep=2, statuses=None, region_name=None) L1192
+
+localstack/utils/aws/dead_letter_queue.py
+sqs_error_to_dead_letter_queue(queue_arn, event, error) L14
+sns_error_to_dead_letter_queue(sns_subscriber_arn, event, error) L35
+lambda_error_to_dead_letter_queue(func_details, event, error) L46
+_send_to_dead_letter_queue(source_type, source_arn, dlq_arn, event, error) L52
+_prepare_messages_to_dlq(source_arn, event, error) L90
+message_attributes_to_upper(message_attrs) L144
+
+localstack/utils/aws/message_forwarding.py
+lambda_result_to_destination(func_details, event, result, is_async, error) L17
+send_event_to_target(target_arn, event, target_attributes=None, asynchronous=True) L60
+send_event_to_api_destination(target_arn, event) L144
+add_api_destination_authorization(destination, headers, event) L185
+
+localstack/utils/aws/request_context.py
+class RequestContextManager(object) L88
+  __init__(self, request_context) L91
+  __enter__(self) L94
+  __exit__(self, type, value, traceback) L97
+
+get_proxy_request_for_thread() L29
+get_flask_request_for_thread() L36
+extract_region_from_auth_header(headers) L56
+extract_region_from_headers(headers) L64
+get_request_context() L81
+get_region_from_request_context() L101
+configure_region_for_current_request(region_name, service_name) L114
+mock_request_for_region(region_name, service_name='dummy') L144
+patch_moto_request_handling() L152
+convert_flask_to_httpretty_response_call(*args, **kwargs) L159
+modify_and_forward(method=None, path=None, data_bytes=None, headers=None, *args, **kwargs) L197
+thread_init(self, *args, **kwargs) L215
+thread_run(self, *args, **kwargs) L219
+
+localstack/utils/aws/request_routing.py
+get_service_action_names(service, version=None) L37
+matches_service_action(service, action, version=None) L52
+extract_version_and_action(path, data_bytes) L57
+
+localstack/utils/aws/templating.py
+class VelocityInput(object) L18
+  __init__(self, value) L22
+  path(self, path) L25
+  json(self, path) L31
+  __getattr__(self, name) L38
+  __repr__(self) L41
+
+class VelocityUtil(object) L45
+  base64Encode(self, s) L49
+  base64Decode(self, s) L56
+  toJson(self, obj) L61
+  urlEncode(self, s) L64
+  urlDecode(self, s) L67
+  escapeJavaScript(self, s) L70
+
+class ExtendedString(str) L133
+  trim(self, *args, **kwargs) L134
+  toLowerCase(self, *args, **kwargs) L137
+  toUpperCase(self, *args, **kwargs) L140
+
+render_velocity_template(template, context, variables={}, as_json=False) L83
+expr_parse(self) L92
+expr_calculate(self, current_object, loader, global_namespace) L107
+apply(obj, **kwargs) L143
+
+localstack/utils/bootstrap.py
+class WerkzeugLogFilter(logging.Filter) L184
+  filter(self, record) L185
+
+class LocalstackContainer L437
+  __init__(self, name=None) L461
+  _get_mount_volumes(self) L473
+  run(self) L486
+  truncate_log(self) L511
+
+class LocalstackContainerServer(Server) L516
+  __init__(self, container=None) L519
+  is_up(self) L523
+  is_container_running(self) L537
+  wait_is_container_running(self, timeout=None) L540
+  do_run(self) L543
+  do_shutdown(self) L551
+
+class ContainerExists(Exception) L560
+
+log_duration(name=None, min_ms=500) L74
+wrapper(f) L77
+wrapped(*args, **kwargs) L79
+get_docker_image_details(image_name=None) L97
+get_main_container_ip() L111
+get_main_container_id() L116
+get_main_container_name() L124
+get_server_version() L138
+setup_logging(log_level=None) L165
+resolve_apis(services) L220
+get_enabled_apis() L261
+canonicalize_api_names(apis=None) L272
+is_api_enabled(api) L289
+start_infra_locally() L302
+validate_localstack_config(name) L308
+port_exposed(port) L385
+get_docker_image_to_start() L414
+extract_port_flags(user_flags, port_mappings) L423
+prepare_docker_start() L564
+configure_container(container) L586
+prepare_host() L638
+start_infra_in_docker() L649
+start_infra_in_docker_detached(console) L675
+wait_container_is_ready(timeout=None) L700
+is_container_running() L704
+set_ready_if_marker_found(_line) L714
+in_ci() L740
+
+localstack/utils/cli.py
+main() L12
+
+localstack/utils/cloudformation/cfn_utils.py
+rename_params(func, rename_map) L1
+do_rename(params, **kwargs) L2
+
+localstack/utils/cloudformation/template_deployer.py
+class NoStackUpdates(Exception) L73
+
+class TemplateDeployer(object) L1157
+  __init__(self, stack) L1158
+  resources(self) L1162
+  stack_name(self) L1166
+  deploy_stack(self) L1173
+  apply_change_set(self, change_set) L1188
+  update_stack(self, new_stack) L1206
+  delete_stack(self) L1211
+  is_deployable_resource(self, resource) L1233
+  is_deployed(self, resource) L1244
+  is_updateable(self, resource) L1252
+  all_resource_dependencies_satisfied(self, resource) L1259
+  get_unsatisfied_dependencies(self, resource) L1263
+  get_unsatisfied_dependencies_for_resources(self, resources, depending_resource=None, return_first=True) L1267
+  get_resource_dependencies(self, resource) L1283
+  add_default_resource_props(self, resources=None) L1304
+  init_resource_status(self, resources=None, stack=None, action='CREATE') L1311
+  update_resource_details(self, resource_id, result, stack=None, action='CREATE') L1317
+  get_change_config(self, action, resource, change_set_id=None) L1336
+  resource_config_differs(self, resource_new) L1349
+  merge_properties(self, resource_id, old_stack, new_stack) L1370
+  resolve_param(self, logical_id, param_type, default_value=None) L1388
+  apply_parameter_changes(self, old_stack, new_stack) L1397
+  construct_changes(self, existing_stack, new_stack, initialize=False, change_set_id=None, append_to_changeset=False) L1426
+  apply_changes(self, existing_stack, new_stack, stack_name, change_set_id=None, initialize=False, action=None) L1455
+  apply_changes_in_loop(self, changes, stack, stack_name, action=None, new_stack=None) L1500
+  _run(*args) L1503
+  do_apply_changes_in_loop(self, changes, stack, stack_name) L1526
+  prepare_should_deploy_change(self, resource_id, change, stack, new_resources) L1601
+  apply_change(self, change, old_stack, new_resources, stack_name) L1632
+
+lambda_get_params() L79
+find_stack(stack_name) L92
+get_deployment_config(res_type) L103
+get_resource_type(resource) L113
+get_service_name(resource) L121
+get_resource_name(resource) L141
+get_client(resource, func_config) L159
+describe_stack_resource(stack_name, logical_resource_id) L176
+retrieve_resource_details(resource_id, resource_status, resources, stack_name) L190
+check_not_found_exception(e, resource_type, resource, resource_status=None) L234
+extract_resource_attribute(resource_type, resource_state, attribute, resource_id=None, resource=None, resources=None, stack_name=None) L256
+canonical_resource_type(resource_type) L410
+get_attr_from_model_instance(resource, attribute, resource_type, resource_id=None) L416
+resolve_ref(stack_name, ref, resources, attribute) L430
+resolve_refs_recursively(stack_name, value, resources) L498
+_resolve_refs_recursively(stack_name, value, resources) L516
+resolve_placeholders_in_string(result, stack_name=None, resources=None) L658
+_replace(match) L659
+evaluate_condition(stack_name, condition, resources) L697
+evaluate_resource_condition(resource, stack_name, resources) L704
+get_stack_parameter(stack_name, parameter) L713
+update_resource(resource_id, resources, stack_name) L726
+get_resource_model_instance(resource_id, resources) L741
+fix_account_id_in_arns(params) L753
+fix_ids(o, **kwargs) L754
+convert_data_types(func_details, params) L767
+cast(_obj, _type) L773
+fix_types(o, **kwargs) L784
+prepare_template_body(req_data) L796
+deploy_resource(resource_id, resources, stack_name) L800
+delete_resource(resource_id, resources, stack_name) L805
+execute_resource_action_fallback(action_name, resource_id, resources, stack_name, resource, resource_type) L809
+execute_resource_action(resource_id, resources, stack_name, action_name) L831
+configure_resource_via_sdk(resource_id, resources, resource_type, func_details, stack_name, action_name) L864
+fix_placeholders(o, **kwargs) L927
+get_action_name_for_resource_change(res_change) L991
+determine_resource_physical_id(resource_id, resources=None, stack=None, attribute=None, stack_name=None) L996
+update_resource_details(stack, resource_id, details, action=None) L1076
+add_default_resource_props(resource, stack_name, resource_name=None, resource_id=None, update=False, existing_resources=None) L1135
+
+localstack/utils/cloudformation/template_preparer.py
+class MockPolicyLoader(object) L40
+  load(self) L41
+
+transform_template(req_data) L29
+prepare_template_body(req_data) L57
+validate_template(req_data) L73
+get_template_body(req_data) L109
+parse_template(template) L139
+template_to_json(template) L156
+is_local_service_url(url) L161
+convert_s3_to_local_url(url) L176
+
+localstack/utils/cloudwatch/cloudwatch_util.py
+dimension_lambda(kwargs) L21
+publish_lambda_metric(metric, value, kwargs) L26
+publish_lambda_duration(time_before, kwargs) L47
+publish_lambda_error(time_before, kwargs) L52
+publish_lambda_result(time_before, result, kwargs) L57
+store_cloudwatch_logs(log_group_name, log_stream_name, log_output, start_time=None) L63
+_func_name(kwargs) L113
+publish_event(time_before, result, kwargs) L120
+publish_result(ns, time_before, result, kwargs) L131
+publish_error(ns, time_before, e, kwargs) L139
+cloudwatched(ns) L147
+wrapping(func) L150
+wrapped(*args, **kwargs) L151
+
+localstack/utils/common.py
+class Mock(object) L100
+
+class CustomEncoder(json.JSONEncoder) L106
+  default(self, o) L109
+
+class ShellCommandThread(FuncThread) L135
+  __init__(self, cmd, params=None, outfile=None, env_vars=None, stdin=False, auto_restart=False, quiet=True, inherit_cwd=False, inherit_env=True, log_listener=None, stop_listener=None, strip_color=False) L138
+  run_cmd(self, params) L170
+  do_run_cmd(self) L185
+  convert_line(line) L186
+  filter_line(line) L193
+  is_killed(self) L247
+  stop(self, quiet=False) L259
+
+class JsonObject(object) L281
+  to_json(self, indent=None) L284
+  apply_json(self, j) L296
+  to_dict(self) L301
+  from_json(cls, j) L305
+  from_json_list(cls, json_list) L312
+  as_dict(cls, obj) L316
+  __str__(self) L321
+  __repr__(self) L324
+
+class DelSafeDict(dict) L328
+  __delitem__(self, key, *args, **kwargs) L335
+
+class CaptureOutput(object) L339
+  __init__(self) L359
+  __enter__(self) L363
+  __exit__(self, type, value, traceback) L378
+  _set(self, out, err, __out, __err) L400
+  _proxy(self, original_stream, type) L408
+  proxy() L409
+  _ident(self) L418
+  stdout(self) L422
+  stderr(self) L425
+  _stream_value(self, stream) L428
+
+class LogStreamIO(io.StringIO) L353
+  write(self, s) L354
+
+class ObjectIdHashComparator L432
+  __init__(self, obj) L435
+  __hash__(self) L439
+  __eq__(self, other) L442
+
+class ArbitraryAccessObj L447
+  __init__(self, name=None) L450
+  __getattr__(self, name, *args, **kwargs) L453
+  __call__(self, *args, **kwargs) L456
+  __getitem__(self, *args, **kwargs) L461
+  __setitem__(self, *args, **kwargs) L464
+
+class HashableList(list) L468
+  __hash__(self) L471
+
+class NetrcBypassAuth(requests.auth.AuthBase) L1921
+  __call__(self, r) L1922
+
+class _RequestsSafe(type) L1926
+  __getattr__(self, name) L1932
+  _wrapper(*args, **kwargs) L1937
+
+class FileListener L1948
+  __init__(self, file_path, callback) L1955
+  start(self) L1964
+  join(self, timeout=None) L1972
+  close(self) L1976
+  _do_start_thread(self) L1983
+  _create_tail_command_thread(self) L1995
+  _log_listener(line, *args, **kwargs) L1996
+  _create_tailer_thread(self) L2009
+  _run_follow(*_) L2014
+
+class safe_requests L2029
+
+class SafeStringIO(io.StringIO) L2041
+  write(self, obj) L2044
+
+start_thread(method, *args, **kwargs) L483
+start_worker_thread(method, *args, **kwargs) L493
+empty_context_manager() L497
+synchronized(lock=None) L503
+_decorator(wrapped) L509
+_wrapper(*args, **kwargs) L511
+prevent_stack_overflow(match_parameters=False) L520
+_decorator(wrapped) L524
+func(*args, **kwargs) L526
+_matches(frame) L527
+is_string(s, include_unicode=True, exclude_binary=False) L558
+is_string_or_bytes(s) L568
+is_base64(s) L572
+md5(string) L577
+select_attributes(obj, attributes) L583
+remove_attributes(obj, attributes, recursive=False) L589
+_remove(o, **kwargs) L593
+rename_attributes(obj, old_to_new_attributes, in_place=False) L605
+is_list_or_tuple(obj) L618
+ensure_list(obj, wrap_none=False) L622
+in_docker() L629
+path_from_url(url) L633
+is_port_open(port_or_url, http_path=None, expect_success=True, protocols=None) L637
+wait_for_port_open(port, http_path=None, expect_success=True, retries=10, sleep_time=0.5) L685
+wait_for_port_closed(port, http_path=None, expect_success=True, retries=10, sleep_time=0.5) L697
+wait_for_port_status(port, http_path=None, expect_success=True, retries=10, sleep_time=0.5, expect_closed=False) L708
+check() L713
+port_can_be_bound(port) L724
+get_free_tcp_port(blacklist=None) L736
+sleep_forever() L748
+get_service_protocol() L753
+edge_ports_info() L757
+to_unique_items_list(inputs, comparator=None) L766
+contained(item) L770
+timestamp(time=None, format=TIMESTAMP_FORMAT) L786
+timestamp_millis(time=None) L794
+epoch_timestamp() L800
+parse_timestamp(ts_str) L804
+retry(function, retries=3, sleep=1.0, sleep_before=0, **kwargs) L813
+poll_condition(condition, timeout=None, interval=0.5) L827
+merge_recursive(source, destination, none_values=[None], overwrite=False) L850
+merge_dicts(*dicts, **kwargs) L866
+recurse_object(obj, func, path='') L878
+keys_to_lower(obj, skip_children_of=None) L892
+fix_keys(o, path='', **kwargs) L897
+camel_to_snake_case(string) L910
+snake_to_camel_case(string, capitalize_first=True) L914
+base64_to_hex(b64_string) L921
+obj_to_xml(obj) L925
+strip_xmlns(obj) L936
+now(millis=False, tz=None) L952
+now_utc(millis=False) L956
+mktime(ts, millis=False) L960
+mkdir(folder) L966
+is_empty_dir(directory, ignore_hidden=False) L971
+ensure_readable(file_path, default_perms=None) L982
+chown_r(path, user) L993
+chmod_r(path, mode) L1009
+rm_rf(path) L1021
+cp_r(src, dst, rm_dest_on_conflict=False, ignore_copystat_errors=False, **kwargs) L1046
+_copystat(*args, **kwargs) L1052
+_info(_path) L1075
+disk_usage(path) L1095
+format_bytes(count, default='n/a') L1112
+get_proxies() L1128
+download(url, path, verify_ssl=True) L1137
+parse_request_data(method, path, data=None, headers=None) L1187
+first_char_to_lower(s) L1211
+first_char_to_upper(s) L1215
+format_number(number, decimals=2) L1219
+is_number(s) L1228
+to_number(s) L1236
+is_mac_os() L1244
+is_linux() L1248
+is_windows() L1252
+is_debian() L1256
+get_arch() L1271
+get_os() L1284
+is_command_available(cmd) L1294
+short_uid() L1302
+long_uid() L1306
+parse_json_or_yaml(markup) L1310
+json_safe(item) L1325
+fix_json_keys(item) L1334
+canonical_json(obj) L1348
+extract_jsonpath(value, path) L1352
+assign_to_path(target, path, value, delimiter='.') L1361
+extract_from_jsonpointer_path(target, path, delimiter='/', auto_create=False) L1376
+save_file(file, content, append=False, permissions=None) L1397
+_opener(path, flags) L1402
+load_file(file_path, default=None, mode=None) L1413
+get_or_create_file(file_path, content=None, permissions=None) L1423
+replace_in_file(search, replace, file_path) L1434
+to_str(obj, encoding=DEFAULT_ENCODING, errors='strict') L1442
+to_bytes(obj, encoding=DEFAULT_ENCODING, errors='strict') L1448
+str_to_bool(value) L1454
+str_insert(string, index, content) L1462
+str_remove(string, index, end_index=None) L1467
+str_startswith_ignore_case(value, prefix) L1473
+last_index_of(array, value) L1477
+is_sub_dict(child_dict, parent_dict) L1487
+not_none_or(value, alternative) L1492
+cleanup(files=True, env=ENV_DEV, quiet=True) L1497
+cleanup_threads_and_processes(quiet=True) L1502
+kill_process_tree(parent_pid) L1541
+items_equivalent(list1, list2, comparator) L1555
+contained(item) L1559
+cleanup_tmp_files() L1572
+new_tmp_file() L1581
+new_tmp_dir() L1589
+is_ip_address(addr) L1596
+is_zip_file(content) L1604
+unzip(path, target_dir, overwrite=True) L1609
+_unzip_file_entry(zip_ref, file_entry, target_dir) L1629
+untar(path, target_dir) L1649
+is_root() L1655
+get_os_user() L1659
+cleanup_resources() L1669
+generate_ssl_cert(target_file=None, overwrite=False, random=False, return_content=False, serial_number=None) L1675
+all_exist(*files) L1686
+store_cert_key_files(base_filename) L1689
+call_safe(func, args=None, kwargs=None, exception_message=None) L1800
+run_safe(_python_lambda, *args, _default=None, **kwargs) L1829
+run_cmd_safe(**kwargs) L1839
+run_for_max_seconds(max_secs, _function, *args, **kwargs) L1843
+_worker(*_args) L1847
+do_run(cmd, run_cmd, cache_duration_secs) L1875
+run(cmd, cache_duration_secs=0, **kwargs) L1896
+run_cmd() L1900
+safe_run(cmd, cache_duration_secs=0, **kwargs) L1906
+run_cmd() L1907
+clone(item) L1913
+clone_safe(item) L1917
+make_http_request(url, data=None, headers=None, method='GET') L2033
+clean_cache(file_pattern=CACHE_FILE_PATTERN, last_clean_time=None, max_age=CACHE_MAX_AGE) L2050
+truncate(data, max_length=100) L2066
+get_all_subclasses(clazz) L2072
+parallelize(func, arr, size=None) L2082
+isoformat_milliseconds(t) L2092
+replace_response_content(response, pattern, replacement) L2100
+is_none_or_empty(obj) L2105
+canonicalize_bool_to_str(val) L2113
+convert_to_printable_chars(value) L2117
+_convert(obj, **kwargs) L2121
+
+localstack/utils/config_listener.py
+class ConfigUpdateProxyListener(ProxyListener) L29
+  forward_request(self, method, path, data, headers) L32
+
+trigger_config_listeners(variable, new_value) L16
+update_config_variable(variable, new_value) L22
+start_listener() L54
+remove_listener() L59
+
+localstack/utils/docker_utils.py
+class DockerContainerStatus(Enum) L44
+
+class ContainerException(Exception) L50
+  __init__(self, message=None, stdout=None, stderr=None) L51
+
+class NoSuchObject(ContainerException) L57
+  __init__(self, object_id, message=None, stdout=None, stderr=None) L58
+
+class NoSuchContainer(ContainerException) L64
+  __init__(self, container_name_or_id, message=None, stdout=None, stderr=None) L65
+
+class NoSuchImage(ContainerException) L71
+  __init__(self, image_name, message=None, stdout=None, stderr=None) L72
+
+class NoSuchNetwork(ContainerException) L78
+  __init__(self, network_name, message=None, stdout=None, stderr=None) L79
+
+class PortMappings(object) L85
+  __init__(self, bind_host=None) L88
+  add(self, port, mapped=None, protocol='tcp') L92
+  to_str(self) L140
+  entry(k, v) L143
+  to_list(self) L153
+  entry(k, v) L156
+  to_dict(self) L164
+  entry(k, v) L167
+  contains(self, port) L189
+  in_range(self, port, range) L194
+  in_expanded_range(self, port, range) L197
+  expand_range(self, port, range) L200
+  bisect_range(self, port, range) L215
+
+class VolumeBind L229
+  to_str(self) L238
+
+class VolumeMappings L255
+  __init__(self, mappings=None) L258
+  add(self, mapping) L261
+  append(self, mapping) L264
+  __iter__(self) L273
+
+class ContainerClient L277
+  get_container_status(self, container_name) L281
+  get_network(self, container_name) L286
+  stop_container(self, container_name, timeout=None) L291
+  remove_container(self, container_name, force=True, check_existence=False) L300
+  list_containers(self, filter=None, all=True) L305
+  get_running_container_names(self) L312
+  is_container_running(self, container_name) L318
+  copy_into_container(self, container_name, local_path, container_path) L323
+  copy_from_container(self, container_name, local_path, container_path) L330
+  pull_image(self, docker_image) L337
+  get_docker_image_names(self, strip_latest=True, include_tags=True) L342
+  get_container_logs(self, container_name_or_id, safe=False) L352
+  inspect_container(self, container_name_or_id) L357
+  inspect_image(self, image_name) L365
+  inspect_network(self, network_name) L373
+  get_container_name(self, container_id) L380
+  get_container_id(self, container_name) L384
+  get_container_ip(self, container_name_or_id) L389
+  get_image_cmd(self, docker_image) L396
+  get_image_entrypoint(self, docker_image) L401
+  has_docker(self) L408
+  create_container(self, image_name, *, name=None, entrypoint=None, remove=False, interactive=False, tty=False, detach=False, command=None, mount_volumes=None, ports=None, env_vars=None, user=None, cap_add=None, network=None, dns=None, additional_flags=None, workdir=None) L413
+  run_container(self, image_name, stdin=None, *, name=None, entrypoint=None, remove=False, interactive=False, tty=False, detach=False, command=None, mount_volumes=None, ports=None, env_vars=None, user=None, cap_add=None, network=None, dns=None, additional_flags=None, workdir=None) L441
+  exec_in_container(self, container_name_or_id, command, interactive=False, detach=False, env_vars=None, stdin=None, user=None) L470
+  start_container(self, container_name_or_id, stdin=None, interactive=False, attach=False, flags=None) L487
+
+class CmdDockerClient(ContainerClient) L502
+  _docker_cmd(self) L507
+  get_container_status(self, container_name) L511
+  get_network(self, container_name) L533
+  stop_container(self, container_name, timeout=None) L556
+  remove_container(self, container_name, force=True, check_existence=False) L572
+  list_containers(self, filter=None, all=True) L590
+  copy_into_container(self, container_name, local_path, container_path) L616
+  copy_from_container(self, container_name, local_path, container_path) L631
+  pull_image(self, docker_image) L646
+  get_docker_image_names(self, strip_latest=True, include_tags=True) L659
+  get_container_logs(self, container_name_or_id, safe=False) L674
+  _inspect_object(self, object_name_or_id) L689
+  inspect_container(self, container_name_or_id) L704
+  inspect_image(self, image_name) L710
+  inspect_network(self, network_name) L716
+  get_container_ip(self, container_name_or_id) L722
+  has_docker(self) L740
+  create_container(self, image_name, **kwargs) L747
+  run_container(self, image_name, stdin=None, **kwargs) L764
+  exec_in_container(self, container_name_or_id, command, interactive=False, detach=False, env_vars=None, stdin=None, user=None) L771
+  start_container(self, container_name_or_id, stdin=None, interactive=False, attach=False, flags=None) L800
+  _run_async_cmd(self, cmd, stdin, container_name, image_name=None) L819
+  _build_run_create_cmd(self, action, image_name, *, name=None, entrypoint=None, remove=False, interactive=False, tty=False, detach=False, command=None, mount_volumes=None, ports=None, env_vars=None, user=None, cap_add=None, network=None, dns=None, additional_flags=None, workdir=None) L852
+
+class Util L917
+  create_env_vars_file_flag(cls, env_vars) L921
+  rm_env_vars_file(env_vars_file) L946
+  mountable_tmp_file() L951
+  append_without_latest(image_names) L957
+  tar_path(path, target_path, is_dir) L964
+  untar_to_path(tardata, target_path) L979
+  parse_additional_flags(additional_flags, env_vars=None, ports=None, mounts=None, network=None) L993
+  convert_mount_list_to_dict(mount_volumes) L1095
+
+class SdkDockerClient(ContainerClient) L1107
+  __init__(self) L1112
+  client(self) L1119
+  _read_from_sock(self, sock, tty) L1125
+  _container_path_info(self, container, container_path) L1141
+  get_container_status(self, container_name) L1161
+  get_network(self, container_name) L1174
+  stop_container(self, container_name, timeout=None) L1184
+  remove_container(self, container_name, force=True, check_existence=False) L1196
+  list_containers(self, filter=None, all=True) L1210
+  copy_into_container(self, container_name, local_path, container_path) L1232
+  copy_from_container(self, container_name, local_path, container_path) L1247
+  pull_image(self, docker_image) L1263
+  get_docker_image_names(self, strip_latest=True, include_tags=True) L1274
+  get_container_logs(self, container_name_or_id, safe=False) L1286
+  inspect_container(self, container_name_or_id) L1299
+  inspect_image(self, image_name) L1307
+  inspect_network(self, network_name) L1315
+  get_container_ip(self, container_name_or_id) L1323
+  has_docker(self) L1330
+  start_container(self, container_name_or_id, stdin=None, interactive=False, attach=False, flags=None) L1339
+  wait_for_result(*_) L1364
+  create_container(self, image_name, *, name=None, entrypoint=None, remove=False, interactive=False, tty=False, detach=False, command=None, mount_volumes=None, ports=None, env_vars=None, user=None, cap_add=None, network=None, dns=None, additional_flags=None, workdir=None) L1412
+  create_container() L1459
+  run_container(self, image_name, stdin=None, *, name=None, entrypoint=None, remove=False, interactive=False, tty=False, detach=False, command=None, mount_volumes=None, ports=None, env_vars=None, user=None, cap_add=None, network=None, dns=None, additional_flags=None, workdir=None) L1488
+  exec_in_container(self, container_name_or_id, command, interactive=False, detach=False, env_vars=None, stdin=None, user=None) L1543
+
+localstack/utils/generic/dict_utils.py
+class AccessTrackingDict(dict) L5
+  __init__(self, wrapped, callback=None) L12
+  __setitem__(self, key, value) L16
+
+get_safe(dictionary, path, default_value=None) L21
+set_safe_mutable(dictionary, path, value) L65
+pick_attributes(dictionary, paths) L113
+
+localstack/utils/generic/file_utils.py
+parse_config_file(file_or_str, single_section=True) L10
+
+localstack/utils/generic/wait_utils.py
+class ShortCircuitWaitException(Exception) L40
+
+wait_until(fn, wait=1.0, max_retries=10, strategy='exponential', _retries=1, _max_wait=240) L7
+
+localstack/utils/http_utils.py
+uses_chunked_encoding(response) L7
+parse_chunked_data(data) L11
+create_chunked_data(data, chunk_size=80) L27
+canonicalize_headers(headers) L42
+_normalize(name) L46
+
+localstack/utils/kinesis/kclipy_helper.py
+get_dir_of_file(f) L15
+get_kcl_dir() L19
+get_kcl_jar_path() L23
+get_kcl_classpath(properties=None, paths=[]) L28
+get_kcl_app_command(java, multi_lang_daemon_class, properties, paths=[]) L73
+create_config_file(config_file, executableName, streamName, applicationName, credentialsProvider=None, region_name=None, **kwargs) L106
+
+localstack/utils/kinesis/kinesis_connector.py
+class KinesisProcessor(kcl.RecordProcessorBase) L71
+  __init__(self, log_file=None, processor_func=None, auto_checkpoint=True) L72
+  initialize(self, shard_id) L81
+  process_records(self, records, checkpointer) L86
+  shutdown(self, checkpointer, reason) L100
+  checkpoint(self, checkpointer, sequence_number=None, sub_sequence_number=None) L107
+  do_checkpoint() L108
+  should_update_sequence(self, sequence_number, sub_sequence_number) L116
+  log(self, s) L126
+  run_processor(log_file=None, processor_func=None) L132
+
+class KinesisProcessorThread(ShellCommandThread) L137
+  __init__(self, params) L138
+  start_consumer(kinesis_stream) L152
+
+class OutputReaderThread(FuncThread) L158
+  __init__(self, params) L159
+  get_log_level_names(cls, min_level) L184
+  get_logger_for_level_in_log_line(self, line) L187
+  notify_subscribers(self, line) L198
+  start_reading(self, params) L206
+  _tail(self, file) L226
+  _tail_native(self, file) L235
+
+class KclLogListener(object) L246
+  __init__(self, regex='.*') L247
+  update(self, log_line) L250
+
+class KclStartedLogListener(KclLogListener) L254
+  __init__(self) L255
+  update(self, log_line) L266
+
+get_stream_info(stream_name, log_file=None, shards=None, env=None, endpoint_url=None, ddb_lease_table_suffix=None, env_vars={}) L274
+start_kcl_client_process(stream_name, listener_script, log_file=None, env=None, configs={}, endpoint_url=None, ddb_lease_table_suffix=None, env_vars={}, region_name=None, kcl_log_level=DEFAULT_KCL_LOG_LEVEL, log_subscribers=[]) L317
+generate_processor_script(events_file, log_file=None) L409
+listen_to_kinesis(stream_name, listener_func=None, processor_script=None, events_file=None, endpoint_url=None, log_file=None, configs={}, env=None, ddb_lease_table_suffix=None, env_vars={}, kcl_log_level=DEFAULT_KCL_LOG_LEVEL, log_subscribers=[], wait_until_started=False, fh_d_stream=None, region_name=None) L473
+
+localstack/utils/kinesis/kinesis_util.py
+class EventFileReaderThread(FuncThread) L14
+  __init__(self, events_file, callback, ready_mutex=None, fh_d_stream=None) L15
+  retrieve_loop(self, params) L22
+  handle_connection(self, conn) L39
+
+localstack/utils/persistence.py
+class PersistingProxyListener(ProxyListener) L45
+  return_response(self, method, path, data, headers, response, request_handler=None) L53
+  should_persist(self, method, path, data, headers, response) L64
+  api_name(self) L92
+
+class StartupInfo(NamedTuple) L212
+
+should_record(method) L97
+record(api, method=None, path=None, data=None, headers=None, response=None, request=None) L102
+get_recordable_data(request_data) L121
+prepare_replay_data(command) L148
+replay_command(command) L154
+replay(api) L173
+restore_persisted_data(apis) L192
+is_persistence_enabled() L204
+is_persistence_restored() L208
+save_startup_info() L219
+_append_startup_info(file_path, startup_info) L240
+get_file_path(api, create=True) L257
+
+localstack/utils/run.py
+class FuncThread(threading.Thread) L131
+  __init__(self, func, params=None, quiet=False, on_stop=None) L134
+  run(self) L146
+  running(self) L170
+  stop(self, quiet=False) L173
+
+run(cmd, print_error=True, asynchronous=False, stdin=False, stderr=subprocess.STDOUT, outfile=None, env_vars=None, inherit_cwd=False, inherit_env=True, tty=False, shell=True) L17
+pipe_streams(*args) L91
+is_mac_os() L112
+is_linux() L116
+get_uname() L120
+to_str(obj, errors='strict') L127
+
+localstack/utils/server/http2_server.py
+class HTTPErrorResponse(Exception) L131
+  __init__(self, *args, code=None, **kwargs) L132
+
+class ProxyThread(FuncThread) L254
+  __init__(self) L255
+  run_proxy(self, *args) L260
+  stop(self, quiet=None) L265
+  set_event() L268
+
+setup_quart_logging() L40
+apply_patches() L49
+InformationalResponse_init(self, *args, **kwargs) L50
+_read_data(self) L61
+_close(self) L72
+create_ssl_context(self, *args, **kwargs) L83
+_do_create() L88
+_encode_headers(headers) L99
+build_and_validate_headers(headers) L107
+suppress_body(method, status_code) L121
+get_async_generator_result(result) L137
+run_server(port, bind_address, handler=None, asynchronous=True, ssl_creds=None) L146
+index(path=None) L154
+run_app_sync(*args, loop=None, shutdown_event=None) L205
+run_in_thread() L274
+
+localstack/utils/server/multiserver.py
+get_moto_server_port() L4
+
+localstack/utils/server/proxy_server.py
+class Listener(ProxyListener) L163
+  forward_request(self, method, path, data, headers) L164
+
+start_tcp_proxy(src, dst, handler, **kwargs) L27
+ip_to_tuple(ip) L41
+handle_request(s_src, thread) L50
+start_ssl_proxy(port, target, target_ssl=False, client_cert_key=None, asynchronous=False) L88
+_run(*args) L104
+_do_start_ssl_proxy(port, target, target_ssl=False) L115
+_do_start_ssl_proxy_with_client_auth(port, target, client_cert_key) L148
+
+localstack/utils/serving.py
+class StopServer(Exception) L12
+
+class Server(abc.ABC) L16
+  __init__(self, port, host='localhost') L21
+  host(self) L33
+  port(self) L37
+  protocol(self) L41
+  url(self) L45
+  get_error(self) L48
+  wait_is_up(self, timeout=None) L60
+  is_running(self) L72
+  is_up(self) L85
+  shutdown(self) L99
+  start(self) L116
+  join(self, timeout=None) L131
+  health(self) L153
+  do_start_thread(self) L159
+  _run(*_) L165
+  do_run(self) L175
+  do_shutdown(self) L183
+
+localstack/utils/tagging.py
+class TaggingService(object) L1
+  __init__(self) L2
+  list_tags_for_resource(self, arn, root_name=None) L5
+  tag_resource(self, arn, tags) L13
+  untag_resource(self, arn, tag_names) L21
+
+localstack/utils/testutil.py
+class TestListener(ProxyListener) L428
+  forward_request(self, **kwargs) L429
+
+is_local_test_mode() L57
+copy_dir(source, target) L62
+rm_dir(dir) L69
+create_lambda_archive(script, get_content=False, libs=[], runtime=None, file_name=None, exclude_func=None) L76
+delete_lambda_function(name) L135
+create_zip_file_cli(source_path, base_dir, zip_file) L140
+create_zip_file_python(source_path, base_dir, zip_file, mode='w', content_root=None) L147
+create_zip_file(file_path, zip_file=None, get_content=False, content_root=None, mode='w') L160
+create_lambda_function(func_name, zip_file=None, event_source_arn=None, handler_file=None, handler=None, starting_position=None, runtime=None, envvars={}, tags={}, libs=[], delete=False, layers=None, **kwargs) L208
+connect_api_gateway_to_http_with_lambda_proxy(gateway_name, target_uri, stage_name=None, methods=[], path=None, auth_type=None, auth_creator_func=None, http_method=None) L294
+create_lambda_api_gateway_integration(gateway_name, func_name, handler_file, methods=[], path=None, runtime=None, stage_name=None, auth_type=None, auth_creator_func=None) L331
+assert_objects(asserts, all_objects) L365
+assert_object(expected_object, all_objects) L372
+find_object(expected_object, object_list) L385
+find_recursive(key, value, obj) L406
+start_http_server(test_port=None, invocations=None, invocation_handler=None) L421
+list_all_s3_objects() L441
+delete_all_s3_objects(buckets) L445
+download_s3_object(s3, bucket, path) L455
+all_s3_object_keys(bucket) L467
+map_all_s3_objects(to_json=True, buckets=None) L474
+get_sample_arn(service, resource) L497
+send_describe_dynamodb_ttl_request(table_name) L506
+send_update_dynamodb_ttl_request(table_name, ttl_status) L510
+send_dynamodb_request(path, action, request_body) L526
+create_sqs_queue(queue_name) L536
+get_lambda_log_group_name(function_name) L555
+check_expected_lambda_log_events_length(expected_length, function_name, regex_filter=None) L559
+get_lambda_log_events(function_name, delay_time=DEFAULT_GET_LOG_EVENTS_DELAY, regex_filter=None) L579
+get_log_events(function_name, delay_time) L582
+http_server(handler, host='127.0.0.1', port=None) L624
+proxy_server(proxy_listener, host='127.0.0.1', port=None) L651
+json_response(data, code=200, headers=None) L669
+list_all_resources(page_function, last_token_attr_name, list_attr_name, next_token_attr_name=None) L678
