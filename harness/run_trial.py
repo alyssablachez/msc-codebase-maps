@@ -23,7 +23,7 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from git_utils import checkout, current_head, restore
 from generate_all_maps import REPO_DIR_MAP
-from source_filter import source_files_only
+from source_filter import scorable_files
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 
@@ -396,13 +396,17 @@ def _parse_submit_args(tc_args):
 
 # ── scoring ───────────────────────────────────────────────────────────────────
 
-def compute_scores(predicted, ground_truth):
-    """Score against the source-file subset of ground truth (see
-    scripts/source_filter.py) — ground_truth as stored is the full raw file
-    list and may include tests/docs/non-Python files that no map or tool in
-    this harness can surface. predicted is filtered the same way so a model
-    isn't penalised on precision for correctly ignoring such files either."""
-    p, t = set(source_files_only(predicted)), set(source_files_only(ground_truth))
+def compute_scores(predicted, ground_truth, repo, issue_idx, maps_root):
+    """Score against the subset of ground truth that's both a legitimate
+    source file and within the resolved package directory for this issue
+    (see scripts/source_filter.py) — ground_truth as stored is the full raw
+    file list and may include tests/docs/config files, non-Python files, or
+    real .py files outside the package scope the maps/tools operate in
+    (e.g. a repo-root utils/ dir), none of which this harness could ever
+    surface. predicted is filtered the same way so a model isn't penalised
+    on precision for correctly not predicting such a file either."""
+    p = set(scorable_files(predicted, repo, issue_idx, maps_root))
+    t = set(scorable_files(ground_truth, repo, issue_idx, maps_root))
     if not t:
         return {"precision": None, "recall": None, "f1": None}
     if not p:
@@ -717,7 +721,7 @@ def main():
         restore(repo_dir, default_branch)
 
     # ── score ─────────────────────────────────────────────────────────────────
-    scores = compute_scores(predicted_files, ground_truth)
+    scores = compute_scores(predicted_files, ground_truth, repo_name, args.issue_idx, maps_root)
 
     # ── save result ───────────────────────────────────────────────────────────
     out_dir = os.path.join(results_root, safe_model, repo_name, str(args.issue_idx), args.map)
@@ -753,9 +757,9 @@ def main():
             "trial_token":         trial_token,
         },
         "final_files_predicted": predicted_files,
-        "final_files_predicted_scorable": source_files_only(predicted_files),
+        "final_files_predicted_scorable": scorable_files(predicted_files, repo_name, args.issue_idx, maps_root),
         "ground_truth":          ground_truth,
-        "ground_truth_scorable": source_files_only(ground_truth),
+        "ground_truth_scorable": scorable_files(ground_truth, repo_name, args.issue_idx, maps_root),
         "scores":                scores,
         "transcript":            transcript,
     }
