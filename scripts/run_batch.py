@@ -28,10 +28,22 @@ import time
 
 import pandas as pd
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from generate_all_maps import REPO_DIR_MAP
+
 _ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HARNESS = os.path.join(_ROOT, "harness", "run_trial.py")
 SEL_CSV = os.path.join(_ROOT, "data", "issue_selection_final.csv")
 LOGS_DIR = os.path.join(_ROOT, "logs")
+
+# Repo name (as it appears in issue_selection_final.csv) -> worker-relative
+# folder basename. Derived from REPO_DIR_MAP (the same source run_trial.py's
+# FOLDER_TO_REPO uses, in reverse) rather than assuming "{repo}_full" —
+# that assumption breaks for gpt-engineer (gpt_engineer_full),
+# stable-diffusion-webui (stable_diffusion_webui_full), yt-dlp (ytdlp_full),
+# and scikit-learn (scikit_learn_full), all of which don't match their repo
+# name verbatim.
+REPO_TO_FOLDER = {repo: os.path.basename(path) for repo, path in REPO_DIR_MAP.items()}
 
 DEFAULT_REPOS_BASE   = "/home/afb225/study1/repos"
 DEFAULT_MAPS_BASE    = "/home/afb225/study1/repo_maps"
@@ -64,7 +76,10 @@ def fmt_time(seconds):
 
 
 def repo_path_for(repos_base, worker_id, repo):
-    return os.path.join(repos_base, f"worker_{worker_id}", f"{repo}_full")
+    folder = REPO_TO_FOLDER.get(repo)
+    if folder is None:
+        raise ValueError(f"No known repo folder for '{repo}' — not in REPO_DIR_MAP")
+    return os.path.join(repos_base, f"worker_{worker_id}", folder)
 
 
 def map_file_for(maps_base, repo, issue_idx, map_type):
