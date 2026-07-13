@@ -1086,3 +1086,81 @@ Harness and batch runner both validated end-to-end on this machine.
 Nothing committed yet for this round of changes. Next step when ready:
 the native-filesystem move, then real batch runs.
 
+## 2026-07-13
+## Fixed the AST Parser Blind Spot, Regenerated All AST Maps
+
+### The Fix
+`generate_ast_map.py`'s `extract_file()` had `except SyntaxError: return []`
+-- a file that failed to parse was silently treated identically to a file
+with no classes/functions at all, no warning anywhere. Audited every
+"invisible" file across all 45 issues (945 files, 8.9% of the corpus) by
+attempting `ast.parse()` directly: 893 were genuinely empty of top-level
+defs (legitimate -- re-export shims like `fastapi/background.py`,
+`__init__.py` aggregators), but 52 were real parse failures, concentrated
+in three issues from old codebases: `core/16` (1 file), `core/20` (26
+files), `pandas/44` (26 files, including pandas' own `core/frame.py`,
+`core/series.py`, `core/groupby.py`, `core/indexing.py` -- and
+`core/indexing.py` is `pandas/44`'s own ground truth).
+
+Two distinct root causes, both patched as a best-effort fallback (tried
+only when the unpatched source fails to parse; preserves line count so
+line numbers stay accurate; not a general Python 2->3 translator, just
+targets exactly what's in this corpus):
+- **Python 2 syntax** (pandas, ~2013): `except X, e:`, `print X`
+  statements, `raise X, "msg"`, `123L` long-literal suffixes, leading-zero
+  decimal literals (`datetime(2011, 11, 01)`), `ur'...'` string prefixes,
+  UTF-8 BOM.
+- **`async` reserved keyword** (home-assistant, ~2017): `async` became a
+  reserved word in Python 3.7, breaking `from homeassistant.util.async
+  import x` / `from .async import x` -- home-assistant had a whole module
+  named `async.py` at this era. Renaming `.async` -> `.async_` in import
+  paths is safe here since import statements don't themselves produce
+  AST records.
+
+Residual: 1 file still fails (`homeassistant/util/async.py` itself, which
+does `from asyncio import async` as a bare name plus `ensure_future =
+async` -- fixing this generally would require rewriting bare `async`
+identifiers, which risks corrupting genuine `async def`/`async with`
+elsewhere; not worth the risk for one file that was already invisible
+before this fix with no regression). Now logged as a WARNING instead of
+silently dropped either way.
+
+### Also Rewrote generate_ast_map.py to Use git archive, Not Checkout
+While fixing this, converted the script from "checkout working tree, then
+os.walk + open()" to "git archive the package dir straight from git
+objects, parse in-memory from a tarfile" -- no working tree is touched at
+all. This eliminates the WSL `/mnt/c` slow-checkout cost that has been a
+recurring problem all session (core/transformers taking 45-65 min per
+checkout). Confirmed on `pandas/44`: 3.7s vs. several minutes before.
+Full 45-issue regeneration (this step only) took about 2 minutes total,
+vs. an estimated ~1 hour-plus with the old checkout-based approach.
+
+### Regeneration
+New `scripts/regenerate_ast_maps.py` regenerates only the AST-derived
+artifacts (`ast_map.json`, `compact_map.txt`) for all 45 issues and merges
+the updated stats into `map_generation_stats.csv` -- deliberately does
+*not* touch `freq_map.txt`/`cochange_map.txt`, since those don't parse
+file contents and are unaffected by this fix. Followed by the existing
+`generate_nodoc_maps.py`, `generate_pruned_maps.py` (30k/50k/55k), and a
+re-run of `check_pruned_ground_truth.py` (all 3 budgets) and
+`min_budget_for_gt.py`, since the recovered files change compact-map
+composition and pruning outcomes.
+
+Functional changes landed in exactly the 3 affected issues (`core/16`,
+`core/20`, `pandas/44`) -- every other issue's `compact_map.txt` is
+byte-identical (the corresponding `ast_map.json` shows a diff purely from
+record-order differences between the old `os.walk` traversal and the new
+sorted-tarfile-member traversal; confirmed identical after sorting both).
+
+**Confirmed fix**: `pandas/44`'s ground truth `pandas/core/indexing.py` --
+previously invisible at every budget -- is now present in the full
+compact map and survives pruning at all three budgets tested. It no
+longer appears in any ground-truth-pruned-away list.
+
+### Status
+Done. Not yet committed. The deepseek-v4-flash batch results committed
+yesterday were generated against the *old* (buggy) maps for `core/16`,
+`core/20`, and `pandas/44` specifically -- worth a re-run of just those
+if/when doing the consolidated re-run mentioned in the harness-fix entry
+above.
+
