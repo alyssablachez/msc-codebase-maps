@@ -345,16 +345,19 @@ MAP_SYSTEM_ADDON = """\
 """
 
 FINAL_ANSWER_PROMPT = """\
-STOP. Do not call any more tools.
-
-You must now output your final answer as a JSON list of file paths that need \
-to be modified to resolve this issue. Output ONLY the JSON list — no \
-explanation, no markdown, no tool calls.
-
-Example: ["requests/models.py", "requests/auth.py"]
-
-Your answer:\
+STOP exploring. Based on everything you've found so far, call submit_answer \
+now with your best list of file paths — even if you're not fully certain. \
+Do not call any other tool.\
 """
+
+TURN_WARNING_PROMPT = """\
+You have about {remaining} turns left before this trial ends. Start \
+narrowing down to your best answer now and call submit_answer soon — an \
+imperfect answer submitted in time is better than running out of turns \
+with no answer at all.\
+"""
+
+TURN_WARNING_THRESHOLD = 5  # inject the warning this many turns before max_turns
 
 
 def _cached_tokens(response):
@@ -378,6 +381,17 @@ def _log_response(log_file, label, response):
     rec["_label"] = label
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, default=str) + "\n")
+
+
+def _parse_submit_args(tc_args):
+    """Normalise submit_answer tool-call arguments into a list of file paths.
+    Handles a bare list, {"files": [...]}, or {"files": "single/path.py"}."""
+    if isinstance(tc_args, list):
+        return tc_args
+    if isinstance(tc_args, dict):
+        files = tc_args.get("files", [])
+        return [files] if isinstance(files, str) else files
+    return []
 
 
 # ── scoring ───────────────────────────────────────────────────────────────────
@@ -507,10 +521,20 @@ def main():
     start_time          = time.time()
     submitted           = False
     predicted_files     = []
+    warned_turn_budget   = False
 
     try:
         # ── tool-calling loop ─────────────────────────────────────────────────
         for turn in range(args.max_turns):
+            remaining = args.max_turns - turn
+            if not warned_turn_budget and remaining <= TURN_WARNING_THRESHOLD:
+                messages.append({
+                    "role": "user",
+                    "content": TURN_WARNING_PROMPT.format(remaining=remaining),
+                })
+                warned_turn_budget = True
+                print(f"  [turn budget warning injected, {remaining} turns left]")
+
             response = litellm.completion(
                 model=args.model,
                 messages=messages,
@@ -577,13 +601,7 @@ def main():
                     tc_args = {}
 
                 if name == "submit_answer":
-                    if isinstance(tc_args, list):
-                        predicted_files = tc_args
-                    elif isinstance(tc_args, dict):
-                        files = tc_args.get("files", [])
-                        predicted_files = [files] if isinstance(files, str) else files
-                    else:
-                        predicted_files = []
+                    predicted_files = _parse_submit_args(tc_args)
                     stop_reason = "submitted"
                     tool_result = "Answer submitted."
                     print(f"    submit_answer → {predicted_files}")
@@ -626,8 +644,24 @@ def main():
 
         if not submitted:
             # ── elicit final answer ───────────────────────────────────────────
+            # Force a submit_answer tool call rather than asking the model to
+            # switch to freeform JSON text — after 40+ turns of tool-calling,
+            # some models (observed with DeepSeek) leak raw tool-call special
+            # tokens into freeform text, or ignore the "JSON only" instruction
+            # and write prose instead. Forcing tool_choice keeps the model in
+            # the same structured-output mode it's already reliable in.
             messages.append({"role": "user", "content": FINAL_ANSWER_PROMPT})
-            final_resp = litellm.completion(model=args.model, messages=messages)
+            try:
+                final_resp = litellm.completion(
+                    model=args.model,
+                    messages=messages,
+                    tools=TOOLS,
+                    tool_choice={"type": "function", "function": {"name": "submit_answer"}},
+                )
+            except Exception as exc:
+                print(f"WARNING: forced submit_answer call failed ({exc}), "
+                      f"retrying without forced tool_choice")
+                final_resp = litellm.completion(model=args.model, messages=messages)
             _log_response(log_file, "final_answer", final_resp)
 
             total_input_tokens  += final_resp.usage.prompt_tokens
@@ -638,25 +672,44 @@ def main():
             except Exception:
                 pass
 
-            final_content = final_resp.choices[0].message.content or ""
-            if not final_content and final_resp.choices[0].finish_reason == "tool_calls":
-                final_content = next(
-                    (t.get("content", "") for t in reversed(transcript)
-                     if t.get("role") == "assistant"
-                     and t.get("turn") != "final"
-                     and t.get("content")
-                     and t.get("content") != "None"),
-                    ""
-                )
-            final_text = final_content.strip()
-            transcript.append({"turn": "final", "role": "assistant", "content": final_text})
+            final_msg = final_resp.choices[0].message
+            final_tc_list = final_msg.tool_calls or []
+            submit_tc = next(
+                (tc for tc in final_tc_list if tc.function.name == "submit_answer"), None)
 
-            # Parse JSON list from final answer (handle markdown fences gracefully)
-            try:
-                match = re.search(r"\[.*?\]", final_text, re.DOTALL)
-                predicted_files = json.loads(match.group() if match else final_text)
-            except (json.JSONDecodeError, AttributeError):
-                print(f"WARNING: could not parse final answer as JSON: {final_text!r}")
+            if submit_tc is not None:
+                try:
+                    tc_args = json.loads(submit_tc.function.arguments)
+                except json.JSONDecodeError:
+                    tc_args = {}
+                predicted_files = _parse_submit_args(tc_args)
+                transcript.append({
+                    "turn": "final", "role": "assistant",
+                    "content": None, "tool_calls": [{
+                        "name": "submit_answer", "arguments": submit_tc.function.arguments,
+                    }],
+                })
+            else:
+                # Fallback: provider didn't honor forced tool_choice, or
+                # returned freeform text instead — try the old text-parsing
+                # path so a well-behaved plain-text answer still counts.
+                final_content = final_msg.content or ""
+                if not final_content and final_resp.choices[0].finish_reason == "tool_calls":
+                    final_content = next(
+                        (t.get("content", "") for t in reversed(transcript)
+                         if t.get("role") == "assistant"
+                         and t.get("turn") != "final"
+                         and t.get("content")
+                         and t.get("content") != "None"),
+                        ""
+                    )
+                final_text = final_content.strip()
+                transcript.append({"turn": "final", "role": "assistant", "content": final_text})
+                try:
+                    match = re.search(r"\[.*?\]", final_text, re.DOTALL)
+                    predicted_files = json.loads(match.group() if match else final_text)
+                except (json.JSONDecodeError, AttributeError):
+                    print(f"WARNING: could not parse final answer as JSON: {final_text!r}")
 
     finally:
         wall_time = time.time() - start_time
