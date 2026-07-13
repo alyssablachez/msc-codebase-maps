@@ -1,0 +1,326 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "localstack",
+  "issue_idx": 19,
+  "tier": "medium",
+  "role": "multi",
+  "map_type": "cochange",
+  "rep": 0,
+  "worker_id": 1,
+  "issue_title": "Data persistence for all services",
+  "base_commit": "0cf839ae1237e9b5aa9479d80e8f3f1eb3b79b5d",
+  "metrics": {
+    "total_input_tokens": 54937,
+    "total_output_tokens": 2864,
+    "total_cached_tokens": 45696,
+    "total_cost": 0.002224,
+    "num_turns": 6,
+    "wall_time_seconds": 36.43,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "cfb39ac4"
+  },
+  "final_files_predicted": [
+    "localstack/utils/persistence.py",
+    "localstack/services/infra.py",
+    "localstack/services/s3/s3_listener.py",
+    "localstack/services/es/es_api.py",
+    "localstack/config.py"
+  ],
+  "final_files_predicted_scorable": [
+    "localstack/utils/persistence.py",
+    "localstack/services/infra.py",
+    "localstack/services/s3/s3_listener.py",
+    "localstack/services/es/es_api.py",
+    "localstack/config.py"
+  ],
+  "ground_truth": [
+    "localstack/constants.py",
+    "localstack/utils/persistence.py",
+    "localstack/services/ssm/ssm_listener.py",
+    "localstack/plugins.py",
+    "localstack/services/infra.py",
+    "localstack/services/secretsmanager/secretsmanager_starter.py",
+    "localstack/services/s3/s3_listener.py"
+  ],
+  "ground_truth_scorable": [
+    "localstack/constants.py",
+    "localstack/utils/persistence.py",
+    "localstack/services/ssm/ssm_listener.py",
+    "localstack/plugins.py",
+    "localstack/services/infra.py",
+    "localstack/services/secretsmanager/secretsmanager_starter.py",
+    "localstack/services/s3/s3_listener.py"
+  ],
+  "scores": {
+    "precision": 0.6,
+    "recall": 0.4286,
+    "f1": 0.5
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_qEjJnRRPMS8RKARfzDZh8318",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"persistence\", \"path\": \"\"}"
+          }
+        },
+        {
+          "id": "call_01_sW7hmzwFbRi0Xp45jjAb7703",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"localstack/utils/persistence.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_qEjJnRRPMS8RKARfzDZh8318",
+      "name": "search",
+      "args": {
+        "pattern": "persistence",
+        "path": ""
+      },
+      "result": "localstack/services/es/es_api.py:7:from localstack.utils import persistence\nlocalstack/services/es/es_api.py:239:    persistence.record('es', request=request)\nlocalstack/services/es/es_api.py:284:    persistence.record('es', request=request)\nlocalstack/services/infra.py:17:from localstack.utils import common, persistence\nlocalstack/services/infra.py:395:        persistence.restore_persisted_data(apis=apis)\nlocalstack/services/s3/s3_listener.py:21:from localstack.utils import persistence\nlocalstack/services/s3/s3_listener.py:1001:        persistence.record('s3', method, path, data, headers, response=response)"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_01_sW7hmzwFbRi0Xp45jjAb7703",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/utils/persistence.py"
+      },
+      "result": "import os\nimport json\nimport base64\nimport traceback\nimport requests\nimport logging\nfrom localstack.config import DATA_DIR\nfrom localstack.utils.aws import aws_stack\nfrom localstack.utils.common import to_bytes, to_str\n\nUSE_SINGLE_DUMP_FILE = True\n\nif USE_SINGLE_DUMP_FILE:\n    API_FILE_PATTERN = '{data_dir}/recorded_api_calls.json'\nelse:\n    API_FILE_PATTERN = '{data_dir}/{api}_api_calls.json'\n\n# Stack with flags to indicate whether we are currently re-playing API calls.\n# (We should not be re-playing and recording at the same time)\nCURRENTLY_REPLAYING = []\n\n# file paths by API\nAPI_FILE_PATHS = {}\n\n# set up logger\nLOG = logging.getLogger(__name__)\n\n\ndef should_record(api, method, path, data, headers, response=None):\n    \"\"\" Decide whether or not a given API call should be recorded (persisted to disk) \"\"\"\n    if api in ['es', 's3']:\n        return method in ['PUT', 'POST', 'DELETE']\n    return False\n\n\ndef record(api, method=None, path=None, data=None, headers=None, response=None, request=None):\n    \"\"\" Record a given API call to a persistent file on disk \"\"\"\n    file_path = get_file_path(api)\n    if CURRENTLY_REPLAYING or not file_path:\n        return\n    if request:\n        method = method or request.method\n        path = path or request.path\n        headers = headers or request.headers\n        data = data or request.data\n    should_be_recorded = should_record(api, method, path, data, headers, response=response)\n    if not should_be_recorded:\n        return\n    entry = None\n    try:\n        if isinstance(data, dict):\n            data = json.dumps(data)\n\n        def get_recordable_data(data):\n            if data or data in [u'', b'']:\n                try:\n                    data = to_bytes(data)\n                except Exception as e:\n                    LOG.warning('Unable to call to_bytes: %s' % e)\n                data = to_str(base64.b64encode(data))\n            return data\n\n        data = get_recordable_data(data)\n        response_data = get_recordable_data('' if response is None else response.content)\n\n        entry = {\n            'a': api,\n            'm': method,\n            'p': path,\n            'd': data,\n            'h': dict(headers),\n            'rd': response_data\n        }\n        with open(file_path, 'a') as dumpfile:\n            dumpfile.write('%s\\n' % json.dumps(entry))\n    except Exception as e:\n        print('Error recording API call to persistent file: %s %s' % (e, traceback.format_exc()))\n\n\ndef prepare_replay_data(command):\n    data = command['d']\n    data = data and base64.b64decode(data)\n    return data\n\n\ndef replay_command(command):\n    function = getattr(requests, command['m'].lower())\n    data = prepare_replay_data(command)\n    endpoint = aws_stack.get_local_service_url(command['a'])\n    full_url = (endpoint[:-1] if endpoint.endswith('/') else endpoint) + command['p']\n    response = function(full_url, data=data, headers=command['h'], verify=False)\n    return response\n\n\ndef replay(api):\n    file_path = get_file_path(api)\n    if not file_path:\n        return\n    CURRENTLY_REPLAYING.append(True)\n    count = 0\n    try:\n        with open(file_path, 'r') as reader:\n            for line in reader:\n                if line.strip():\n                    count += 1\n                    command = json.loads(line)\n                    replay_command(command)\n    finally:\n        CURRENTLY_REPLAYING.pop(0)\n    if count:\n        LOG.info('Restored %s API calls from persistent file: %s' % (count, file_path))\n\n\ndef restore_persisted_data(apis):\n    if USE_SINGLE_DUMP_FILE:\n        return replay('_all_')\n    apis = apis if isinstance(apis, list) else [apis]\n    for api in apis:\n        replay(api)\n\n\n# ---------------\n# HELPER METHODS\n# ---------------\n\ndef get_file_path(api, create=True):\n    if api not in API_FILE_PATHS:\n        API_FILE_PATHS[api] = False\n        if not DATA_DIR:\n            return False\n        file_path = API_FILE_PATTERN.format(data_dir=DATA_DIR, api=api)\n        if create and not os.path.exists(file_path):\n            with open(file_path, 'a'):\n                os.utime(file_path, None)\n        if os.path.exists(file_path):\n            API_FILE_PATHS[api] = file_path\n    return API_FILE_PATHS.get(api)\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_DON3ovI7HQqek74Uqh4T6737",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"localstack/services/infra.py\", \"offset\": 380, \"limit\": 30}"
+          }
+        },
+        {
+          "id": "call_01_fKGl3SFRsvi6YqZ7uNRa5215",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"localstack/services/s3/s3_listener.py\", \"offset\": 990, \"limit\": 20}"
+          }
+        },
+        {
+          "id": "call_02_9HV7SlPUjPRrdCA7GRX54668",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"localstack/services/es/es_api.py\", \"offset\": 230, \"limit\": 60}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_DON3ovI7HQqek74Uqh4T6737",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/services/infra.py",
+        "offset": 380,
+        "limit": 30
+      },
+      "result": "[Lines 380\u2013409 of 413]\n        sleep_time = 5\n        # start services\n        thread = None\n\n        # loop through plugins and start each service\n        for name, plugin in SERVICE_PLUGINS.items():\n            if plugin.is_enabled(api_names=apis):\n                record_service_health(name, 'starting')\n                t1 = plugin.start(asynchronous=True)\n                thread = thread or t1\n\n        time.sleep(sleep_time)\n        # ensure that all infra components are up and running\n        check_infra(apis=apis)\n        # restore persisted data\n        persistence.restore_persisted_data(apis=apis)\n        print('Ready.')\n        sys.stdout.flush()\n        if not asynchronous and thread:\n            # this is a bit of an ugly hack, but we need to make sure that we\n            # stay in the execution context of the main thread, otherwise our\n            # signal handlers don't work\n            while True:\n                time.sleep(1)\n        return thread\n    except KeyboardInterrupt:\n        print('Shutdown')\n    except Exception as e:\n        print('Error starting infrastructure: %s %s' % (e, traceback.format_exc()))\n        sys.stdout.flush()\n"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_01_fKGl3SFRsvi6YqZ7uNRa5215",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/services/s3/s3_listener.py",
+        "offset": 990,
+        "limit": 20
+      },
+      "result": "[Lines 990\u20131009 of 1170]\n            return\n\n        url = 'http://%s:%s%s' % (constants.LOCALHOST, constants.DEFAULT_PORT_S3_BACKEND, path_new)\n        return url\n\n    def return_response(self, method, path, data, headers, response):\n        path = to_str(path)\n        method = to_str(method)\n        bucket_name = get_bucket_name(path, headers)\n\n        # persist this API call to disk\n        persistence.record('s3', method, path, data, headers, response=response)\n\n        # No path-name based bucket name? Try host-based\n        hostname_parts = headers['host'].split('.')\n        if (not bucket_name or len(bucket_name) == 0) and len(hostname_parts) > 1:\n            bucket_name = hostname_parts[0]\n\n        # POST requests to S3 may include a success_action_redirect or\n        # success_action_status field, which should be used to redirect a\n"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_02_9HV7SlPUjPRrdCA7GRX54668",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/services/es/es_api.py",
+        "offset": 230,
+        "limit": 60
+      },
+      "result": "[Lines 230\u2013289 of 322]\n    # start ES instance in the background\n    FuncThread(do_start).start()\n    # sleep a short while, then return\n    time.sleep(5)\n    result = get_domain_status(domain_name)\n\n    # record event\n    event_publisher.fire_event(event_publisher.EVENT_ES_CREATE_DOMAIN,\n        payload={'n': event_publisher.get_hash(domain_name)})\n    persistence.record('es', request=request)\n\n    return jsonify(result)\n\n\n@app.route('%s/es/domain/<domain_name>' % API_PREFIX, methods=['GET'])\ndef describe_domain(domain_name):\n    if domain_name not in ES_DOMAINS:\n        return error_response(error_type='ResourceNotFoundException')\n    result = get_domain_status(domain_name)\n    return jsonify(result)\n\n\n@app.route('%s/es/domain-info' % API_PREFIX, methods=['POST'])\ndef describe_domains():\n    data = json.loads(to_str(request.data))\n    result = []\n    domain_names = data.get('DomainNames', [])\n    for domain_name in ES_DOMAINS:\n        if domain_name in domain_names:\n            status = get_domain_status(domain_name)\n            status = status.get('DomainStatus') or status\n            result.append(status)\n    result = {'DomainStatusList': result}\n    return jsonify(result)\n\n\n@app.route('%s/es/domain/<domain_name>/config' % API_PREFIX, methods=['GET', 'POST'])\ndef domain_config(domain_name):\n    config = get_domain_config(domain_name)\n    return jsonify(config)\n\n\n@app.route('%s/es/domain/<domain_name>' % API_PREFIX, methods=['DELETE'])\ndef delete_domain(domain_name):\n    if domain_name not in ES_DOMAINS:\n        return error_response(error_type='ResourceNotFoundException')\n    result = get_domain_status(domain_name, deleted=True)\n    status = ES_DOMAINS.pop(domain_name)\n    if not ES_DOMAINS:\n        cleanup_elasticsearch_instance(status)\n\n    # record event\n    event_publisher.fire_event(event_publisher.EVENT_ES_DELETE_DOMAIN,\n        payload={'n': event_publisher.get_hash(domain_name)})\n    persistence.record('es', request=request)\n\n    return jsonify(result)\n\n\n@app.route('%s/es/compatibleVersions' % API_PREFIX, methods=['GET'])\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_hmpaNu0eBaVdYQHSSIn00555",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"persistence\\\\.record\", \"path\": \"\"}"
+          }
+        },
+        {
+          "id": "call_01_R0z6DAWdzMtAi1VVYpLp2825",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"from localstack.utils import persistence\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_hmpaNu0eBaVdYQHSSIn00555",
+      "name": "search",
+      "args": {
+        "pattern": "persistence\\.record",
+        "path": ""
+      },
+      "result": "localstack/services/es/es_api.py:239:    persistence.record('es', request=request)\nlocalstack/services/es/es_api.py:284:    persistence.record('es', request=request)\nlocalstack/services/s3/s3_listener.py:1001:        persistence.record('s3', method, path, data, headers, response=response)"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_01_R0z6DAWdzMtAi1VVYpLp2825",
+      "name": "search",
+      "args": {
+        "pattern": "from localstack.utils import persistence",
+        "path": ""
+      },
+      "result": "localstack/services/es/es_api.py:7:from localstack.utils import persistence\nlocalstack/services/s3/s3_listener.py:21:from localstack.utils import persistence"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_8SrJvZpfzKaOI3IZMmF99820",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"DATA_DIR\", \"path\": \"\"}"
+          }
+        },
+        {
+          "id": "call_01_gkQ6j6eAK7GcfBUUNQp30835",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"persist\", \"path\": \"localstack\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_8SrJvZpfzKaOI3IZMmF99820",
+      "name": "search",
+      "args": {
+        "pattern": "DATA_DIR",
+        "path": ""
+      },
+      "result": "localstack/config.py:60:DATA_DIR = os.environ.get('DATA_DIR', '').strip()\nlocalstack/config.py:66:for folder in [DATA_DIR, TMP_FOLDER]:\nlocalstack/config.py:159:# Note: do *not* include DATA_DIR in this list, as it is treated separately\nlocalstack/services/dynamodb/dynamodb_starter.py:38:    if config.DATA_DIR:\nlocalstack/services/dynamodb/dynamodb_starter.py:39:        ddb_data_dir = '%s/dynamodb' % config.DATA_DIR\nlocalstack/services/es/es_starter.py:49:    if config.DATA_DIR:\nlocalstack/services/es/es_starter.py:51:        es_data_dir = '%s/elasticsearch' % config.DATA_DIR\nlocalstack/services/kinesis/kinesis_starter.py:20:    if config.DATA_DIR:\nlocalstack/services/kinesis/kinesis_starter.py:21:        kinesis_data_dir = '%s/kinesis' % config.DATA_DIR\nlocalstack/utils/bootstrap.py:390:    data_dir = os.environ.get('DATA_DIR', None)\nlocalstack/utils/bootstrap.py:394:        env_str += '-e DATA_DIR=\"%s\" ' % container_data_dir\nlocalstack/utils/persistence.py:7:from localstack.config import DATA_DIR\nlocalstack/utils/persistence.py:129:        if not DATA_DIR:\nlocalstack/utils/persistence.py:131:        file_path = API_FILE_PATTERN.format(data_dir=DATA_DIR, api=api)"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_01_gkQ6j6eAK7GcfBUUNQp30835",
+      "name": "search",
+      "args": {
+        "pattern": "persist",
+        "path": "localstack"
+      },
+      "result": "localstack/config.py:59:# directory for persisting data\nlocalstack/services/awslambda/lambda_executors.py:334:        Prepares a persistent docker container for a specific function.\nlocalstack/services/es/es_api.py:7:from localstack.utils import persistence\nlocalstack/services/es/es_api.py:239:    persistence.record('es', request=request)\nlocalstack/services/es/es_api.py:284:    persistence.record('es', request=request)\nlocalstack/services/infra.py:17:from localstack.utils import common, persistence\nlocalstack/services/infra.py:394:        # restore persisted data\nlocalstack/services/infra.py:395:        persistence.restore_persisted_data(apis=apis)\nlocalstack/services/s3/s3_listener.py:21:from localstack.utils import persistence\nlocalstack/services/s3/s3_listener.py:1000:        # persist this API call to disk\nlocalstack/services/s3/s3_listener.py:1001:        persistence.record('s3', method, path, data, headers, response=response)\nlocalstack/utils/persistence.py:30:    \"\"\" Decide whether or not a given API call should be recorded (persisted to disk) \"\"\"\nlocalstack/utils/persistence.py:37:    \"\"\" Record a given API call to a persistent file on disk \"\"\"\nlocalstack/utils/persistence.py:77:        print('Error recording API call to persistent file: %s %s' % (e, traceback.format_exc()))\nlocalstack/utils/persistence.py:111:        LOG.info('Restored %s API calls from persistent file: %s' % (count, file_path))\nlocalstack/utils/persistence.py:114:def restore_persisted_data(apis):"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "Let me look at a few more service files to understand the pattern for adding persistence.",
+      "tool_calls": [
+        {
+          "id": "call_00_JNENC1ZHQQPv42ytnGBN7329",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"localstack/services\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_JNENC1ZHQQPv42ytnGBN7329",
+      "name": "list_files",
+      "args": {
+        "path": "localstack/services"
+      },
+      "result": "__init__.py\napigateway\nawslambda\ncloudformation\ndynamodb\ndynamodbstreams\nec2\nedge.py\nes\nevents\nfirehose\ngeneric_proxy.py\niam\ninfra.py\ninstall.py\nkinesis\nkms\nlogs\nplugins.py\ns3\nsecretsmanager\nses\nsns\nsqs\nssm\nstepfunctions\nsts"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "Based on my investigation, here's what I found:\n\nThe data persistence feature is implemented in `localstack/utils/persistence.py`, which currently only supports `es` (Elasticsearch) and `s3` services. The issue calls for extending persistence support to all services. The core files involved are:\n\n1. **`localstack/utils/persistence.py`** \u2014 The central persistence module. Contains `should_record()` which only allows 'es' and 's3', and the `record()`/`restore_persisted_data()` functions that all services would need to use.\n\n2. **`localstack/services/infra.py`** \u2014 Calls `persistence.restore_persisted_data()` on startup; would need to be updated to handle more services.\n\n3. **`localstack/services/s3/s3_listener.py`** \u2014 One of the two existing consumers of persistence (calls `persistence.record('s3', ...)`).\n\n4. **`localstack/services/es/es_api.py`** \u2014 The other existing consumer of persistence (calls `persistence.record('es', ...)`).\n\n5. **`localstack/config.py`** \u2014 Defines `DATA_DIR` which is the configuration for where persistence data is stored.",
+      "tool_calls": [
+        {
+          "id": "call_00_R9qh31Ii31ZCoGncbrTi2745",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"localstack/utils/persistence.py\", \"localstack/services/infra.py\", \"localstack/services/s3/s3_listener.py\", \"localstack/services/es/es_api.py\", \"localstack/config.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_R9qh31Ii31ZCoGncbrTi2745",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "localstack/utils/persistence.py",
+          "localstack/services/infra.py",
+          "localstack/services/s3/s3_listener.py",
+          "localstack/services/es/es_api.py",
+          "localstack/config.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

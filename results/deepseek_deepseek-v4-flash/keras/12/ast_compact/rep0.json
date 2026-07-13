@@ -1,0 +1,236 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "keras",
+  "issue_idx": 12,
+  "tier": "medium",
+  "role": "multi",
+  "map_type": "ast_compact",
+  "rep": 0,
+  "worker_id": 1,
+  "issue_title": "Performance Using HDF5 File vs In-Memory Dataset",
+  "base_commit": "3d9428d3445a429b535a247168d93b8a5910219d",
+  "metrics": {
+    "total_input_tokens": 167596,
+    "total_output_tokens": 3603,
+    "total_cached_tokens": 139648,
+    "total_cost": 0.005313,
+    "num_turns": 6,
+    "wall_time_seconds": 47.76,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "9bfff5ca"
+  },
+  "final_files_predicted": [
+    "keras/utils/io_utils.py"
+  ],
+  "final_files_predicted_scorable": [
+    "keras/utils/io_utils.py"
+  ],
+  "ground_truth": [
+    "keras/utils/data_utils.py",
+    "keras/utils/__init__.py",
+    "keras/legacy/interfaces.py",
+    "keras/engine/training.py",
+    "keras/models.py"
+  ],
+  "ground_truth_scorable": [
+    "keras/utils/data_utils.py",
+    "keras/utils/__init__.py",
+    "keras/legacy/interfaces.py",
+    "keras/engine/training.py",
+    "keras/models.py"
+  ],
+  "scores": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_dmxZPGvqQVfDpAnjCGNR8267",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"keras/utils/io_utils.py\"}"
+          }
+        },
+        {
+          "id": "call_01_MrAH5o2HGgURyqSB0UGY8959",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"keras/engine/training.py\", \"offset\": 1059, \"limit\": 130}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_dmxZPGvqQVfDpAnjCGNR8267",
+      "name": "read_file",
+      "args": {
+        "path": "keras/utils/io_utils.py"
+      },
+      "result": "\"\"\"Utilities related to disk I/O.\"\"\"\nfrom __future__ import absolute_import\nfrom __future__ import print_function\n\nimport numpy as np\nimport sys\nfrom collections import defaultdict\n\ntry:\n    import h5py\nexcept ImportError:\n    h5py = None\n\n\nclass HDF5Matrix(object):\n    \"\"\"Representation of HDF5 dataset to be used instead of a Numpy array.\n\n    # Example\n\n    ```python\n        x_data = HDF5Matrix('input/file.hdf5', 'data')\n        model.predict(x_data)\n    ```\n\n    Providing `start` and `end` allows use of a slice of the dataset.\n\n    Optionally, a normalizer function (or lambda) can be given. This will\n    be called on every slice of data retrieved.\n\n    # Arguments\n        datapath: string, path to a HDF5 file\n        dataset: string, name of the HDF5 dataset in the file specified\n            in datapath\n        start: int, start of desired slice of the specified dataset\n        end: int, end of desired slice of the specified dataset\n        normalizer: function to be called on data when retrieved\n\n    # Returns\n        An array-like HDF5 dataset.\n    \"\"\"\n    refs = defaultdict(int)\n\n    def __init__(self, datapath, dataset, start=0, end=None, normalizer=None):\n        if h5py is None:\n            raise ImportError('The use of HDF5Matrix requires '\n                              'HDF5 and h5py installed.')\n\n        if datapath not in list(self.refs.keys()):\n            f = h5py.File(datapath)\n            self.refs[datapath] = f\n        else:\n            f = self.refs[datapath]\n        self.data = f[dataset]\n        self.start = start\n        if end is None:\n            self.end = self.data.shape[0]\n        else:\n            self.end = end\n        self.normalizer = normalizer\n\n    def __len__(self):\n        return self.end - self.start\n\n    def __getitem__(self, key):\n        if isinstance(key, slice):\n            start, stop = key.start, key.stop\n            if start is None:\n                start = 0\n            if stop is None:\n                stop = self.data.shape[0]\n            if stop + self.start <= self.end:\n                idx = slice(start + self.start, stop + self.start)\n            else:\n                raise IndexError\n        elif isinstance(key, int):\n            if key + self.start < self.end:\n                idx = key + self.start\n            else:\n                raise IndexError\n        elif isinstance(key, np.ndarray):\n            if np.max(key) + self.start < self.end:\n                idx = (self.start + key).tolist()\n            else:\n                raise IndexError\n        elif isinstance(key, list):\n            if max(key) + self.start < self.end:\n                idx = [x + self.start for x in key]\n            else:\n                raise IndexError\n        else:\n            raise IndexError\n        if self.normalizer is not None:\n            return self.normalizer(self.data[idx])\n        else:\n            return self.data[idx]\n\n    @property\n    def shape(self):\n        return (self.end - self.start,) + self.data.shape[1:]\n\n\ndef ask_to_proceed_with_overwrite(filepath):\n    \"\"\"Produces a prompt asking about overwriting a file.\n\n    # Arguments\n        filepath: the path to the file to be overwritten.\n\n    # Returns\n        True if we can proceed with overwrite, False otherwise.\n    \"\"\"\n    get_input = input\n    if sys.version_info[:2] <= (2, 7):\n        get_input = raw_input\n    overwrite = get_input('[WARNING] %s already exists - overwrite? '\n                          '[y/n]' % (filepath))\n    while overwrite not in ['y', 'n']:\n        overwrite = get_input('Enter \"y\" (overwrite) or \"n\" (cancel).')\n    if overwrite == 'n':\n        return False\n    print('[TIP] Next time specify overwrite=True!')\n    return True\n"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_01_MrAH5o2HGgURyqSB0UGY8959",
+      "name": "read_file",
+      "args": {
+        "path": "keras/engine/training.py",
+        "offset": 1059,
+        "limit": 130
+      },
+      "result": "[Lines 1059\u20131188 of 2153]\n    def _fit_loop(self, f, ins, out_labels=None, batch_size=32,\n                  epochs=100, verbose=1, callbacks=None,\n                  val_f=None, val_ins=None, shuffle=True,\n                  callback_metrics=None, initial_epoch=0):\n        \"\"\"Abstract fit function for `f(ins)`.\n\n        Assume that f returns a list, labeled by out_labels.\n\n        # Arguments\n            f: Keras function returning a list of tensors\n            ins: list of tensors to be fed to `f`\n            out_labels: list of strings, display names of\n                the outputs of `f`\n            batch_size: integer batch size\n            epochs: number of times to iterate over the data\n            verbose: verbosity mode, 0, 1 or 2\n            callbacks: list of callbacks to be called during training\n            val_f: Keras function to call for validation\n            val_ins: list of tensors to be fed to `val_f`\n            shuffle: whether to shuffle the data at the beginning of each epoch\n            callback_metrics: list of strings, the display names of the metrics\n                passed to the callbacks. They should be the\n                concatenation of list the display names of the outputs of\n                 `f` and the list of display names of the outputs of `f_val`.\n            initial_epoch: epoch at which to start training\n                (useful for resuming a previous training run)\n\n        # Returns\n            `History` object.\n        \"\"\"\n        do_validation = False\n        if val_f and val_ins:\n            do_validation = True\n            if verbose:\n                print('Train on %d samples, validate on %d samples' %\n                      (ins[0].shape[0], val_ins[0].shape[0]))\n\n        if ins and hasattr(ins[0], 'shape'):\n            num_train_samples = ins[0].shape[0]\n        else:\n            # May happen if we are running `fit` without Numpy input data,\n            # i.e. if all inputs to the models are data tensors\n            # instead of placeholders.\n            # In that case we will run `fit` over a single batch.\n            num_train_samples = batch_size\n            verbose = 2\n        index_array = np.arange(num_train_samples)\n\n        self.history = cbks.History()\n        callbacks = [cbks.BaseLogger()] + (callbacks or []) + [self.history]\n        if verbose:\n            callbacks += [cbks.ProgbarLogger()]\n        callbacks = cbks.CallbackList(callbacks)\n        out_labels = out_labels or []\n\n        # it's possible to callback a different model than self\n        # (used by Sequential models)\n        if hasattr(self, 'callback_model') and self.callback_model:\n            callback_model = self.callback_model\n        else:\n            callback_model = self\n\n        callbacks.set_model(callback_model)\n        callbacks.set_params({\n            'batch_size': batch_size,\n            'epochs': epochs,\n            'samples': num_train_samples,\n            'verbose': verbose,\n            'do_validation': do_validation,\n            'metrics': callback_metrics or [],\n        })\n        callbacks.on_train_begin()\n        callback_model.stop_training = False\n        for cbk in callbacks:\n            cbk.validation_data = val_ins\n\n        for epoch in range(initial_epoch, epochs):\n            callbacks.on_epoch_begin(epoch)\n            if shuffle == 'batch':\n                index_array = _batch_shuffle(index_array, batch_size)\n            elif shuffle:\n                np.random.shuffle(index_array)\n\n            batches = _make_batches(num_train_samples, batch_size)\n            epoch_logs = {}\n            for batch_index, (batch_start, batch_end) in enumerate(batches):\n                batch_ids = index_array[batch_start:batch_end]\n                try:\n                    if isinstance(ins[-1], float):\n                        # Do not slice the training phase flag.\n                        ins_batch = _slice_arrays(ins[:-1], batch_ids) + [ins[-1]]\n                    else:\n                        ins_batch = _slice_arrays(ins, batch_ids)\n                except TypeError:\n                    raise TypeError('TypeError while preparing batch. '\n                                    'If using HDF5 input data, '\n                                    'pass shuffle=\"batch\".')\n                batch_logs = {}\n                batch_logs['batch'] = batch_index\n                batch_logs['size'] = len(batch_ids)\n                callbacks.on_batch_begin(batch_index, batch_logs)\n                outs = f(ins_batch)\n                if not isinstance(outs, list):\n                    outs = [outs]\n                for l, o in zip(out_labels, outs):\n                    batch_logs[l] = o\n\n                callbacks.on_batch_end(batch_index, batch_logs)\n                if callback_model.stop_training:\n                    break\n\n                if batch_index == len(batches) - 1:  # Last batch.\n                    if do_validation:\n                        val_outs = self._test_loop(val_f, val_ins,\n                                                   batch_size=batch_size,\n                                                   verbose=0)\n                        if not isinstance(val_outs, list):\n                            val_outs = [val_outs]\n                        # Same labels assumed.\n                        for l, o in zip(out_labels, val_outs):\n                            epoch_logs['val_' + l] = o\n            callbacks.on_epoch_end(epoch, epoch_logs)\n            if callback_model.stop_training:\n                break\n        callbacks.on_train_end()\n        return self.history\n\n    def _predict_loop(self, f, ins, batch_size=32, verbose=0):\n        \"\"\"Abstract method to loop over some data in batches.\n\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_x00JUwB36SrzW25JAxjT2271",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"keras/engine/training.py\", \"offset\": 369, \"limit\": 50}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_x00JUwB36SrzW25JAxjT2271",
+      "name": "read_file",
+      "args": {
+        "path": "keras/engine/training.py",
+        "offset": 369,
+        "limit": 50
+      },
+      "result": "[Lines 369\u2013418 of 2153]\ndef _slice_arrays(arrays, start=None, stop=None):\n    \"\"\"Slice an array or list of arrays.\n\n    This takes an array-like, or a list of\n    array-likes, and outputs:\n        - arrays[start:stop] if `arrays` is an array-like\n        - [x[start:stop] for x in arrays] if `arrays` is a list\n\n    Can also work on list/array of indices: `_slice_arrays(x, indices)`\n\n    # Arguments\n        arrays: Single array or list of arrays.\n        start: can be an integer index (start index)\n            or a list/array of indices\n        stop: integer (stop index); should be None if\n            `start` was a list.\n\n    # Returns\n        A slice of the array(s).\n    \"\"\"\n    if isinstance(arrays, list):\n        if hasattr(start, '__len__'):\n            # hdf5 datasets only support list objects as indices\n            if hasattr(start, 'shape'):\n                start = start.tolist()\n            return [x[start] for x in arrays]\n        else:\n            return [x[start:stop] for x in arrays]\n    else:\n        if hasattr(start, '__len__'):\n            if hasattr(start, 'shape'):\n                start = start.tolist()\n            return arrays[start]\n        else:\n            return arrays[start:stop]\n\n\ndef _weighted_masked_objective(fn):\n    \"\"\"Adds support for masking and sample-weighting to an objective function.\n\n    It transforms an objective function `fn(y_true, y_pred)`\n    into a sample-weighted, cost-masked objective function\n    `fn(y_true, y_pred, weights, mask)`.\n\n    # Arguments\n        fn: The objective function to wrap,\n            with signature `fn(y_true, y_pred)`.\n\n    # Returns\n        A function with signature `fn(y_true, y_pred, weights, mask)`.\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "Let me look at how `_slice_arrays` interacts with shuffling and HDF5Matrix, and look at the error message hint in `_fit_loop`:",
+      "tool_calls": [
+        {
+          "id": "call_00_JdjIwE28lol26PdHsX9w1834",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"keras/engine/training.py\", \"offset\": 1130, \"limit\": 30}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_JdjIwE28lol26PdHsX9w1834",
+      "name": "read_file",
+      "args": {
+        "path": "keras/engine/training.py",
+        "offset": 1130,
+        "limit": 30
+      },
+      "result": "[Lines 1130\u20131159 of 2153]\n        callbacks.on_train_begin()\n        callback_model.stop_training = False\n        for cbk in callbacks:\n            cbk.validation_data = val_ins\n\n        for epoch in range(initial_epoch, epochs):\n            callbacks.on_epoch_begin(epoch)\n            if shuffle == 'batch':\n                index_array = _batch_shuffle(index_array, batch_size)\n            elif shuffle:\n                np.random.shuffle(index_array)\n\n            batches = _make_batches(num_train_samples, batch_size)\n            epoch_logs = {}\n            for batch_index, (batch_start, batch_end) in enumerate(batches):\n                batch_ids = index_array[batch_start:batch_end]\n                try:\n                    if isinstance(ins[-1], float):\n                        # Do not slice the training phase flag.\n                        ins_batch = _slice_arrays(ins[:-1], batch_ids) + [ins[-1]]\n                    else:\n                        ins_batch = _slice_arrays(ins, batch_ids)\n                except TypeError:\n                    raise TypeError('TypeError while preparing batch. '\n                                    'If using HDF5 input data, '\n                                    'pass shuffle=\"batch\".')\n                batch_logs = {}\n                batch_logs['batch'] = batch_index\n                batch_logs['size'] = len(batch_ids)\n                callbacks.on_batch_begin(batch_index, batch_logs)\n"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_nFGbCxuziJJCG6ZsGXTy1750",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"HDF5Matrix\", \"path\": \"keras\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_nFGbCxuziJJCG6ZsGXTy1750",
+      "name": "search",
+      "args": {
+        "pattern": "HDF5Matrix",
+        "path": "keras"
+      },
+      "result": "keras/utils/io_utils.py:15:class HDF5Matrix(object):\nkeras/utils/io_utils.py:21:        x_data = HDF5Matrix('input/file.hdf5', 'data')\nkeras/utils/io_utils.py:45:            raise ImportError('The use of HDF5Matrix requires '\nkeras/utils/__init__.py:9:from .io_utils import HDF5Matrix"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "Let me look more carefully at the `HDF5Matrix.__getitem__` method to understand the full performance problem:",
+      "tool_calls": [
+        {
+          "id": "call_00_rV5uzv3OBl8Q631bAGRn7097",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"keras/utils/io_utils.py\", \"offset\": 55, \"limit\": 60}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_rV5uzv3OBl8Q631bAGRn7097",
+      "name": "read_file",
+      "args": {
+        "path": "keras/utils/io_utils.py",
+        "offset": 55,
+        "limit": 60
+      },
+      "result": "[Lines 55\u2013114 of 121]\n        if end is None:\n            self.end = self.data.shape[0]\n        else:\n            self.end = end\n        self.normalizer = normalizer\n\n    def __len__(self):\n        return self.end - self.start\n\n    def __getitem__(self, key):\n        if isinstance(key, slice):\n            start, stop = key.start, key.stop\n            if start is None:\n                start = 0\n            if stop is None:\n                stop = self.data.shape[0]\n            if stop + self.start <= self.end:\n                idx = slice(start + self.start, stop + self.start)\n            else:\n                raise IndexError\n        elif isinstance(key, int):\n            if key + self.start < self.end:\n                idx = key + self.start\n            else:\n                raise IndexError\n        elif isinstance(key, np.ndarray):\n            if np.max(key) + self.start < self.end:\n                idx = (self.start + key).tolist()\n            else:\n                raise IndexError\n        elif isinstance(key, list):\n            if max(key) + self.start < self.end:\n                idx = [x + self.start for x in key]\n            else:\n                raise IndexError\n        else:\n            raise IndexError\n        if self.normalizer is not None:\n            return self.normalizer(self.data[idx])\n        else:\n            return self.data[idx]\n\n    @property\n    def shape(self):\n        return (self.end - self.start,) + self.data.shape[1:]\n\n\ndef ask_to_proceed_with_overwrite(filepath):\n    \"\"\"Produces a prompt asking about overwriting a file.\n\n    # Arguments\n        filepath: the path to the file to be overwritten.\n\n    # Returns\n        True if we can proceed with overwrite, False otherwise.\n    \"\"\"\n    get_input = input\n    if sys.version_info[:2] <= (2, 7):\n        get_input = raw_input\n    overwrite = get_input('[WARNING] %s already exists - overwrite? '\n"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "Now I have a clear picture of the issue. Let me trace the entire data flow:\n\n1. **Training loop** (`_fit_loop` in `keras/engine/training.py`): When `shuffle=True`, it shuffles `index_array` and then for each batch extracts `batch_ids = index_array[batch_start:batch_end]` \u2014 a numpy array of non-contiguous indices.\n\n2. **`_slice_arrays`** (in `keras/engine/training.py`): Receives these indices, converts them to a list, and calls `HDF5Matrix.__getitem__` with a list of individual indices.\n\n3. **`HDF5Matrix.__getitem__`** (in `keras/utils/io_utils.py`): Passes the list of indices directly to h5py. h5py performs random disk seeks/reads for each index \u2014 this is the root cause of the 10x slowdown.\n\nThe core issue is in `keras/utils/io_utils.py` \u2014 the `HDF5Matrix.__getitem__` method needs to be optimized for batch access patterns (lists/arrays of indices). Instead of passing individual indices to h5py, it should sort indices, group contiguous ranges, read those ranges via efficient slice-based HDF5 access, and reorder results.",
+      "tool_calls": [
+        {
+          "id": "call_00_BkRELylOIy1kCfXfRDeg1186",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"keras/utils/io_utils.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_BkRELylOIy1kCfXfRDeg1186",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "keras/utils/io_utils.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}
