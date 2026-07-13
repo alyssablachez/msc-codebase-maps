@@ -29,7 +29,7 @@ import time
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from generate_all_maps import REPO_DIR_MAP
+from repo_config import REPO_DIR_MAP
 
 _ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HARNESS = os.path.join(_ROOT, "harness", "run_trial.py")

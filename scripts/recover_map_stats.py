@@ -20,8 +20,9 @@ import tarfile
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
+from repo_config import REPO_DIR_MAP, PACKAGE_MAP
 from generate_all_maps import (
-    REPO_DIR_MAP, PACKAGE_MAP, STATS_CSV, STATS_COLS,
+    STATS_CSV, STATS_COLS,
     pkg_tree_path, count_loc, load_skip_dirs, commit_date, file_chars,
 )
 

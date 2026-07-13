@@ -38,7 +38,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(_ROOT, "scripts")
 
 sys.path.insert(0, SCRIPTS)
-from generate_all_maps import REPO_DIR_MAP, PACKAGE_MAP, STATS_CSV, STATS_COLS, load_skip_dirs
+from repo_config import REPO_DIR_MAP, PACKAGE_MAP
+from generate_all_maps import STATS_CSV, STATS_COLS, load_skip_dirs
 
 SEL_CSV = os.path.join(_ROOT, "data", "issue_selection_final.csv")
 

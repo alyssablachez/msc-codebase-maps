@@ -20,44 +20,11 @@ from collections import defaultdict
 import pandas as pd
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from repo_config import REPO_DIR_MAP, PACKAGE_MAP
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(_ROOT, "scripts")
-
-REPO_DIR_MAP = {
-    "requests":               "repos/requests_full",
-    "thefuck":                "repos/thefuck_full",
-    "flask":                  "repos/flask_full",
-    "gpt-engineer":           "repos/gpt_engineer_full",
-    "fastapi":                "repos/fastapi_full",
-    "scrapy":                 "repos/scrapy_full",
-    "rich":                   "repos/rich_full",
-    "stable-diffusion-webui": "repos/stable_diffusion_webui_full",
-    "keras":                  "repos/keras_full",
-    "localstack":             "repos/localstack_full",
-    "yt-dlp":                 "repos/ytdlp_full",
-    "pandas":                 "repos/pandas_full",
-    "scikit-learn":           "repos/scikit_learn_full",
-    "transformers":           "repos/transformers_full",
-    "core":                   "repos/core_full",
-}
-
-PACKAGE_MAP = {
-    "requests":               "requests",
-    "thefuck":                "thefuck",
-    "flask":                  "flask",
-    "gpt-engineer":           "gpt_engineer",
-    "fastapi":                "fastapi",
-    "scrapy":                 "scrapy",
-    "rich":                   "rich",
-    "stable-diffusion-webui": "modules",
-    "keras":                  "keras",
-    "localstack":             "localstack",
-    "yt-dlp":                 "yt_dlp",
-    "pandas":                 "pandas",
-    "scikit-learn":           "sklearn",
-    "transformers":           "transformers",
-    "core":                   "homeassistant",
-}
 
 STATS_CSV        = os.path.join(_ROOT, "repo_maps", "map_generation_stats.csv")
 SKIP_CONFIG_YAML = os.path.join(_ROOT, "data", "repo_skip_config.yaml")

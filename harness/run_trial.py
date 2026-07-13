@@ -22,7 +22,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from git_utils import checkout, current_head, restore
-from generate_all_maps import REPO_DIR_MAP
+from repo_config import REPO_DIR_MAP
 from source_filter import scorable_files
 
 # ── paths ─────────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ RESULTS_DIR = os.path.join(_ROOT, "results")
 LOGS_DIR    = os.path.join(_ROOT, "logs")
 
 # Folder basename (leaf dir of --repo-path) -> canonical repo name used in
-# issue_selection_final.csv / repo_maps/. Derived from generate_all_maps.py's
+# issue_selection_final.csv / repo_maps/. Derived from repo_config.py's
 # REPO_DIR_MAP so the two never drift apart.
 FOLDER_TO_REPO = {os.path.basename(v): k for k, v in REPO_DIR_MAP.items()}
 
