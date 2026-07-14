@@ -654,6 +654,15 @@ def main():
             # tokens into freeform text, or ignore the "JSON only" instruction
             # and write prose instead. Forcing tool_choice keeps the model in
             # the same structured-output mode it's already reliable in.
+            # Some models/providers reject a *forced* tool_choice outright
+            # (DeepSeek: "Thinking mode does not support this tool_choice";
+            # Deepinfra: UnsupportedParamsError) -- fall back to tools
+            # available but unforced (tool_choice="auto", the same mode
+            # already used successfully throughout the main loop) before
+            # giving up on tools entirely. Even that isn't 100% reliable for
+            # every model (observed occasional empty/prose/garbled answers
+            # regardless) -- accepted as a documented residual limitation,
+            # see DEVLOG.md 2026-07-13.
             messages.append({"role": "user", "content": FINAL_ANSWER_PROMPT})
             try:
                 final_resp = litellm.completion(
@@ -664,8 +673,18 @@ def main():
                 )
             except Exception as exc:
                 print(f"WARNING: forced submit_answer call failed ({exc}), "
-                      f"retrying without forced tool_choice")
-                final_resp = litellm.completion(model=args.model, messages=messages)
+                      f"retrying with tools available but tool_choice unforced")
+                try:
+                    final_resp = litellm.completion(
+                        model=args.model,
+                        messages=messages,
+                        tools=TOOLS,
+                        tool_choice="auto",
+                    )
+                except Exception as exc2:
+                    print(f"WARNING: unforced tool_choice call also failed ({exc2}), "
+                          f"retrying without any tools schema")
+                    final_resp = litellm.completion(model=args.model, messages=messages)
             _log_response(log_file, "final_answer", final_resp)
 
             total_input_tokens  += final_resp.usage.prompt_tokens

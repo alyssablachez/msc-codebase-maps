@@ -223,7 +223,7 @@ Ruled out OpenRouter and aggregators — routing layer could serve requests via 
 
 **TODO (pending harness modification):**
 - [ ] Fix `FINAL_ANSWER_PROMPT` overwrite bug: check if final assistant content is parseable before sending the extra prompt call — only send as fallback when content is empty/unparseable
-- [ ] Add cache-busting random prefix (`uuid4().hex[:8]` prepended as `[{token}]\n`) to system prompt for Fireworks trials — conditional on `"fireworks" in model name` — save `trial_token` in result JSON for auditability
+- [x] Add cache-busting random prefix (`uuid4().hex[:8]` prepended as `[trial:{token}]\n`) — implemented differently than originally planned here: applied to the *user* message (not system prompt, so the system prompt + map content stays cacheable across reps) and unconditionally for all providers (not gated on `"fireworks" in model name`) — save `trial_token` in result JSON for auditability (done)
 - [ ] Add `submit_answer` adoption rate as a reported metric in batch runner summary
 - [ ] Post-hoc audit: for all `end_turn` trials with `final_files_predicted == []`, check transcript's final assistant content for recoverable file predictions; apply correction to summary CSVs with `prediction_corrected` flag
 
@@ -494,7 +494,15 @@ BATCH COMPLETE
   affected gpt-oss models)
 -- Strengthen FINAL_ANSWER_PROMPT wording to prevent models treating it as
   an invitation to continue tool use
--- Add cache-busting random token prefix to system prompt for all providers
+-- Add cache-busting random token prefix to the user message (not the
+  system prompt) for all providers -- deliberate: keeps the system prompt
+  + map content byte-identical across reps of the same issue/map so it
+  can still benefit from provider-side prompt caching, while ensuring the
+  full request is never identical across reps (busts response-level
+  caching/memoization that would otherwise let a rep return a cached copy
+  of a previous rep's response). Corrected 2026-07-14 -- this line
+  previously said "system prompt", which was never actually true of the
+  implementation.
 -- Add hit_turn_cap and submission_type fields to result JSON metrics
 -- Add retry logic to run_batch.py: up to 2 retries with 30s backoff,
   900s timeout per trial
@@ -1163,4 +1171,142 @@ yesterday were generated against the *old* (buggy) maps for `core/16`,
 `core/20`, and `pandas/44` specifically -- worth a re-run of just those
 if/when doing the consolidated re-run mentioned in the harness-fix entry
 above.
+
+## 2026-07-13 (cont'd)
+## Ground-Truth Scoring Audit, Migration to study1/, and Launching the Real Run
+
+### CSV Formatting Non-Issue
+`issue_selection_final.csv` looked corrupted when viewed as plain text
+(physical lines 36-263 looked like disconnected fragments with no
+commas). Not a bug: the `body` column holds full multi-paragraph GitHub
+issue text with embedded newlines, correctly quoted per RFC 4180 -- the
+file has 45 logical CSV rows but 3,843 physical lines. Proved it by
+reading the file exactly as `run_trial.py` does (`pd.read_csv` +
+`ast.literal_eval` on `ground_truth`) and printing every row's
+repo/title/body-length/ground_truth cleanly, plus the full reconstructed
+`user_message` for `core/20` (the row those "garbled" lines belonged to).
+
+### Ground-Truth Package-Scope Filter
+Built `data/ground_truth_scoring_check.csv` (original vs. scored-against
+ground truth per issue) to audit whether `source_files_only()` was
+catching everything it should. It wasn't: that filter only matches
+path *patterns* (tests/docs/config-looking names) -- it can't catch a
+real `.py` file sitting outside the resolved package directory, or a
+non-Python file, since scope differs per repo/issue and isn't
+expressible as a repo-agnostic string pattern. Cross-checking all 45
+issues' ground truth against each issue's `freq_map.txt` (which already
+walks every `.py` file within the resolved package directory, regardless
+of parseability) found 5 issues with a ground-truth file no map or tool
+could ever surface: `fastapi/9` (`docs_src/...`), `gpt-engineer/12`
+(`projects/example-improve/...`, on top of the already-caught
+`tests/caching_ai.py`), `stable-diffusion-webui/5` (`javascript/....js`,
+not Python at all), `stable-diffusion-webui/13`
+(`extensions-builtin/...`), `transformers/5` (`utils/check_repo.py`).
+
+Added `known_package_files()`/`scorable_files()` to `source_filter.py`,
+composing the existing pattern filter with per-issue package-scope
+membership (via each issue's `freq_map.txt`). Wired into
+`compute_scores()` and the `ground_truth_scorable`/
+`final_files_predicted_scorable` result fields, filtering **both**
+predicted and ground truth symmetrically -- same rationale as
+`source_files_only()` already treating both sides the same: a model
+shouldn't be penalised (or credited) for a file it had no way to know
+was in or out of scope. Re-scored the 5 affected issues' already-collected
+deepseek-v4-flash results in place (no new API calls -- predictions were
+already known, only the scoring changed): 18 of 20 trials had their F1
+actually change.
+
+### Extracted repo_config.py
+`run_trial.py` and `run_batch.py` only imported `generate_all_maps.py`
+for its `REPO_DIR_MAP` constant, meaning any environment that just needs
+to *run* trials had to also ship a whole map-generation script (unrelated
+pickle/tarfile logic, a hard `pyyaml` import). Moved `REPO_DIR_MAP` and
+`PACKAGE_MAP` into a new dependency-free `scripts/repo_config.py`;
+`generate_all_maps.py`, `regenerate_ast_maps.py`, and
+`recover_map_stats.py` now import from there too -- still exactly one
+place this mapping is defined, just no longer coupled to map-generation
+code for the trial-running side.
+
+### Migrated to /home/afb225/study1/ (Native Linux Filesystem)
+The planned move (mentioned earlier this session) to avoid WSL `/mnt/c`
+checkout slowness. Turned out `/home/afb225/study1/` isn't a separate
+machine at all -- same environment, just the native ext4 filesystem
+(`/dev/sdd`, ~930G free) instead of the slow NTFS-via-9p mount this repo
+lives on. Traced the actual runtime dependency chain from `run_trial.py`/
+`run_batch.py` (not from memory) to get a precise accounting: needed
+5 code files (`repo_config.py`, `run_trial.py`, `run_batch.py`,
+`git_utils.py`, `source_filter.py`), `data/issue_selection_final.csv`,
+and the full `repo_maps/` tree (457 files, copied in ~15s). Repos
+themselves were already cloned there in `worker_1`-`worker_5`. Verified
+with live trials from the new location before considering it done.
+
+### Launched the Real Multi-Worker Study
+5 workers running in parallel, different models/reps per worker
+(deepseek-v4-flash, mistral-3b, fireworks gpt-oss-120b, deepinfra
+nemotron-3-super-120b across reps 1 and 2, etc.) via
+`scripts/run_batch.py --worker-id N --rep R --model M --turn-limit 30`.
+
+**Bug found mid-run**: all 5 workers' yt-dlp clones were named
+`yt_dlp_full` (underscore), but `repo_config.py`'s `REPO_DIR_MAP` (copied
+verbatim from this repo, where the folder is historically named
+`ytdlp_full`, no separator) expected `ytdlp_full` -- every yt-dlp trial
+failed instantly with "unrecognized repo folder" / `git rev-parse HEAD`
+exit 128 across every worker. Fixed by renaming `yt_dlp_full` ->
+`ytdlp_full` in all 5 worker directories to match the existing canonical
+mapping (rather than changing the mapping, which would break the
+original `/mnt/c` project's actual folder name). Confirmed fixed via a
+direct `git rev-parse HEAD` on the renamed dir. Since a `run_batch.py`
+process builds its trial list once at startup and doesn't retry a
+permanently-failed trial later in the same run, the yt-dlp failures
+already recorded in the *currently running* batches won't self-heal --
+queued as a todo to re-run rep 1 (all 4 models used) plus reps 1 and 2
+for nemotron specifically, once free worker slots are available. Result
+files aren't namespaced by worker, so any worker can do these re-runs;
+skip-if-exists will only pick up what's missing.
+
+### Found: DeepSeek "Thinking Mode" Rejects Forced tool_choice
+The forced-`tool_choice` fix from earlier today has its own failure mode:
+DeepSeek returned `BadRequestError: "Thinking mode does not support this
+tool_choice"` when forcing `submit_answer`. The exception handling worked
+as designed (caught, logged, didn't crash the trial) -- but the fallback
+dropped the `tools` parameter entirely, landing back on the exact
+no-tools-schema call that caused the original DSML-token-leak bug, on
+the very case it was trying to protect against. Fix: retry with
+`tools=TOOLS, tool_choice="auto"` (unforced -- the same mode already used
+successfully throughout the main tool-calling loop) before falling back
+further to no tools at all. Applied directly to
+`/home/afb225/study1/harness/run_trial.py` only, in place, mid-run --
+confirmed safe to do live since each trial is a fresh subprocess that
+reads the script from disk at its own startup, so it can't affect any
+trial already executing, only ones launched from that point on.
+
+### tool_choice="auto" Fallback Is Not Fully Reliable Either — Left As-Is
+Checked the live batch logs after the fix landed. It's working as
+designed (catching exceptions, not crashing trials) but doesn't
+eliminate the underlying problem, and there's a second distinct
+provider issue on top of DeepSeek's:
+- Deepinfra rejects the *forced* `tool_choice` outright too
+  (`UnsupportedParamsError`, 7 occurrences) — its own error message
+  suggests `litellm.drop_params = True` would let this specific case
+  succeed at tier 1 instead of falling back at all.
+- Even at tier 2 (`tool_choice="auto"`, unforced), some trials still
+  come back with no usable answer: empty content with no tool call
+  (6 occurrences), prose with no JSON list (1), and one case still
+  leaking the DSML garbled tokens even unforced. So roughly 8 of the
+  ~20 fallback-triggering trials still end up with `predicted_files=[]`
+  despite the fix.
+- These are genuine model tail-behavior, not something forceable at the
+  API-call level — no crash, no data corruption, correctly recorded as
+  `predicted_files=[]` / `stop_reason=max_turns`, a truthful "model
+  didn't converge" outcome rather than a harness bug.
+
+Decided to leave this as-is rather than add `drop_params` or a
+prose-salvage fallback — documented here as a known, accepted residual
+limitation rather than fixed further.
+
+### Status
+The `study1/` copy of `run_trial.py` now has the `tool_choice="auto"`
+fallback fix; the git-tracked copy in this repo does **not** yet -- needs
+mirroring back and committing. The yt-dlp re-run todo above is also still
+outstanding. Both pending once the live batches settle.
 
