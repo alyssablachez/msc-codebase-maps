@@ -1,0 +1,321 @@
+{
+  "model": "deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+  "repo": "yt-dlp",
+  "issue_idx": 45,
+  "tier": "large",
+  "role": "multi",
+  "map_type": "ast_compact",
+  "rep": 2,
+  "worker_id": 5,
+  "issue_title": "Cookie not loading when downloading instagram videos",
+  "base_commit": "8531d2b03bac9cc746f2ee8098aaf8f115505f5b",
+  "metrics": {
+    "total_input_tokens": 876758,
+    "total_output_tokens": 12002,
+    "total_cached_tokens": 0,
+    "total_cost": 0.0,
+    "num_turns": 10,
+    "wall_time_seconds": 207.72,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "0b2624f7"
+  },
+  "final_files_predicted": [
+    "yt_dlp/YoutubeDL.py"
+  ],
+  "final_files_predicted_scorable": [
+    "yt_dlp/YoutubeDL.py"
+  ],
+  "ground_truth": [
+    "yt_dlp/__init__.py",
+    "yt_dlp/YoutubeDL.py"
+  ],
+  "ground_truth_scorable": [
+    "yt_dlp/__init__.py",
+    "yt_dlp/YoutubeDL.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6667
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_5699183c6ff624e7",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/instagram.py\", \"offset\": 390, \"limit\": 120}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_5699183c6ff624e7",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/instagram.py",
+        "offset": 390,
+        "limit": 120
+      },
+      "result": "[Lines 390\u2013509 of 738]\n        if res:\n            return res\n\n        mobj = re.search(r'<a[^>]+href=([\\'\"])(?P<link>[^\\'\"]+)\\1',\n                         get_element_by_attribute('class', 'instagram-media', webpage) or '')\n        if mobj:\n            return [mobj.group('link')]\n\n    def _real_extract(self, url):\n        video_id, url = self._match_valid_url(url).group('id', 'url')\n        media, webpage = {}, ''\n\n        if self._get_cookies(url).get('sessionid'):\n            info = traverse_obj(self._download_json(\n                f'{self._API_BASE_URL}/media/{_id_to_pk(video_id)}/info/', video_id,\n                fatal=False, errnote='Video info extraction failed',\n                note='Downloading video info', headers=self._API_HEADERS), ('items', 0))\n            if info:\n                media.update(info)\n                return self._extract_product(media)\n\n        api_check = self._download_json(\n            f'{self._API_BASE_URL}/web/get_ruling_for_content/?content_type=MEDIA&target_id={_id_to_pk(video_id)}',\n            video_id, headers=self._API_HEADERS, fatal=False, note='Setting up session', errnote=False) or {}\n        csrf_token = self._get_cookies('https://www.instagram.com').get('csrftoken')\n\n        if not csrf_token:\n            self.report_warning('No csrf token set by Instagram API', video_id)\n        else:\n            csrf_token = csrf_token.value if api_check.get('status') == 'ok' else None\n            if not csrf_token:\n                self.report_warning('Instagram API is not granting access', video_id)\n\n        variables = {\n            'shortcode': video_id,\n            'child_comment_count': 3,\n            'fetch_comment_count': 40,\n            'parent_comment_count': 24,\n            'has_threaded_comments': True,\n        }\n        general_info = self._download_json(\n            'https://www.instagram.com/graphql/query/', video_id, fatal=False, errnote=False,\n            headers={\n                **self._API_HEADERS,\n                'X-CSRFToken': csrf_token or '',\n                'X-Requested-With': 'XMLHttpRequest',\n                'Referer': url,\n            }, query={\n                'query_hash': '9f8827793ef34641b2fb195d4d41151c',\n                'variables': json.dumps(variables, separators=(',', ':')),\n            })\n        media.update(traverse_obj(general_info, ('data', 'shortcode_media')) or {})\n\n        if not general_info:\n            self.report_warning('General metadata extraction failed (some metadata might be missing).', video_id)\n            webpage, urlh = self._download_webpage_handle(url, video_id)\n            shared_data = self._search_json(\n                r'window\\._sharedData\\s*=', webpage, 'shared data', video_id, fatal=False) or {}\n\n            if shared_data and self._LOGIN_URL not in urlh.url:\n                media.update(traverse_obj(\n                    shared_data, ('entry_data', 'PostPage', 0, 'graphql', 'shortcode_media'),\n                    ('entry_data', 'PostPage', 0, 'media'), expected_type=dict) or {})\n            else:\n                self.report_warning('Main webpage is locked behind the login page. Retrying with embed webpage (some metadata might be missing).')\n                webpage = self._download_webpage(\n                    f'{url}/embed/', video_id, note='Downloading embed webpage', fatal=False) or ''\n                additional_data = self._search_json(\n                    r'window\\.__additionalDataLoaded\\s*\\(\\s*[^,]+,', webpage, 'additional data', video_id, fatal=False)\n                if not additional_data and not media:\n                    self.raise_login_required('Requested content is not available, rate-limit reached or login required')\n\n                product_item = traverse_obj(additional_data, ('items', 0), expected_type=dict)\n                if product_item:\n                    media.update(product_item)\n                    return self._extract_product(media)\n\n                media.update(traverse_obj(\n                    additional_data, ('graphql', 'shortcode_media'), 'shortcode_media', expected_type=dict) or {})\n\n        username = traverse_obj(media, ('owner', 'username')) or self._search_regex(\n            r'\"owner\"\\s*:\\s*{\\s*\"username\"\\s*:\\s*\"(.+?)\"', webpage, 'username', fatal=False)\n\n        description = (\n            traverse_obj(media, ('edge_media_to_caption', 'edges', 0, 'node', 'text'), expected_type=str)\n            or media.get('caption'))\n        if not description:\n            description = self._search_regex(\n                r'\"caption\"\\s*:\\s*\"(.+?)\"', webpage, 'description', default=None)\n            if description is not None:\n                description = lowercase_escape(description)\n\n        video_url = media.get('video_url')\n        if not video_url:\n            nodes = traverse_obj(media, ('edge_sidecar_to_children', 'edges', ..., 'node'), expected_type=dict) or []\n            if nodes:\n                return self.playlist_result(\n                    self._extract_nodes(nodes, True), video_id,\n                    format_field(username, None, 'Post by %s'), description)\n\n            video_url = self._og_search_video_url(webpage, secure=False)\n\n        formats = [{\n            'url': video_url,\n            'width': self._get_dimension('width', media, webpage),\n            'height': self._get_dimension('height', media, webpage),\n        }]\n        dash = traverse_obj(media, ('dash_info', 'video_dash_manifest'))\n        if dash:\n            formats.extend(self._parse_mpd_formats(self._parse_xml(dash, video_id), mpd_id='dash'))\n\n        comment_data = traverse_obj(media, ('edge_media_to_parent_comment', 'edges'))\n        comments = [{\n            'author': traverse_obj(comment_dict, ('node', 'owner', 'username')),\n            'author_id': traverse_obj(comment_dict, ('node', 'owner', 'id')),\n            'id': traverse_obj(comment_dict, ('node', 'id')),\n            'text': traverse_obj(comment_dict, ('node', 'text')),\n            'timestamp': traverse_obj(comment_dict, ('node', 'created_at'), expected_type=int_or_none),\n        } for comment_dict in comment_data] if comment_data else None\n\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_7dbc23aba747637c",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/common.py\", \"offset\": 790, \"limit\": 20}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_7dbc23aba747637c",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/common.py",
+        "offset": 790,
+        "limit": 20
+      },
+      "result": "[Lines 790\u2013809 of 3989]\n    def cookiejar(self):\n        return self._downloader.cookiejar\n\n    def _initialize_pre_login(self):\n        \"\"\" Initialization before login. Redefine in subclasses.\"\"\"\n        pass\n\n    def _perform_login(self, username, password):\n        \"\"\" Login with username and password. Redefine in subclasses.\"\"\"\n        pass\n\n    def _real_initialize(self):\n        \"\"\"Real initialization process. Redefine in subclasses.\"\"\"\n        pass\n\n    def _real_extract(self, url):\n        \"\"\"Real extraction process. Redefine in subclasses.\"\"\"\n        raise NotImplementedError('This method must be implemented by subclasses')\n\n    @classmethod\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_96f3513e9887759a",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"path\": \"yt_dlp/YoutubeDL.py\", \"pattern\": \"cookies\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_96f3513e9887759a",
+      "name": "search",
+      "args": {
+        "path": "yt_dlp/YoutubeDL.py",
+        "pattern": "cookies"
+      },
+      "result": "30:from .cookies import LenientSimpleCookie, load_cookies\n335:    cookiefile:        File name or text stream from where cookies should be read and dumped to\n336:    cookiesfrombrowser:  A tuple containing the name of the browser, the profile\n337:                       name/path from where cookies are loaded, the name of the keyring,\n599:        'preference', 'language', 'language_preference', 'quality', 'source_preference', 'cookies',\n639:        self.__header_cookies = []\n712:        self._load_cookies(self.params['http_headers'].get('Cookie'))  # compat\n982:    def save_cookies(self):\n991:        self.save_cookies()\n1695:    def _load_cookies(self, data, *, autoscope=True):\n1696:        \"\"\"Loads cookies from a `Cookie` header\n1698:        This tries to work around the security vulnerability of passing cookies to every domain.\n1701:        @param data         The Cookie header as string to load the cookies from\n1702:        @param autoscope    If `False`, scope cookies using Set-Cookie syntax and error for cookie without domains\n1703:                            If `True`, save cookies for later to be stored in the jar with a limited scope\n1704:                            If a URL, save cookies in the jar with the domain of the URL\n1723:                    'Passing cookies as a header is a potential security risk; '\n1725:                    'Please consider loading cookies from a file or browser instead.')\n1726:                self.__header_cookies.append(prepared_cookie)\n1732:                self._apply_header_cookies(autoscope, [prepared_cookie])\n1734:                self.report_error('Unscoped cookies are not allowed; please specify some sort of scoping',\n1737:    def _apply_header_cookies(self, url, cookies=None):\n1738:        \"\"\"Applies stray header cookies to the provided url\n1740:        This loads header cookies and scopes them to the domain provided in `url`.\n1748:        for cookie in map(copy.copy, cookies or self.__header_cookies):\n1754:        self._apply_header_cookies(url)\n2563:    def _calc_headers(self, info_dict, load_cookies=False):\n2567:        if load_cookies:  # For --load-info-json\n2568:            self._load_cookies(res.get('Cookie'), autoscope=info_dict['url'])  # compat\n2569:            self._load_cookies(info_dict.get('cookies'), autoscope=False)\n2570:        # The `Cookie` header is removed to prevent leaks and unscoped cookies.\n2573:        cookies = self.cookiejar.get_cookies_for_url(info_dict['url'])\n2574:        if cookies:\n2577:            for cookie in cookies:\n2590:            info_dict['cookies'] = '; '.join(values)\n2599:    def _calc_cookies(self, url):\n2600:        self.deprecation_warning('\"YoutubeDL._calc_cookies\" is deprecated and may be removed in a future version')\n2866:            fmt['http_headers'] = self._calc_headers(collections.ChainMap(fmt, info_dict), load_cookies=True)\n4111:        return load_cookies(\n4112:            self.params.get('cookiefile'), self.params.get('cookiesfrombrowser'), self)"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_97c425d7600e20b0",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/YoutubeDL.py\", \"offset\": 4110, \"limit\": 20}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_97c425d7600e20b0",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/YoutubeDL.py",
+        "offset": 4110,
+        "limit": 20
+      },
+      "result": "[Lines 4110\u20134129 of 4410]\n        \"\"\"Global cookiejar instance\"\"\"\n        return load_cookies(\n            self.params.get('cookiefile'), self.params.get('cookiesfrombrowser'), self)\n\n    @property\n    def _opener(self):\n        \"\"\"\n        Get a urllib OpenerDirector from the Urllib handler (deprecated).\n        \"\"\"\n        self.deprecation_warning('YoutubeDL._opener is deprecated, use YoutubeDL.urlopen()')\n        handler = self._request_director.handlers['Urllib']\n        return handler._get_instance(cookiejar=self.cookiejar, proxies=self.proxies)\n\n    def _get_available_impersonate_targets(self):\n        # TODO(future): make available as public API\n        return [\n            (target, rh.RH_NAME)\n            for rh in self._request_director.handlers.values()\n            if isinstance(rh, ImpersonateRequestHandler)\n            for target in rh.supported_targets\n"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_f81ada086f1e24c4",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"yt_dlp\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_f81ada086f1e24c4",
+      "name": "list_files",
+      "args": {
+        "path": "yt_dlp"
+      },
+      "result": "YoutubeDL.py\n__init__.py\n__main__.py\n__pyinstaller\naes.py\ncache.py\ncompat\ncookies.py\ndependencies\ndownloader\nextractor\njsinterp.py\nminicurses.py\nnetworking\noptions.py\nplugins.py\npostprocessor\nsocks.py\nupdate.py\nutils\nversion.py\nwebvtt.py"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_20d2aad498713bcc",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"path\": \"yt_dlp/options.py\", \"pattern\": \"cookies\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_20d2aad498713bcc",
+      "name": "search",
+      "args": {
+        "path": "yt_dlp/options.py",
+        "pattern": "cookies"
+      },
+      "result": "12:from .cookies import SUPPORTED_BROWSERS, SUPPORTED_KEYRINGS\n1466:        '--cookies',\n1468:        help='Netscape formatted file to read cookies from and dump cookie jar in')\n1470:        '--no-cookies',\n1472:        help='Do not read/dump cookies from/to file (default)')\n1474:        '--cookies-from-browser',\n1475:        dest='cookiesfrombrowser', metavar='BROWSER[+KEYRING][:PROFILE][::CONTAINER]',\n1477:            'The name of the browser to load cookies from. '\n1479:            'Optionally, the KEYRING used for decrypting Chromium cookies on Linux, '\n1480:            'the name/path of the PROFILE to load cookies from, '\n1486:        '--no-cookies-from-browser',\n1487:        action='store_const', const=None, dest='cookiesfrombrowser',\n1488:        help='Do not load cookies from browser (default)')"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_28475b7fa1d31b3f",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/options.py\", \"offset\": 1460, \"limit\": 30}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_28475b7fa1d31b3f",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/options.py",
+        "offset": 1460,
+        "limit": 30
+      },
+      "result": "[Lines 1460\u20131489 of 1941]\n        help='Do not retrieve video comments unless the extraction is known to be quick (Alias: --no-get-comments)')\n    filesystem.add_option(\n        '--load-info-json', '--load-info',\n        dest='load_info_filename', metavar='FILE',\n        help='JSON file containing the video information (created with the \"--write-info-json\" option)')\n    filesystem.add_option(\n        '--cookies',\n        dest='cookiefile', metavar='FILE',\n        help='Netscape formatted file to read cookies from and dump cookie jar in')\n    filesystem.add_option(\n        '--no-cookies',\n        action='store_const', const=None, dest='cookiefile', metavar='FILE',\n        help='Do not read/dump cookies from/to file (default)')\n    filesystem.add_option(\n        '--cookies-from-browser',\n        dest='cookiesfrombrowser', metavar='BROWSER[+KEYRING][:PROFILE][::CONTAINER]',\n        help=(\n            'The name of the browser to load cookies from. '\n            f'Currently supported browsers are: {\", \".join(sorted(SUPPORTED_BROWSERS))}. '\n            'Optionally, the KEYRING used for decrypting Chromium cookies on Linux, '\n            'the name/path of the PROFILE to load cookies from, '\n            'and the CONTAINER name (if Firefox) (\"none\" for no container) '\n            'can be given with their respective separators. '\n            'By default, all containers of the most recently accessed profile are used. '\n            f'Currently supported keyrings are: {\", \".join(map(str.lower, sorted(SUPPORTED_KEYRINGS)))}'))\n    filesystem.add_option(\n        '--no-cookies-from-browser',\n        action='store_const', const=None, dest='cookiesfrombrowser',\n        help='Do not load cookies from browser (default)')\n    filesystem.add_option(\n"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_98f7cb4a7612f4e5",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/cookies.py\", \"offset\": 89, \"limit\": 30}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_98f7cb4a7612f4e5",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/cookies.py",
+        "offset": 89,
+        "limit": 30
+      },
+      "result": "[Lines 89\u2013118 of 1356]\ndef load_cookies(cookie_file, browser_specification, ydl):\n    cookie_jars = []\n    if browser_specification is not None:\n        browser_name, profile, keyring, container = _parse_browser_specification(*browser_specification)\n        cookie_jars.append(\n            extract_cookies_from_browser(browser_name, profile, YDLLogger(ydl), keyring=keyring, container=container))\n\n    if cookie_file is not None:\n        is_filename = is_path_like(cookie_file)\n        if is_filename:\n            cookie_file = expand_path(cookie_file)\n\n        jar = YoutubeDLCookieJar(cookie_file)\n        if not is_filename or os.access(cookie_file, os.R_OK):\n            jar.load()\n        cookie_jars.append(jar)\n\n    return _merge_cookie_jars(cookie_jars)\n\n\ndef extract_cookies_from_browser(browser_name, profile=None, logger=YDLLogger(), *, keyring=None, container=None):\n    if browser_name == 'firefox':\n        return _extract_firefox_cookies(profile, container, logger)\n    elif browser_name == 'safari':\n        return _extract_safari_cookies(profile, logger)\n    elif browser_name in CHROMIUM_BASED_BROWSERS:\n        return _extract_chrome_cookies(browser_name, profile, keyring, logger)\n    else:\n        raise ValueError(f'unknown browser: {browser_name}')\n\n"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_f5f0a07c7d6fc87d",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/YoutubeDL.py\", \"offset\": 617, \"limit\": 50}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_f5f0a07c7d6fc87d",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/YoutubeDL.py",
+        "offset": 617,
+        "limit": 50
+      },
+      "result": "[Lines 617\u2013666 of 4410]\n    def __init__(self, params=None, auto_init=True):\n        \"\"\"Create a FileDownloader object with the given options.\n        @param auto_init    Whether to load the default extractors and print header (if verbose).\n                            Set to 'no_verbose_header' to not print the header\n        \"\"\"\n        if params is None:\n            params = {}\n        self.params = params\n        self._ies = {}\n        self._ies_instances = {}\n        self._pps = {k: [] for k in POSTPROCESS_WHEN}\n        self._printed_messages = set()\n        self._first_webpage_request = True\n        self._post_hooks = []\n        self._progress_hooks = []\n        self._postprocessor_hooks = []\n        self._download_retcode = 0\n        self._num_downloads = 0\n        self._num_videos = 0\n        self._playlist_level = 0\n        self._playlist_urls = set()\n        self.cache = Cache(self)\n        self.__header_cookies = []\n\n        stdout = sys.stderr if self.params.get('logtostderr') else sys.stdout\n        self._out_files = Namespace(\n            out=stdout,\n            error=sys.stderr,\n            screen=sys.stderr if self.params.get('quiet') else stdout,\n            console=None if compat_os_name == 'nt' else next(\n                filter(supports_terminal_sequences, (sys.stderr, sys.stdout)), None),\n        )\n\n        try:\n            windows_enable_vt_mode()\n        except Exception as e:\n            self.write_debug(f'Failed to enable VT mode: {e}')\n\n        if self.params.get('no_color'):\n            if self.params.get('color') is not None:\n                self.params.setdefault('_warnings', []).append(\n                    'Overwriting params from \"color\" with \"no_color\"')\n            self.params['color'] = 'no_color'\n\n        term_allow_color = os.getenv('TERM', '').lower() != 'dumb'\n        no_color = bool(os.getenv('NO_COLOR'))\n\n        def process_color_policy(stream):\n            stream_name = {sys.stdout: 'stdout', sys.stderr: 'stderr'}[stream]\n            policy = traverse_obj(self.params, ('color', (stream_name, None), {str}), get_all=False)\n"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_5d92b47b37ddfd73",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"yt_dlp/YoutubeDL.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_5d92b47b37ddfd73",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "yt_dlp/YoutubeDL.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

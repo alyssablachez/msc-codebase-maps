@@ -1,0 +1,97 @@
+{
+  "model": "deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+  "repo": "core",
+  "issue_idx": 16,
+  "tier": "large",
+  "role": "flexible",
+  "map_type": "ast_compact",
+  "rep": 3,
+  "worker_id": 2,
+  "issue_title": "Mysensor HVAC frontend shows multiple values",
+  "base_commit": "91962e2681dde1b23612df06633b16aa0867c950",
+  "metrics": {
+    "total_input_tokens": 157633,
+    "total_output_tokens": 9350,
+    "total_cached_tokens": 0,
+    "total_cost": 0.0,
+    "num_turns": 2,
+    "wall_time_seconds": 95.8,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "cefbae7a"
+  },
+  "final_files_predicted": [
+    "homeassistant/components/climate/mysensors.py"
+  ],
+  "final_files_predicted_scorable": [
+    "homeassistant/components/climate/mysensors.py"
+  ],
+  "ground_truth": [
+    "homeassistant/components/climate/mysensors.py"
+  ],
+  "ground_truth_scorable": [
+    "homeassistant/components/climate/mysensors.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_86c001c54c199e7e",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"homeassistant/components/climate/mysensors.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_86c001c54c199e7e",
+      "name": "read_file",
+      "args": {
+        "path": "homeassistant/components/climate/mysensors.py"
+      },
+      "result": "\"\"\"\nMySensors platform that offers a Climate (MySensors-HVAC) component.\n\nFor more details about this platform, please refer to the documentation\nhttps://home-assistant.io/components/climate.mysensors/\n\"\"\"\nfrom homeassistant.components import mysensors\nfrom homeassistant.components.climate import (\n    ATTR_TARGET_TEMP_HIGH, ATTR_TARGET_TEMP_LOW, DOMAIN, STATE_AUTO,\n    STATE_COOL, STATE_HEAT, STATE_OFF, SUPPORT_FAN_MODE,\n    SUPPORT_OPERATION_MODE, SUPPORT_TARGET_TEMPERATURE,\n    SUPPORT_TARGET_TEMPERATURE_HIGH, SUPPORT_TARGET_TEMPERATURE_LOW,\n    ClimateDevice)\nfrom homeassistant.const import ATTR_TEMPERATURE, TEMP_CELSIUS, TEMP_FAHRENHEIT\n\nDICT_HA_TO_MYS = {\n    STATE_AUTO: 'AutoChangeOver',\n    STATE_COOL: 'CoolOn',\n    STATE_HEAT: 'HeatOn',\n    STATE_OFF: 'Off',\n}\nDICT_MYS_TO_HA = {\n    'AutoChangeOver': STATE_AUTO,\n    'CoolOn': STATE_COOL,\n    'HeatOn': STATE_HEAT,\n    'Off': STATE_OFF,\n}\n\nSUPPORT_FLAGS = (SUPPORT_TARGET_TEMPERATURE | SUPPORT_TARGET_TEMPERATURE_HIGH |\n                 SUPPORT_TARGET_TEMPERATURE_LOW | SUPPORT_FAN_MODE |\n                 SUPPORT_OPERATION_MODE)\n\n\nasync def async_setup_platform(\n        hass, config, async_add_devices, discovery_info=None):\n    \"\"\"Set up the mysensors climate.\"\"\"\n    mysensors.setup_mysensors_platform(\n        hass, DOMAIN, discovery_info, MySensorsHVAC,\n        async_add_devices=async_add_devices)\n\n\nclass MySensorsHVAC(mysensors.MySensorsEntity, ClimateDevice):\n    \"\"\"Representation of a MySensors HVAC.\"\"\"\n\n    @property\n    def supported_features(self):\n        \"\"\"Return the list of supported features.\"\"\"\n        return SUPPORT_FLAGS\n\n    @property\n    def assumed_state(self):\n        \"\"\"Return True if unable to access real state of entity.\"\"\"\n        return self.gateway.optimistic\n\n    @property\n    def temperature_unit(self):\n        \"\"\"Return the unit of measurement.\"\"\"\n        return TEMP_CELSIUS if self.gateway.metric else TEMP_FAHRENHEIT\n\n    @property\n    def current_temperature(self):\n        \"\"\"Return the current temperature.\"\"\"\n        value = self._values.get(self.gateway.const.SetReq.V_TEMP)\n\n        if value is not None:\n            value = float(value)\n\n        return value\n\n    @property\n    def target_temperature(self):\n        \"\"\"Return the temperature we try to reach.\"\"\"\n        set_req = self.gateway.const.SetReq\n        if set_req.V_HVAC_SETPOINT_COOL in self._values and \\\n                set_req.V_HVAC_SETPOINT_HEAT in self._values:\n            return None\n        temp = self._values.get(set_req.V_HVAC_SETPOINT_COOL)\n        if temp is None:\n            temp = self._values.get(set_req.V_HVAC_SETPOINT_HEAT)\n        return float(temp) if temp is not None else None\n\n    @property\n    def target_temperature_high(self):\n        \"\"\"Return the highbound target temperature we try to reach.\"\"\"\n        set_req = self.gateway.const.SetReq\n        if set_req.V_HVAC_SETPOINT_HEAT in self._values:\n            temp = self._values.get(set_req.V_HVAC_SETPOINT_COOL)\n            return float(temp) if temp is not None else None\n\n    @property\n    def target_temperature_low(self):\n        \"\"\"Return the lowbound target temperature we try to reach.\"\"\"\n        set_req = self.gateway.const.SetReq\n        if set_req.V_HVAC_SETPOINT_COOL in self._values:\n            temp = self._values.get(set_req.V_HVAC_SETPOINT_HEAT)\n            return float(temp) if temp is not None else None\n\n    @property\n    def current_operation(self):\n        \"\"\"Return current operation ie. heat, cool, idle.\"\"\"\n        return self._values.get(self.value_type)\n\n    @property\n    def operation_list(self):\n        \"\"\"List of available operation modes.\"\"\"\n        return [STATE_OFF, STATE_AUTO, STATE_COOL, STATE_HEAT]\n\n    @property\n    def current_fan_mode(self):\n        \"\"\"Return the fan setting.\"\"\"\n        return self._values.get(self.gateway.const.SetReq.V_HVAC_SPEED)\n\n    @property\n    def fan_list(self):\n        \"\"\"List of available fan modes.\"\"\"\n        return ['Auto', 'Min', 'Normal', 'Max']\n\n    async def async_set_temperature(self, **kwargs):\n        \"\"\"Set new target temperature.\"\"\"\n        set_req = self.gateway.const.SetReq\n        temp = kwargs.get(ATTR_TEMPERATURE)\n        low = kwargs.get(ATTR_TARGET_TEMP_LOW)\n        high = kwargs.get(ATTR_TARGET_TEMP_HIGH)\n        heat = self._values.get(set_req.V_HVAC_SETPOINT_HEAT)\n        cool = self._values.get(set_req.V_HVAC_SETPOINT_COOL)\n        updates = []\n        if temp is not None:\n            if heat is not None:\n                # Set HEAT Target temperature\n                value_type = set_req.V_HVAC_SETPOINT_HEAT\n            elif cool is not None:\n                # Set COOL Target temperature\n                value_type = set_req.V_HVAC_SETPOINT_COOL\n            if heat is not None or cool is not None:\n                updates = [(value_type, temp)]\n        elif all(val is not None for val in (low, high, heat, cool)):\n            updates = [\n                (set_req.V_HVAC_SETPOINT_HEAT, low),\n                (set_req.V_HVAC_SETPOINT_COOL, high)]\n        for value_type, value in updates:\n            self.gateway.set_child_value(\n                self.node_id, self.child_id, value_type, value)\n            if self.gateway.optimistic:\n                # Optimistically assume that device has changed state\n                self._values[value_type] = value\n                self.async_schedule_update_ha_state()\n\n    async def async_set_fan_mode(self, fan_mode):\n        \"\"\"Set new target temperature.\"\"\"\n        set_req = self.gateway.const.SetReq\n        self.gateway.set_child_value(\n            self.node_id, self.child_id, set_req.V_HVAC_SPEED, fan_mode)\n        if self.gateway.optimistic:\n            # Optimistically assume that device has changed state\n            self._values[set_req.V_HVAC_SPEED] = fan_mode\n            self.async_schedule_update_ha_state()\n\n    async def async_set_operation_mode(self, operation_mode):\n        \"\"\"Set new target temperature.\"\"\"\n        self.gateway.set_child_value(\n            self.node_id, self.child_id, self.value_type,\n            DICT_HA_TO_MYS[operation_mode])\n        if self.gateway.optimistic:\n            # Optimistically assume that device has changed state\n            self._values[self.value_type] = operation_mode\n            self.async_schedule_update_ha_state()\n\n    async def async_update(self):\n        \"\"\"Update the controller with the latest value from a sensor.\"\"\"\n        await super().async_update()\n        self._values[self.value_type] = DICT_MYS_TO_HA[\n            self._values[self.value_type]]\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_5ffb08145955092e",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"homeassistant/components/climate/mysensors.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_5ffb08145955092e",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "homeassistant/components/climate/mysensors.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

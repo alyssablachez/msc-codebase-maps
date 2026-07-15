@@ -1,0 +1,214 @@
+{
+  "model": "fireworks_ai/accounts/fireworks/models/gpt-oss-120b",
+  "repo": "rich",
+  "issue_idx": 12,
+  "tier": "medium",
+  "role": "multi",
+  "map_type": "ast_compact",
+  "rep": 1,
+  "worker_id": 3,
+  "issue_title": "[BUG] Plain code blocks do not render correctly on a light background",
+  "base_commit": "a972ca05522577de2f98eb7c957deead9c87b38f",
+  "metrics": {
+    "total_input_tokens": 110401,
+    "total_output_tokens": 3277,
+    "total_cached_tokens": 52908,
+    "total_cost": 0.018526,
+    "num_turns": 6,
+    "wall_time_seconds": 48.98,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "b26be73f"
+  },
+  "final_files_predicted": [
+    "rich/markdown.py"
+  ],
+  "final_files_predicted_scorable": [
+    "rich/markdown.py"
+  ],
+  "ground_truth": [
+    "rich/text.py",
+    "rich/syntax.py",
+    "rich/console.py",
+    "rich/markdown.py"
+  ],
+  "ground_truth_scorable": [
+    "rich/text.py",
+    "rich/syntax.py",
+    "rich/console.py",
+    "rich/markdown.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 0.25,
+    "f1": 0.4
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_DE3oZL8QegTtSLW6QKdIkSZy",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"code block\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_DE3oZL8QegTtSLW6QKdIkSZy",
+      "name": "search",
+      "args": {
+        "pattern": "code block",
+        "path": ""
+      },
+      "result": "rich/markdown.py:170:    \"\"\"A code block with syntax highlighting.\"\"\"\nrich/markdown.py:524:        code_theme (str, optional): Pygments theme for code blocks. Defaults to \"monokai\"."
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_oZSePlDabBEoRQPBH1mxeqy9",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"rich/markdown.py\",\"offset\":450,\"limit\":200}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_oZSePlDabBEoRQPBH1mxeqy9",
+      "name": "read_file",
+      "args": {
+        "path": "rich/markdown.py",
+        "offset": 450,
+        "limit": 200
+      },
+      "result": "[Lines 450\u2013649 of 800]\n        self.destination = destination\n        self.hyperlinks = hyperlinks\n        self.link: Optional[str] = None\n        super().__init__()\n\n    def on_enter(self, context: \"MarkdownContext\") -> None:\n        self.link = context.current_style.link\n        self.text = Text(justify=\"left\")\n        super().on_enter(context)\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        link_style = Style(link=self.link or self.destination or None)\n        title = self.text or Text(self.destination.strip(\"/\").rsplit(\"/\", 1)[-1])\n        if self.hyperlinks:\n            title.stylize(link_style)\n        text = Text.assemble(\"\ud83c\udf06 \", title, \" \", end=\"\")\n        yield text\n\n\nclass MarkdownContext:\n    \"\"\"Manages the console render state.\"\"\"\n\n    def __init__(\n        self,\n        console: Console,\n        options: ConsoleOptions,\n        style: Style,\n        inline_code_lexer: Optional[str] = None,\n        inline_code_theme: str = \"monokai\",\n    ) -> None:\n        self.console = console\n        self.options = options\n        self.style_stack: StyleStack = StyleStack(style)\n        self.stack: Stack[MarkdownElement] = Stack()\n\n        self._syntax: Optional[Syntax] = None\n        if inline_code_lexer is not None:\n            self._syntax = Syntax(\"\", inline_code_lexer, theme=inline_code_theme)\n\n    @property\n    def current_style(self) -> Style:\n        \"\"\"Current style which is the product of all styles on the stack.\"\"\"\n        return self.style_stack.current\n\n    def on_text(self, text: str, node_type: str) -> None:\n        \"\"\"Called when the parser visits text.\"\"\"\n        if node_type in {\"fence\", \"code_inline\"} and self._syntax is not None:\n            highlight_text = self._syntax.highlight(text)\n            highlight_text.rstrip()\n            self.stack.top.on_text(\n                self, Text.assemble(highlight_text, style=self.style_stack.current)\n            )\n        else:\n            self.stack.top.on_text(self, text)\n\n    def enter_style(self, style_name: Union[str, Style]) -> Style:\n        \"\"\"Enter a style context.\"\"\"\n        style = self.console.get_style(style_name, default=\"none\")\n        self.style_stack.push(style)\n        return self.current_style\n\n    def leave_style(self) -> Style:\n        \"\"\"Leave a style context.\"\"\"\n        style = self.style_stack.pop()\n        return style\n\n\nclass Markdown(JupyterMixin):\n    \"\"\"A Markdown renderable.\n\n    Args:\n        markup (str): A string containing markdown.\n        code_theme (str, optional): Pygments theme for code blocks. Defaults to \"monokai\".\n        justify (JustifyMethod, optional): Justify value for paragraphs. Defaults to None.\n        style (Union[str, Style], optional): Optional style to apply to markdown.\n        hyperlinks (bool, optional): Enable hyperlinks. Defaults to ``True``.\n        inline_code_lexer: (str, optional): Lexer to use if inline code highlighting is\n            enabled. Defaults to None.\n        inline_code_theme: (Optional[str], optional): Pygments theme for inline code\n            highlighting, or None for no highlighting. Defaults to None.\n    \"\"\"\n\n    elements: ClassVar[Dict[str, Type[MarkdownElement]]] = {\n        \"paragraph_open\": Paragraph,\n        \"heading_open\": Heading,\n        \"fence\": CodeBlock,\n        \"code_block\": CodeBlock,\n        \"blockquote_open\": BlockQuote,\n        \"hr\": HorizontalRule,\n        \"bullet_list_open\": ListElement,\n        \"ordered_list_open\": ListElement,\n        \"list_item_open\": ListItem,\n        \"image\": ImageItem,\n        \"table_open\": TableElement,\n        \"tbody_open\": TableBodyElement,\n        \"thead_open\": TableHeaderElement,\n        \"tr_open\": TableRowElement,\n        \"td_open\": TableDataElement,\n        \"th_open\": TableDataElement,\n    }\n\n    inlines = {\"em\", \"strong\", \"code\", \"s\"}\n\n    def __init__(\n        self,\n        markup: str,\n        code_theme: str = \"monokai\",\n        justify: Optional[JustifyMethod] = None,\n        style: Union[str, Style] = \"none\",\n        hyperlinks: bool = True,\n        inline_code_lexer: Optional[str] = None,\n        inline_code_theme: Optional[str] = None,\n    ) -> None:\n        parser = MarkdownIt().enable(\"strikethrough\").enable(\"table\")\n        self.markup = markup\n        self.parsed = parser.parse(markup)\n        self.code_theme = code_theme\n        self.justify: Optional[JustifyMethod] = justify\n        self.style = style\n        self.hyperlinks = hyperlinks\n        self.inline_code_lexer = inline_code_lexer\n        self.inline_code_theme = inline_code_theme or code_theme\n\n    def _flatten_tokens(self, tokens: Iterable[Token]) -> Iterable[Token]:\n        \"\"\"Flattens the token stream.\"\"\"\n        for token in tokens:\n            is_fence = token.type == \"fence\"\n            is_image = token.tag == \"img\"\n            if token.children and not (is_image or is_fence):\n                yield from self._flatten_tokens(token.children)\n            else:\n                yield token\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        \"\"\"Render markdown to the console.\"\"\"\n        style = console.get_style(self.style, default=\"none\")\n        options = options.update(height=None)\n        context = MarkdownContext(\n            console,\n            options,\n            style,\n            inline_code_lexer=self.inline_code_lexer,\n            inline_code_theme=self.inline_code_theme,\n        )\n        tokens = self.parsed\n        inline_style_tags = self.inlines\n        new_line = False\n        _new_line_segment = Segment.line()\n\n        for token in self._flatten_tokens(tokens):\n            node_type = token.type\n            tag = token.tag\n\n            entering = token.nesting == 1\n            exiting = token.nesting == -1\n            self_closing = token.nesting == 0\n\n            if node_type == \"text\":\n                context.on_text(token.content, node_type)\n            elif node_type == \"hardbreak\":\n                context.on_text(\"\\n\", node_type)\n            elif node_type == \"softbreak\":\n                context.on_text(\" \", node_type)\n            elif node_type == \"link_open\":\n                href = str(token.attrs.get(\"href\", \"\"))\n                if self.hyperlinks:\n                    link_style = console.get_style(\"markdown.link_url\", default=\"none\")\n                    link_style += Style(link=href)\n                    context.enter_style(link_style)\n                else:\n                    context.stack.push(Link.create(self, token))\n            elif node_type == \"link_close\":\n                if self.hyperlinks:\n                    context.leave_style()\n                else:\n                    element = context.stack.pop()\n                    assert isinstance(element, Link)\n                    link_style = console.get_style(\"markdown.link\", default=\"none\")\n                    context.enter_style(link_style)\n                    context.on_text(element.text.plain, node_type)\n                    context.leave_style()\n                    context.on_text(\" (\", node_type)\n                    link_url_style = console.get_style(\n                        \"markdown.link_url\", default=\"none\"\n                    )\n                    context.enter_style(link_url_style)\n                    context.on_text(element.href, node_type)\n                    context.leave_style()\n                    context.on_text(\")\", node_type)\n            elif (\n                tag in inline_style_tags\n                and node_type != \"fence\"\n                and node_type != \"code_block\"\n            ):\n                if entering:\n                    # If it's an opening inline token e.g. strong, em, etc.\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_avijJFP1f6wzSa1aetokLOcp",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"class CodeBlock\",\"path\":\"rich\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_avijJFP1f6wzSa1aetokLOcp",
+      "name": "search",
+      "args": {
+        "pattern": "class CodeBlock",
+        "path": "rich"
+      },
+      "result": "rich/markdown.py:169:class CodeBlock(TextElement):"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_PNOdPMdHYgSKCD3Qy5xtFfvg",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"rich/markdown.py\",\"offset\":150,\"limit\":200}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_PNOdPMdHYgSKCD3Qy5xtFfvg",
+      "name": "read_file",
+      "args": {
+        "path": "rich/markdown.py",
+        "offset": 150,
+        "limit": 200
+      },
+      "result": "[Lines 150\u2013349 of 800]\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        text = self.text\n        text.justify = \"center\"\n        if self.tag == \"h1\":\n            # Draw a border around h1s\n            yield Panel(\n                text,\n                box=box.HEAVY,\n                style=\"markdown.h1.border\",\n            )\n        else:\n            # Styled text for h2 and beyond\n            if self.tag == \"h2\":\n                yield Text(\"\")\n            yield text\n\n\nclass CodeBlock(TextElement):\n    \"\"\"A code block with syntax highlighting.\"\"\"\n\n    style_name = \"markdown.code_block\"\n\n    @classmethod\n    def create(cls, markdown: \"Markdown\", token: Token) -> \"CodeBlock\":\n        node_info = token.info or \"\"\n        lexer_name = node_info.partition(\" \")[0]\n        return cls(lexer_name or \"default\", markdown.code_theme)\n\n    def __init__(self, lexer_name: str, theme: str) -> None:\n        self.lexer_name = lexer_name\n        self.theme = theme\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        code = str(self.text).rstrip()\n        syntax = Syntax(\n            code, self.lexer_name, theme=self.theme, word_wrap=True, padding=1\n        )\n        yield syntax\n\n\nclass BlockQuote(TextElement):\n    \"\"\"A block quote.\"\"\"\n\n    style_name = \"markdown.block_quote\"\n\n    def __init__(self) -> None:\n        self.elements: Renderables = Renderables()\n\n    def on_child_close(\n        self, context: \"MarkdownContext\", child: \"MarkdownElement\"\n    ) -> bool:\n        self.elements.append(child)\n        return False\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        render_options = options.update(width=options.max_width - 4)\n        lines = console.render_lines(self.elements, render_options, style=self.style)\n        style = self.style\n        new_line = Segment(\"\\n\")\n        padding = Segment(\"\u258c \", style)\n        for line in lines:\n            yield padding\n            yield from line\n            yield new_line\n\n\nclass HorizontalRule(MarkdownElement):\n    \"\"\"A horizontal rule to divide sections.\"\"\"\n\n    new_line = False\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        style = console.get_style(\"markdown.hr\", default=\"none\")\n        yield Rule(style=style)\n\n\nclass TableElement(MarkdownElement):\n    \"\"\"MarkdownElement corresponding to `table_open`.\"\"\"\n\n    def __init__(self) -> None:\n        self.header: TableHeaderElement | None = None\n        self.body: TableBodyElement | None = None\n\n    def on_child_close(\n        self, context: \"MarkdownContext\", child: \"MarkdownElement\"\n    ) -> bool:\n        if isinstance(child, TableHeaderElement):\n            self.header = child\n        elif isinstance(child, TableBodyElement):\n            self.body = child\n        else:\n            raise RuntimeError(\"Couldn't process markdown table.\")\n        return False\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        table = Table(box=box.SIMPLE_HEAVY)\n\n        if self.header is not None and self.header.row is not None:\n            for column in self.header.row.cells:\n                table.add_column(column.content)\n\n        if self.body is not None:\n            for row in self.body.rows:\n                row_content = [element.content for element in row.cells]\n                table.add_row(*row_content)\n\n        yield table\n\n\nclass TableHeaderElement(MarkdownElement):\n    \"\"\"MarkdownElement corresponding to `thead_open` and `thead_close`.\"\"\"\n\n    def __init__(self) -> None:\n        self.row: TableRowElement | None = None\n\n    def on_child_close(\n        self, context: \"MarkdownContext\", child: \"MarkdownElement\"\n    ) -> bool:\n        assert isinstance(child, TableRowElement)\n        self.row = child\n        return False\n\n\nclass TableBodyElement(MarkdownElement):\n    \"\"\"MarkdownElement corresponding to `tbody_open` and `tbody_close`.\"\"\"\n\n    def __init__(self) -> None:\n        self.rows: list[TableRowElement] = []\n\n    def on_child_close(\n        self, context: \"MarkdownContext\", child: \"MarkdownElement\"\n    ) -> bool:\n        assert isinstance(child, TableRowElement)\n        self.rows.append(child)\n        return False\n\n\nclass TableRowElement(MarkdownElement):\n    \"\"\"MarkdownElement corresponding to `tr_open` and `tr_close`.\"\"\"\n\n    def __init__(self) -> None:\n        self.cells: List[TableDataElement] = []\n\n    def on_child_close(\n        self, context: \"MarkdownContext\", child: \"MarkdownElement\"\n    ) -> bool:\n        assert isinstance(child, TableDataElement)\n        self.cells.append(child)\n        return False\n\n\nclass TableDataElement(MarkdownElement):\n    \"\"\"MarkdownElement corresponding to `td_open` and `td_close`\n    and `th_open` and `th_close`.\"\"\"\n\n    @classmethod\n    def create(cls, markdown: \"Markdown\", token: Token) -> \"MarkdownElement\":\n        style = str(token.attrs.get(\"style\")) or \"\"\n\n        justify: JustifyMethod\n        if \"text-align:right\" in style:\n            justify = \"right\"\n        elif \"text-align:center\" in style:\n            justify = \"center\"\n        elif \"text-align:left\" in style:\n            justify = \"left\"\n        else:\n            justify = \"default\"\n\n        assert justify in get_args(JustifyMethod)\n        return cls(justify=justify)\n\n    def __init__(self, justify: JustifyMethod) -> None:\n        self.content: Text = Text(\"\", justify=justify)\n        self.justify = justify\n\n    def on_text(self, context: \"MarkdownContext\", text: TextType) -> None:\n        text = Text(text) if isinstance(text, str) else text\n        text.stylize(context.current_style)\n        self.content.append_text(text)\n\n\nclass ListElement(MarkdownElement):\n    \"\"\"A list element.\"\"\"\n\n    @classmethod\n    def create(cls, markdown: \"Markdown\", token: Token) -> \"ListElement\":\n        return cls(token.type, int(token.attrs.get(\"start\", 1)))\n\n    def __init__(self, list_type: str, list_start: int | None) -> None:\n"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_Zr2z6C6Ov11GPY6bq5MTezaU",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"class TextElement\",\"path\":\"rich/markdown.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_Zr2z6C6Ov11GPY6bq5MTezaU",
+      "name": "search",
+      "args": {
+        "pattern": "class TextElement",
+        "path": "rich/markdown.py"
+      },
+      "result": "98:class TextElement(MarkdownElement):"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_TpxAFzzQPaLa2CYDkIYrwfZo",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\":[\"rich/markdown.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_TpxAFzzQPaLa2CYDkIYrwfZo",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "rich/markdown.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

@@ -1,0 +1,936 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "gpt-engineer",
+  "issue_idx": 9,
+  "tier": "small",
+  "role": "single",
+  "map_type": "freq",
+  "rep": 3,
+  "worker_id": 1,
+  "issue_title": "Azure Deployment Name Bug",
+  "base_commit": "3e589bf1356024fb471a9d17738e4626f21a953b",
+  "metrics": {
+    "total_input_tokens": 869016,
+    "total_output_tokens": 25567,
+    "total_cached_tokens": 779776,
+    "total_cost": 0.021836,
+    "num_turns": 30,
+    "wall_time_seconds": 296.6,
+    "stop_reason": "max_turns",
+    "hit_turn_cap": true,
+    "submission_type": "max_turns",
+    "trial_token": "a1b52eec"
+  },
+  "final_files_predicted": [
+    "gpt_engineer/core/ai.py",
+    "gpt_engineer/applications/cli/main.py"
+  ],
+  "final_files_predicted_scorable": [
+    "gpt_engineer/core/ai.py",
+    "gpt_engineer/applications/cli/main.py"
+  ],
+  "ground_truth": [
+    "gpt_engineer/core/ai.py"
+  ],
+  "ground_truth_scorable": [
+    "gpt_engineer/core/ai.py"
+  ],
+  "scores": {
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6667
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_2GQQvic9U9mWe3veaLqJ2239",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"azure\", \"path\": \"\"}"
+          }
+        },
+        {
+          "id": "call_01_Wpwd6Tgb03lMcOSL0dVm9563",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"gpt_engineer\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_2GQQvic9U9mWe3veaLqJ2239",
+      "name": "search",
+      "args": {
+        "pattern": "azure",
+        "path": ""
+      },
+      "result": "gpt_engineer/core/ai.py:61:    azure_endpoint : str\ngpt_engineer/core/ai.py:92:        azure_endpoint=None,\ngpt_engineer/core/ai.py:107:        self.azure_endpoint = azure_endpoint\ngpt_engineer/core/ai.py:346:        if self.azure_endpoint:\ngpt_engineer/core/ai.py:348:                azure_endpoint=self.azure_endpoint,\ngpt_engineer/core/ai.py:351:                openai_api_type=\"azure\",\ngpt_engineer/applications/cli/main.py:25:- When using the `azure_endpoint` parameter, provide the Azure OpenAI service endpoint URL.\ngpt_engineer/applications/cli/main.py:283:    azure_endpoint: str = typer.Option(\ngpt_engineer/applications/cli/main.py:285:        \"--azure\",\ngpt_engineer/applications/cli/main.py:287:        help=\"\"\"Endpoint for your Azure OpenAI Service (https://xx.openai.azure.com).\ngpt_engineer/applications/cli/main.py:356:    azure_endpoint : str\ngpt_engineer/applications/cli/main.py:405:            azure_endpoint=azure_endpoint,"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_01_Wpwd6Tgb03lMcOSL0dVm9563",
+      "name": "list_files",
+      "args": {
+        "path": "gpt_engineer"
+      },
+      "result": "__init__.py\napplications\nbenchmark\ncore\npreprompts\ntools"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ECTUHGltVSXjSQQJxGuf6735",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"gpt_engineer/core/ai.py\"}"
+          }
+        },
+        {
+          "id": "call_01_e84vXqTt7d3rgQImG5hJ7278",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"gpt_engineer/applications/cli/main.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_ECTUHGltVSXjSQQJxGuf6735",
+      "name": "read_file",
+      "args": {
+        "path": "gpt_engineer/core/ai.py"
+      },
+      "result": "\"\"\"\nAI Module\n\nThis module provides an AI class that interfaces with language models to perform various tasks such as\nstarting a conversation, advancing the conversation, and handling message serialization. It also includes\nbackoff strategies for handling rate limit errors from the OpenAI API.\n\nClasses:\n    AI: A class that interfaces with language models for conversation management and message serialization.\n\nFunctions:\n    serialize_messages(messages: List[Message]) -> str\n        Serialize a list of messages to a JSON string.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport logging\nimport os\n\nfrom pathlib import Path\nfrom typing import Any, List, Optional, Union\n\nimport backoff\nimport openai\nimport pyperclip\n\nfrom langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler\nfrom langchain.chat_models.base import BaseChatModel\nfrom langchain.schema import (\n    AIMessage,\n    HumanMessage,\n    SystemMessage,\n    messages_from_dict,\n    messages_to_dict,\n)\nfrom langchain_anthropic import ChatAnthropic\nfrom langchain_openai import AzureChatOpenAI, ChatOpenAI\n\nfrom gpt_engineer.core.token_usage import TokenUsageLog\n\n# Type hint for a chat message\nMessage = Union[AIMessage, HumanMessage, SystemMessage]\n\n# Set up logging\nlogger = logging.getLogger(__name__)\n\n\nclass AI:\n    \"\"\"\n    A class that interfaces with language models for conversation management and message serialization.\n\n    This class provides methods to start and advance conversations, handle message serialization,\n    and implement backoff strategies for rate limit errors when interacting with the OpenAI API.\n\n    Attributes\n    ----------\n    temperature : float\n        The temperature setting for the language model.\n    azure_endpoint : str\n        The endpoint URL for the Azure-hosted language model.\n    model_name : str\n        The name of the language model to use.\n    streaming : bool\n        A flag indicating whether to use streaming for the language model.\n    llm : BaseChatModel\n        The language model instance for conversation management.\n    token_usage_log : TokenUsageLog\n        A log for tracking token usage during conversations.\n\n    Methods\n    -------\n    start(system: str, user: str, step_name: str) -> List[Message]\n        Start the conversation with a system message and a user message.\n    next(messages: List[Message], prompt: Optional[str], step_name: str) -> List[Message]\n        Advances the conversation by sending message history to LLM and updating with the response.\n    backoff_inference(messages: List[Message]) -> Any\n        Perform inference using the language model with an exponential backoff strategy.\n    serialize_messages(messages: List[Message]) -> str\n        Serialize a list of messages to a JSON string.\n    deserialize_messages(jsondictstr: str) -> List[Message]\n        Deserialize a JSON string to a list of messages.\n    _create_chat_model() -> BaseChatModel\n        Create a chat model with the specified model name and temperature.\n    \"\"\"\n\n    def __init__(\n        self,\n        model_name=\"gpt-4-turbo\",\n        temperature=0.1,\n        azure_endpoint=None,\n        streaming=True,\n        vision=False,\n    ):\n        \"\"\"\n        Initialize the AI class.\n\n        Parameters\n        ----------\n        model_name : str, optional\n            The name of the model to use, by default \"gpt-4\".\n        temperature : float, optional\n            The temperature to use for the model, by default 0.1.\n        \"\"\"\n        self.temperature = temperature\n        self.azure_endpoint = azure_endpoint\n        self.model_name = model_name\n        self.streaming = streaming\n        self.vision = (\n            (\"vision-preview\" in model_name)\n            or (\"gpt-4-turbo\" in model_name and \"preview\" not in model_name)\n            or (\"claude\" in model_name)\n        )\n        self.llm = self._create_chat_model()\n        self.token_usage_log = TokenUsageLog(model_name)\n\n        logger.debug(f\"Using model {self.model_name}\")\n\n    def start(self, system: str, user: Any, *, step_name: str) -> List[Message]:\n        \"\"\"\n        Start the conversation with a system message and a user message.\n\n        Parameters\n        ----------\n        system : str\n            The content of the system message.\n        user : str\n            The content of the user message.\n        step_name : str\n            The name of the step.\n\n        Returns\n        -------\n        List[Message]\n            The list of messages in the conversation.\n        \"\"\"\n\n        messages: List[Message] = [\n            SystemMessage(content=system),\n            HumanMessage(content=user),\n        ]\n        return self.next(messages, step_name=step_name)\n\n    def _extract_content(self, content):\n        \"\"\"\n        Extracts text content from a message, supporting both string and list types.\n        Parameters\n        ----------\n        content : Union[str, List[dict]]\n            The content of a message, which could be a string or a list.\n        Returns\n        -------\n        str\n            The extracted text content.\n        \"\"\"\n        if isinstance(content, str):\n            return content\n        elif isinstance(content, list) and content and \"text\" in content[0]:\n            # Assuming the structure of list content is [{'type': 'text', 'text': 'Some text'}, ...]\n            return content[0][\"text\"]\n        else:\n            return \"\"\n\n    def _collapse_text_messages(self, messages: List[Message]):\n        \"\"\"\n        Combine consecutive messages of the same type into a single message, where if the message content\n        is a list type, the first text element's content is taken. This method keeps `combined_content` as a string.\n\n        This method iterates through the list of messages, combining consecutive messages of the same type\n        by joining their content with a newline character. If the content is a list, it extracts text from the first\n        text element's content. This reduces the number of messages and simplifies the conversation for processing.\n\n        Parameters\n        ----------\n        messages : List[Message]\n            The list of messages to collapse.\n\n        Returns\n        -------\n        List[Message]\n            The list of messages after collapsing consecutive messages of the same type.\n        \"\"\"\n        collapsed_messages = []\n        if not messages:\n            return collapsed_messages\n\n        previous_message = messages[0]\n        combined_content = self._extract_content(previous_message.content)\n\n        for current_message in messages[1:]:\n            if current_message.type == previous_message.type:\n                combined_content += \"\\n\\n\" + self._extract_content(\n                    current_message.content\n                )\n            else:\n                collapsed_messages.append(\n                    previous_message.__class__(content=combined_content)\n                )\n                previous_message = current_message\n                combined_content = self._extract_content(current_message.content)\n\n        collapsed_messages.append(previous_message.__class__(content=combined_content))\n        return collapsed_messages\n\n    def next(\n        self,\n        messages: List[Message],\n        prompt: Optional[str] = None,\n        *,\n        step_name: str,\n    ) -> List[Message]:\n        \"\"\"\n        Advances the conversation by sending message history\n        to LLM and updating with the response.\n\n        Parameters\n        ----------\n        messages : List[Message]\n            The list of messages in the conversation.\n        prompt : Optional[str], optional\n            The prompt to use, by default None.\n        step_name : str\n            The name of the step.\n\n        Returns\n        -------\n        List[Message]\n            The updated list of messages in the conversation.\n        \"\"\"\n\n        if prompt:\n            messages.append(HumanMessage(content=prompt))\n\n        logger.debug(\n            \"Creating a new chat completion: %s\",\n            \"\\n\".join([m.pretty_repr() for m in messages]),\n        )\n\n        if not self.vision:\n            messages = self._collapse_text_messages(messages)\n\n        response = self.backoff_inference(messages)\n\n        self.token_usage_log.update_log(\n            messages=messages, answer=response.content, step_name=step_name\n        )\n        messages.append(response)\n        logger.debug(f\"Chat completion finished: {messages}\")\n\n        return messages\n\n    @backoff.on_exception(backoff.expo, openai.RateLimitError, max_tries=7, max_time=45)\n    def backoff_inference(self, messages):\n        \"\"\"\n        Perform inference using the language model while implementing an exponential backoff strategy.\n\n        This function will retry the inference in case of a rate limit error from the OpenAI API.\n        It uses an exponential backoff strategy, meaning the wait time between retries increases\n        exponentially. The function will attempt to retry up to 7 times within a span of 45 seconds.\n\n        Parameters\n        ----------\n        messages : List[Message]\n            A list of chat messages which will be passed to the language model for processing.\n\n        callbacks : List[Callable]\n            A list of callback functions that are triggered after each inference. These functions\n            can be used for logging, monitoring, or other auxiliary tasks.\n\n        Returns\n        -------\n        Any\n            The output from the language model after processing the provided messages.\n\n        Raises\n        ------\n        openai.error.RateLimitError\n            If the number of retries exceeds the maximum or if the rate limit persists beyond the\n            allotted time, the function will ultimately raise a RateLimitError.\n\n        Example\n        -------\n        >>> messages = [SystemMessage(content=\"Hello\"), HumanMessage(content=\"How's the weather?\")]\n        >>> response = backoff_inference(messages)\n        \"\"\"\n        return self.llm.invoke(messages)  # type: ignore\n\n    @staticmethod\n    def serialize_messages(messages: List[Message]) -> str:\n        \"\"\"\n        Serialize a list of messages to a JSON string.\n\n        Parameters\n        ----------\n        messages : List[Message]\n            The list of messages to serialize.\n\n        Returns\n        -------\n        str\n            The serialized messages as a JSON string.\n        \"\"\"\n        return json.dumps(messages_to_dict(messages))\n\n    @staticmethod\n    def deserialize_messages(jsondictstr: str) -> List[Message]:\n        \"\"\"\n        Deserialize a JSON string to a list of messages.\n\n        Parameters\n        ----------\n        jsondictstr : str\n            The JSON string to deserialize.\n\n        Returns\n        -------\n        List[Message]\n            The deserialized list of messages.\n        \"\"\"\n        data = json.loads(jsondictstr)\n        # Modify implicit is_chunk property to ALWAYS false\n        # since Langchain's Message schema is stricter\n        prevalidated_data = [\n            {**item, \"tools\": {**item.get(\"tools\", {}), \"is_chunk\": False}}\n            for item in data\n        ]\n        return list(messages_from_dict(prevalidated_data))  # type: ignore\n\n    def _create_chat_model(self) -> BaseChatModel:\n        \"\"\"\n        Create a chat model with the specified model name and temperature.\n\n        Parameters\n        ----------\n        model : str\n            The name of the model to create.\n        temperature : float\n            The temperature to use for the model.\n\n        Returns\n        -------\n        BaseChatModel\n            The created chat model.\n        \"\"\"\n        if self.azure_endpoint:\n            return AzureChatOpenAI(\n                azure_endpoint=self.azure_endpoint,\n                openai_api_version=os.getenv(\"OPENAI_API_VERSION\", \"2023-05-15\"),\n                deployment_name=self.model_name,\n                openai_api_type=\"azure\",\n                streaming=self.streaming,\n                callbacks=[StreamingStdOutCallbackHandler()],\n            )\n        elif \"claude\" in self.model_name:\n            return ChatAnthropic(\n                model=self.model_name,\n                temperature=self.temperature,\n                callbacks=[StreamingStdOutCallbackHandler()],\n                streaming=self.streaming,\n                max_tokens_to_sample=4096,\n            )\n        elif self.vision:\n            return ChatOpenAI(\n                model=self.model_name,\n                temperature=self.temperature,\n                streaming=self.streaming,\n                callbacks=[StreamingStdOutCallbackHandler()],\n                max_tokens=4096,  # vision models default to low max token limits\n            )\n        else:\n            return ChatOpenAI(\n                model=self.model_name,\n                temperature=self.temperature,\n                streaming=self.streaming,\n                callbacks=[StreamingStdOutCallbackHandler()],\n            )\n\n\ndef serialize_messages(messages: List[Message]) -> str:\n    return AI.serialize_messages(messages)\n\n\nclass ClipboardAI(AI):\n    # Ignore not init superclass\n    def __init__(self, **_):  # type: ignore\n        self.vision = False\n        self.token_usage_log = TokenUsageLog(\"clipboard_llm\")\n\n    @staticmethod\n    def serialize_messages(messages: List[Message]) -> str:\n        return \"\\n\\n\".join([f\"{m.type}:\\n{m.content}\" for m in messages])\n\n    @staticmethod\n    def multiline_input():\n        print(\"Enter/Paste your content. Ctrl-D or Ctrl-Z ( windows ) to save it.\")\n        content = []\n        while True:\n            try:\n                line = input()\n            except EOFError:\n                break\n            content.append(line)\n        return \"\\n\".join(content)\n\n    def next(\n        self,\n        messages: List[Message],\n        prompt: Optional[str] = None,\n        *,\n        step_name: str,\n    ) -> List[Message]:\n        \"\"\"\n        Not yet fully supported\n        \"\"\"\n        if prompt:\n            messages.append(HumanMessage(content=prompt))\n\n        logger.debug(f\"Creating a new chat completion: {messages}\")\n\n        msgs = self.serialize_messages(messages)\n        pyperclip.copy(msgs)\n        Path(\"clipboard.txt\").write_text(msgs)\n        print(\n            \"Messages copied to clipboard and written to clipboard.txt,\",\n            len(msgs),\n            \"characters in total\",\n        )\n\n        response = self.multiline_input()\n\n        messages.append(AIMessage(content=response))\n        logger.debug(f\"Chat completion finished: {messages}\")\n\n        return messages\n"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_01_e84vXqTt7d3rgQImG5hJ7278",
+      "name": "read_file",
+      "args": {
+        "path": "gpt_engineer/applications/cli/main.py"
+      },
+      "result": "\"\"\"\nEntrypoint for the CLI tool.\n\nThis module serves as the entry point for a command-line interface (CLI) tool.\nIt is designed to interact with OpenAI's language models.\nThe module provides functionality to:\n- Load necessary environment variables,\n- Configure various parameters for the AI interaction,\n- Manage the generation or improvement of code projects.\n\nMain Functionality\n------------------\n- Load environment variables required for OpenAI API interaction.\n- Parse user-specified parameters for project configuration and AI behavior.\n- Facilitate interaction with AI models, databases, and archival processes.\n\nParameters\n----------\nNone\n\nNotes\n-----\n- The `OPENAI_API_KEY` must be set in the environment or provided in a `.env` file within the working directory.\n- The default project path is `projects/example`.\n- When using the `azure_endpoint` parameter, provide the Azure OpenAI service endpoint URL.\n\"\"\"\n\nimport difflib\nimport logging\nimport os\nimport sys\n\nfrom pathlib import Path\n\nimport openai\nimport typer\n\nfrom dotenv import load_dotenv\nfrom langchain.globals import set_llm_cache\nfrom langchain_community.cache import SQLiteCache\nfrom termcolor import colored\n\nfrom gpt_engineer.applications.cli.cli_agent import CliAgent\nfrom gpt_engineer.applications.cli.collect import collect_and_send_human_review\nfrom gpt_engineer.applications.cli.file_selector import FileSelector\nfrom gpt_engineer.core.ai import AI, ClipboardAI\nfrom gpt_engineer.core.default.disk_execution_env import DiskExecutionEnv\nfrom gpt_engineer.core.default.disk_memory import DiskMemory\nfrom gpt_engineer.core.default.file_store import FileStore\nfrom gpt_engineer.core.default.paths import PREPROMPTS_PATH, memory_path\nfrom gpt_engineer.core.default.steps import (\n    execute_entrypoint,\n    gen_code,\n    handle_improve_mode,\n    improve_fn as improve_fn,\n)\nfrom gpt_engineer.core.files_dict import FilesDict\nfrom gpt_engineer.core.git import stage_uncommitted_to_git\nfrom gpt_engineer.core.preprompts_holder import PrepromptsHolder\nfrom gpt_engineer.core.prompt import Prompt\nfrom gpt_engineer.tools.custom_steps import clarified_gen, lite_gen, self_heal\n\napp = typer.Typer(\n    context_settings={\"help_option_names\": [\"-h\", \"--help\"]}\n)  # creates a CLI app\n\n\ndef load_env_if_needed():\n    \"\"\"\n    Load environment variables if the OPENAI_API_KEY is not already set.\n\n    This function checks if the OPENAI_API_KEY environment variable is set,\n    and if not, it attempts to load it from a .env file in the current working\n    directory. It then sets the openai.api_key for use in the application.\n    \"\"\"\n    # We have all these checks for legacy reasons...\n    if os.getenv(\"OPENAI_API_KEY\") is None:\n        load_dotenv()\n    if os.getenv(\"OPENAI_API_KEY\") is None:\n        load_dotenv(dotenv_path=os.path.join(os.getcwd(), \".env\"))\n\n    openai.api_key = os.getenv(\"OPENAI_API_KEY\")\n\n    if os.getenv(\"ANTHROPIC_API_KEY\") is None:\n        load_dotenv()\n    if os.getenv(\"ANTHROPIC_API_KEY\") is None:\n        load_dotenv(dotenv_path=os.path.join(os.getcwd(), \".env\"))\n\n\ndef concatenate_paths(base_path, sub_path):\n    # Compute the relative path from base_path to sub_path\n    relative_path = os.path.relpath(sub_path, base_path)\n\n    # If the relative path is not in the parent directory, use the original sub_path\n    if not relative_path.startswith(\"..\"):\n        return sub_path\n\n    # Otherwise, concatenate base_path and sub_path\n    return os.path.normpath(os.path.join(base_path, sub_path))\n\n\ndef load_prompt(\n    input_repo: DiskMemory,\n    improve_mode: bool,\n    prompt_file: str,\n    image_directory: str,\n    entrypoint_prompt_file: str = \"\",\n) -> Prompt:\n    \"\"\"\n    Load or request a prompt from the user based on the mode.\n\n    Parameters\n    ----------\n    input_repo : DiskMemory\n        The disk memory object where prompts and other data are stored.\n    improve_mode : bool\n        Flag indicating whether the application is in improve mode.\n\n    Returns\n    -------\n    str\n        The loaded or inputted prompt.\n    \"\"\"\n\n    if os.path.isdir(prompt_file):\n        raise ValueError(\n            f\"The path to the prompt, {prompt_file}, already exists as a directory. No prompt can be read from it. Please specify a prompt file using --prompt_file\"\n        )\n    prompt_str = input_repo.get(prompt_file)\n    if prompt_str:\n        print(colored(\"Using prompt from file:\", \"green\"), prompt_file)\n        print(prompt_str)\n    else:\n        if not improve_mode:\n            prompt_str = input(\n                \"\\nWhat application do you want gpt-engineer to generate?\\n\"\n            )\n        else:\n            prompt_str = input(\"\\nHow do you want to improve the application?\\n\")\n\n    if entrypoint_prompt_file == \"\":\n        entrypoint_prompt = \"\"\n    else:\n        full_entrypoint_prompt_file = concatenate_paths(\n            input_repo.path, entrypoint_prompt_file\n        )\n        if os.path.isfile(full_entrypoint_prompt_file):\n            entrypoint_prompt = input_repo.get(full_entrypoint_prompt_file)\n\n        else:\n            raise ValueError(\"The provided file at --entrypoint-prompt does not exist\")\n\n    if image_directory == \"\":\n        return Prompt(prompt_str, entrypoint_prompt=entrypoint_prompt)\n\n    full_image_directory = concatenate_paths(input_repo.path, image_directory)\n    if os.path.isdir(full_image_directory):\n        if len(os.listdir(full_image_directory)) == 0:\n            raise ValueError(\"The provided --image_directory is empty.\")\n        image_repo = DiskMemory(full_image_directory)\n        return Prompt(\n            prompt_str,\n            image_repo.get(\".\").to_dict(),\n            entrypoint_prompt=entrypoint_prompt,\n        )\n    else:\n        raise ValueError(\"The provided --image_directory is not a directory.\")\n\n\ndef get_preprompts_path(use_custom_preprompts: bool, input_path: Path) -> Path:\n    \"\"\"\n    Get the path to the preprompts, using custom ones if specified.\n\n    Parameters\n    ----------\n    use_custom_preprompts : bool\n        Flag indicating whether to use custom preprompts.\n    input_path : Path\n        The path to the project directory.\n\n    Returns\n    -------\n    Path\n        The path to the directory containing the preprompts.\n    \"\"\"\n    original_preprompts_path = PREPROMPTS_PATH\n    if not use_custom_preprompts:\n        return original_preprompts_path\n\n    custom_preprompts_path = input_path / \"preprompts\"\n    if not custom_preprompts_path.exists():\n        custom_preprompts_path.mkdir()\n\n    for file in original_preprompts_path.glob(\"*\"):\n        if not (custom_preprompts_path / file.name).exists():\n            (custom_preprompts_path / file.name).write_text(file.read_text())\n    return custom_preprompts_path\n\n\ndef compare(f1: FilesDict, f2: FilesDict):\n    def colored_diff(s1, s2):\n        lines1 = s1.splitlines()\n        lines2 = s2.splitlines()\n\n        diff = difflib.unified_diff(lines1, lines2, lineterm=\"\")\n\n        RED = \"\\033[38;5;202m\"\n        GREEN = \"\\033[92m\"\n        RESET = \"\\033[0m\"\n\n        colored_lines = []\n        for line in diff:\n            if line.startswith(\"+\"):\n                colored_lines.append(GREEN + line + RESET)\n            elif line.startswith(\"-\"):\n                colored_lines.append(RED + line + RESET)\n            else:\n                colored_lines.append(line)\n\n        return \"\\n\".join(colored_lines)\n\n    for file in sorted(set(f1) | set(f2)):\n        diff = colored_diff(f1.get(file, \"\"), f2.get(file, \"\"))\n        if diff:\n            print(f\"Changes to {file}:\")\n            print(diff)\n\n\ndef prompt_yesno() -> bool:\n    TERM_CHOICES = colored(\"y\", \"green\") + \"/\" + colored(\"n\", \"red\") + \" \"\n    while True:\n        response = input(TERM_CHOICES).strip().lower()\n        if response in [\"y\", \"yes\"]:\n            return True\n        if response in [\"n\", \"no\"]:\n            break\n        print(\"Please respond with 'y' or 'n'\")\n\n\n@app.command(\n    help=\"\"\"\n        GPT-engineer lets you:\n\n        \\b\n        - Specify a software in natural language\n        - Sit back and watch as an AI writes and executes the code\n        - Ask the AI to implement improvements\n    \"\"\"\n)\ndef main(\n    project_path: str = typer.Argument(\".\", help=\"path\"),\n    model: str = typer.Option(\"gpt-4o\", \"--model\", \"-m\", help=\"model id string\"),\n    temperature: float = typer.Option(\n        0.1,\n        \"--temperature\",\n        \"-t\",\n        help=\"Controls randomness: lower values for more focused, deterministic outputs\",\n    ),\n    improve_mode: bool = typer.Option(\n        False,\n        \"--improve\",\n        \"-i\",\n        help=\"Improve an existing project by modifying the files.\",\n    ),\n    lite_mode: bool = typer.Option(\n        False,\n        \"--lite\",\n        \"-l\",\n        help=\"Lite mode: run a generation using only the main prompt.\",\n    ),\n    clarify_mode: bool = typer.Option(\n        False,\n        \"--clarify\",\n        \"-c\",\n        help=\"Clarify mode - discuss specification with AI before implementation.\",\n    ),\n    self_heal_mode: bool = typer.Option(\n        False,\n        \"--self-heal\",\n        \"-sh\",\n        help=\"Self-heal mode - fix the code by itself when it fails.\",\n    ),\n    azure_endpoint: str = typer.Option(\n        \"\",\n        \"--azure\",\n        \"-a\",\n        help=\"\"\"Endpoint for your Azure OpenAI Service (https://xx.openai.azure.com).\n            In that case, the given model is the deployment name chosen in the Azure AI Studio.\"\"\",\n    ),\n    use_custom_preprompts: bool = typer.Option(\n        False,\n        \"--use-custom-preprompts\",\n        help=\"\"\"Use your project's custom preprompts instead of the default ones.\n          Copies all original preprompts to the project's workspace if they don't exist there.\"\"\",\n    ),\n    llm_via_clipboard: bool = typer.Option(\n        False,\n        \"--llm-via-clipboard\",\n        help=\"Use the clipboard to communicate with the AI.\",\n    ),\n    verbose: bool = typer.Option(\n        False, \"--verbose\", \"-v\", help=\"Enable verbose logging for debugging.\"\n    ),\n    debug: bool = typer.Option(\n        False, \"--debug\", \"-d\", help=\"Enable debug mode for debugging.\"\n    ),\n    prompt_file: str = typer.Option(\n        \"prompt\",\n        \"--prompt_file\",\n        help=\"Relative path to a text file containing a prompt.\",\n    ),\n    entrypoint_prompt_file: str = typer.Option(\n        \"\",\n        \"--entrypoint_prompt\",\n        help=\"Relative path to a text file containing a file that specifies requirements for you entrypoint.\",\n    ),\n    image_directory: str = typer.Option(\n        \"\",\n        \"--image_directory\",\n        help=\"Relative path to a folder containing images.\",\n    ),\n    use_cache: bool = typer.Option(\n        False,\n        \"--use_cache\",\n        help=\"Speeds up computations and saves tokens when running the same prompt multiple times by caching the LLM response.\",\n    ),\n    no_execution: bool = typer.Option(\n        False,\n        \"--no_execution\",\n        help=\"Run setup but to not call LLM or write any code. For testing purposes.\",\n    ),\n):\n    \"\"\"\n    The main entry point for the CLI tool that generates or improves a project.\n\n    This function sets up the CLI tool, loads environment variables, initializes\n    the AI, and processes the user's request to generate or improve a project\n    based on the provided arguments.\n\n    Parameters\n    ----------\n    project_path : str\n        The file path to the project directory.\n    model : str\n        The model ID string for the AI.\n    temperature : float\n        The temperature setting for the AI's responses.\n    improve_mode : bool\n        Flag indicating whether to improve an existing project.\n    lite_mode : bool\n        Flag indicating whether to run in lite mode.\n    clarify_mode : bool\n        Flag indicating whether to discuss specifications with AI before implementation.\n    self_heal_mode : bool\n        Flag indicating whether to enable self-healing mode.\n    azure_endpoint : str\n        The endpoint for Azure OpenAI services.\n    use_custom_preprompts : bool\n        Flag indicating whether to use custom preprompts.\n    prompt_file : str\n        Relative path to a text file containing a prompt.\n    entrypoint_prompt_file: str\n        Relative path to a text file containing a file that specifies requirements for you entrypoint.\n    image_directory: str\n        Relative path to a folder containing images.\n    use_cache: bool\n        Speeds up computations and saves tokens when running the same prompt multiple times by caching the LLM response.\n    verbose : bool\n        Flag indicating whether to enable verbose logging.\n    no_execution: bool\n        Run setup but to not call LLM or write any code. For testing purposes.\n\n    Returns\n    -------\n    None\n    \"\"\"\n\n    if debug:\n        import pdb\n\n        sys.excepthook = lambda *_: pdb.pm()\n\n    # Validate arguments\n    if improve_mode and (clarify_mode or lite_mode):\n        typer.echo(\"Error: Clarify and lite mode are not compatible with improve mode.\")\n        raise typer.Exit(code=1)\n\n    # Set up logging\n    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)\n    if use_cache:\n        set_llm_cache(SQLiteCache(database_path=\".langchain.db\"))\n    if improve_mode:\n        assert not (\n            clarify_mode or lite_mode\n        ), \"Clarify and lite mode are not active for improve mode\"\n\n    load_env_if_needed()\n\n    if llm_via_clipboard:\n        ai = ClipboardAI()\n    else:\n        ai = AI(\n            model_name=model,\n            temperature=temperature,\n            azure_endpoint=azure_endpoint,\n        )\n\n    path = Path(project_path)\n    print(\"Running gpt-engineer in\", path.absolute(), \"\\n\")\n\n    prompt = load_prompt(\n        DiskMemory(path),\n        improve_mode,\n        prompt_file,\n        image_directory,\n        entrypoint_prompt_file,\n    )\n\n    # todo: if ai.vision is false and not llm_via_clipboard - ask if they would like to use gpt-4-vision-preview instead? If so recreate AI\n    if not ai.vision:\n        prompt.image_urls = None\n\n    # configure generation function\n    if clarify_mode:\n        code_gen_fn = clarified_gen\n    elif lite_mode:\n        code_gen_fn = lite_gen\n    else:\n        code_gen_fn = gen_code\n\n    # configure execution function\n    if self_heal_mode:\n        execution_fn = self_heal\n    else:\n        execution_fn = execute_entrypoint\n\n    preprompts_holder = PrepromptsHolder(\n        get_preprompts_path(use_custom_preprompts, Path(project_path))\n    )\n\n    memory = DiskMemory(memory_path(project_path))\n    memory.archive_logs()\n\n    execution_env = DiskExecutionEnv()\n    agent = CliAgent.with_default_config(\n        memory,\n        execution_env,\n        ai=ai,\n        code_gen_fn=code_gen_fn,\n        improve_fn=improve_fn,\n        process_code_fn=execution_fn,\n        preprompts_holder=preprompts_holder,\n    )\n\n    files = FileStore(project_path)\n    if not no_execution:\n        if improve_mode:\n            files_dict_before, is_linting = FileSelector(project_path).ask_for_files()\n\n            # lint the code\n            if is_linting:\n                files_dict_before = files.linting(files_dict_before)\n\n            files_dict = handle_improve_mode(prompt, agent, memory, files_dict_before)\n            if not files_dict or files_dict_before == files_dict:\n                print(\n                    f\"No changes applied. Could you please upload the debug_log_file.txt in {memory.path}/logs folder in a github issue?\"\n                )\n\n            else:\n                print(\"\\nChanges to be made:\")\n                compare(files_dict_before, files_dict)\n\n                print()\n                print(colored(\"Do you want to apply these changes?\", \"light_green\"))\n                if not prompt_yesno():\n                    files_dict = files_dict_before\n\n        else:\n            files_dict = agent.init(prompt)\n            # collect user feedback if user consents\n            config = (code_gen_fn.__name__, execution_fn.__name__)\n            collect_and_send_human_review(prompt, model, temperature, config, memory)\n\n        stage_uncommitted_to_git(path, files_dict, improve_mode)\n\n        files.push(files_dict)\n\n    if ai.token_usage_log.is_openai_model():\n        print(\"Total api cost: $ \", ai.token_usage_log.usage_cost())\n    elif os.getenv(\"LOCAL_MODEL\"):\n        print(\"Total api cost: $ 0.0 since we are using local LLM.\")\n    else:\n        print(\"Total tokens used: \", ai.token_usage_log.total_tokens())\n\n\nif __name__ == \"__main__\":\n    app()\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_EphwXklfIlw9VouddoKS1743",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"gpt_engineer/core/token_usage.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_EphwXklfIlw9VouddoKS1743",
+      "name": "read_file",
+      "args": {
+        "path": "gpt_engineer/core/token_usage.py"
+      },
+      "result": "import base64\nimport io\nimport logging\nimport math\n\nfrom dataclasses import dataclass\nfrom typing import List, Union\n\nimport tiktoken\n\nfrom langchain.schema import AIMessage, HumanMessage, SystemMessage\nfrom PIL import Image\n\n# workaround for function moved in:\n# https://github.com/langchain-ai/langchain/blob/535db72607c4ae308566ede4af65295967bb33a8/libs/community/langchain_community/callbacks/openai_info.py\ntry:\n    from langchain.callbacks.openai_info import (\n        get_openai_token_cost_for_model,  # fmt: skip\n    )\nexcept ImportError:\n    from langchain_community.callbacks.openai_info import (\n        get_openai_token_cost_for_model,  # fmt: skip\n    )\n\n\nMessage = Union[AIMessage, HumanMessage, SystemMessage]\n\nlogger = logging.getLogger(__name__)\n\n\n@dataclass\nclass TokenUsage:\n    \"\"\"\n    Dataclass representing token usage statistics for a conversation step.\n\n    Attributes\n    ----------\n    step_name : str\n        The name of the conversation step.\n    in_step_prompt_tokens : int\n        The number of prompt tokens used in the step.\n    in_step_completion_tokens : int\n        The number of completion tokens used in the step.\n    in_step_total_tokens : int\n        The total number of tokens used in the step.\n    total_prompt_tokens : int\n        The cumulative number of prompt tokens used up to this step.\n    total_completion_tokens : int\n        The cumulative number of completion tokens used up to this step.\n    total_tokens : int\n        The cumulative total number of tokens used up to this step.\n    \"\"\"\n\n    \"\"\"\n    Represents token usage statistics for a conversation step.\n    \"\"\"\n\n    step_name: str\n    in_step_prompt_tokens: int\n    in_step_completion_tokens: int\n    in_step_total_tokens: int\n    total_prompt_tokens: int\n    total_completion_tokens: int\n    total_tokens: int\n\n\nclass Tokenizer:\n    \"\"\"\n    Tokenizer for counting tokens in text.\n    \"\"\"\n\n    def __init__(self, model_name):\n        self.model_name = model_name\n        self._tiktoken_tokenizer = (\n            tiktoken.encoding_for_model(model_name)\n            if \"gpt-4\" in model_name or \"gpt-3.5\" in model_name\n            else tiktoken.get_encoding(\"cl100k_base\")\n        )\n\n    def num_tokens(self, txt: str) -> int:\n        \"\"\"\n        Get the number of tokens in a text.\n\n        Parameters\n        ----------\n        txt : str\n            The text to count the tokens in.\n\n        Returns\n        -------\n        int\n            The number of tokens in the text.\n        \"\"\"\n        return len(self._tiktoken_tokenizer.encode(txt))\n\n    def num_tokens_for_base64_image(\n        self, image_base64: str, detail: str = \"high\"\n    ) -> int:\n        \"\"\"\n        Calculate the token size for a base64 encoded image based on OpenAI's token calculation rules.\n\n        Parameters:\n        - image_base64 (str): The base64 encoded string of the image.\n        - detail (str): The detail level of the image, 'low' or 'high'.\n\n        Returns:\n        - int: The token size of the image.\n        \"\"\"\n\n        if detail == \"low\":\n            return 85  # Fixed cost for low detail images\n\n        # Decode image from base64\n        image_data = base64.b64decode(image_base64)\n\n        # Convert byte data to image for size extraction\n        image = Image.open(io.BytesIO(image_data))\n\n        # Calculate the initial scale to fit within 2048 square while maintaining aspect ratio\n        max_dimension = max(image.size)\n        scale_factor = min(2048 / max_dimension, 1)  # Ensure we don't scale up\n        new_width = int(image.size[0] * scale_factor)\n        new_height = int(image.size[1] * scale_factor)\n\n        # Scale such that the shortest side is 768px\n        shortest_side = min(new_width, new_height)\n        if shortest_side > 768:\n            resize_factor = 768 / shortest_side\n            new_width = int(new_width * resize_factor)\n            new_height = int(new_height * resize_factor)\n\n        # Calculate the number of 512px tiles needed\n        width_tiles = math.ceil(new_width / 512)\n        height_tiles = math.ceil(new_height / 512)\n        total_tiles = width_tiles * height_tiles\n\n        # Each tile costs 170 tokens, plus a base cost of 85 tokens for high detail\n        token_cost = total_tiles * 170 + 85\n\n        return token_cost\n\n    def num_tokens_from_messages(self, messages: List[Message]) -> int:\n        \"\"\"\n        Get the total number of tokens used by a list of messages, accounting for text and base64 encoded images.\n\n        Parameters\n        ----------\n        messages : List[Message]\n            The list of messages to count the tokens in.\n\n        Returns\n        -------\n        int\n            The total number of tokens used by the messages.\n        \"\"\"\n        n_tokens = 0\n        for message in messages:\n            n_tokens += 4  # Account for message framing tokens\n\n            if isinstance(message.content, str):\n                # Content is a simple string\n                n_tokens += self.num_tokens(message.content)\n            elif isinstance(message.content, list):\n                # Content is a list, potentially mixed with text and images\n                for item in message.content:\n                    if item.get(\"type\") == \"text\":\n                        n_tokens += self.num_tokens(item[\"text\"])\n                    elif item.get(\"type\") == \"image_url\":\n                        image_detail = item[\"image_url\"].get(\"detail\", \"high\")\n                        image_base64 = item[\"image_url\"].get(\"url\")\n                        n_tokens += self.num_tokens_for_base64_image(\n                            image_base64, detail=image_detail\n                        )\n\n            n_tokens += 2  # Account for assistant's reply framing tokens\n\n        return n_tokens\n\n\nclass TokenUsageLog:\n    \"\"\"\n    Represents a log of token usage statistics for a conversation.\n    \"\"\"\n\n    def __init__(self, model_name):\n        self.model_name = model_name\n        self._cumulative_prompt_tokens = 0\n        self._cumulative_completion_tokens = 0\n        self._cumulative_total_tokens = 0\n        self._log = []\n        self._tokenizer = Tokenizer(model_name)\n\n    def update_log(self, messages: List[Message], answer: str, step_name: str) -> None:\n        \"\"\"\n        Update the token usage log with the number of tokens used in the current step.\n\n        Parameters\n        ----------\n        messages : List[Message]\n            The list of messages in the conversation.\n        answer : str\n            The answer from the AI.\n        step_name : str\n            The name of the step.\n        \"\"\"\n        prompt_tokens = self._tokenizer.num_tokens_from_messages(messages)\n        completion_tokens = self._tokenizer.num_tokens(answer)\n        total_tokens = prompt_tokens + completion_tokens\n\n        self._cumulative_prompt_tokens += prompt_tokens\n        self._cumulative_completion_tokens += completion_tokens\n        self._cumulative_total_tokens += total_tokens\n\n        self._log.append(\n            TokenUsage(\n                step_name=step_name,\n                in_step_prompt_tokens=prompt_tokens,\n                in_step_completion_tokens=completion_tokens,\n                in_step_total_tokens=total_tokens,\n                total_prompt_tokens=self._cumulative_prompt_tokens,\n                total_completion_tokens=self._cumulative_completion_tokens,\n                total_tokens=self._cumulative_total_tokens,\n            )\n        )\n\n    def log(self) -> List[TokenUsage]:\n        \"\"\"\n        Get the token usage log.\n\n        Returns\n        -------\n        List[TokenUsage]\n            A log of token usage details per step in the conversation.\n        \"\"\"\n        return self._log\n\n    def format_log(self) -> str:\n        \"\"\"\n        Format the token usage log as a CSV string.\n\n        Returns\n        -------\n        str\n            The token usage log formatted as a CSV string.\n        \"\"\"\n        result = \"step_name,prompt_tokens_in_step,completion_tokens_in_step,total_tokens_in_step,total_prompt_tokens,total_completion_tokens,total_tokens\\n\"\n        for log in self._log:\n            result += f\"{log.step_name},{log.in_step_prompt_tokens},{log.in_step_completion_tokens},{log.in_step_total_tokens},{log.total_prompt_tokens},{log.total_completion_tokens},{log.total_tokens}\\n\"\n        return result\n\n    def is_openai_model(self) -> bool:\n        \"\"\"\n        Check if the model is an OpenAI model.\n\n        Returns\n        -------\n        bool\n            True if the model is an OpenAI model, False otherwise.\n        \"\"\"\n        return \"gpt\" in self.model_name.lower()\n\n    def total_tokens(self) -> int:\n        \"\"\"\n        Return the total number of tokens used in the conversation.\n\n        Returns\n        -------\n        int\n            The total number of tokens used in the conversation.\n        \"\"\"\n        return self._cumulative_total_tokens\n\n    def usage_cost(self) -> float | None:\n        \"\"\"\n        Return the total cost in USD of the API usage.\n\n        Returns\n        -------\n        float\n            Cost in USD.\n        \"\"\"\n        if not self.is_openai_model():\n            return None\n\n        try:\n            result = 0\n            for log in self.log():\n                result += get_openai_token_cost_for_model(\n                    self.model_name, log.total_prompt_tokens, is_completion=False\n                )\n                result += get_openai_token_cost_for_model(\n                    self.model_name, log.total_completion_tokens, is_completion=True\n                )\n            return result\n        except Exception as e:\n            print(f\"Error calculating usage cost: {e}\")\n            return None\n"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_1fY9WQGnQN2GXPrB15PS2125",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"deployment_name|model_name.*azure|azure.*model\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_1fY9WQGnQN2GXPrB15PS2125",
+      "name": "search",
+      "args": {
+        "pattern": "deployment_name|model_name.*azure|azure.*model",
+        "path": ""
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_hAGC1qAUHuNetq9PQw5q9407",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"AzureChatOpenAI\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_hAGC1qAUHuNetq9PQw5q9407",
+      "name": "search",
+      "args": {
+        "pattern": "AzureChatOpenAI",
+        "path": ""
+      },
+      "result": "gpt_engineer/core/ai.py:39:from langchain_openai import AzureChatOpenAI, ChatOpenAI\ngpt_engineer/core/ai.py:347:            return AzureChatOpenAI("
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_rVhYKoqkGzFH90qWh5fd8861",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_openai_token_cost_for_model\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_rVhYKoqkGzFH90qWh5fd8861",
+      "name": "search",
+      "args": {
+        "pattern": "get_openai_token_cost_for_model",
+        "path": ""
+      },
+      "result": "gpt_engineer/core/token_usage.py:18:        get_openai_token_cost_for_model,  # fmt: skip\ngpt_engineer/core/token_usage.py:22:        get_openai_token_cost_for_model,  # fmt: skip\ngpt_engineer/core/token_usage.py:288:                result += get_openai_token_cost_for_model(\ngpt_engineer/core/token_usage.py:291:                result += get_openai_token_cost_for_model("
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_FKGYShhOUv1J1u73OrtT0032",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"entry_points|console_scripts|def main\", \"path\": \".\"}"
+          }
+        },
+        {
+          "id": "call_01_NKujMIiuMO91TAHL9i8X5774",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_FKGYShhOUv1J1u73OrtT0032",
+      "name": "search",
+      "args": {
+        "pattern": "entry_points|console_scripts|def main",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_01_NKujMIiuMO91TAHL9i8X5774",
+      "name": "list_files",
+      "args": {
+        "path": "."
+      },
+      "result": ".dockerignore\n.env.template\n.git\n.github\n.gitignore\n.pre-commit-config.yaml\n.readthedocs.yaml\nAcknowledgements.md\nDISCLAIMER.md\nGOVERNANCE.md\nLICENSE\nMANIFEST.in\nMakefile\nREADME.md\nROADMAP.md\nTERMS_OF_USE.md\nWINDOWS_README.md\ncitation.cff\ndocker\ndocker-compose.yml\ndocs\ngpt_engineer\npoetry.lock\nprojects\npyproject.toml\nscripts\nsweep.yaml\ntests\ntox.ini"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_FUhcp5HFdiVPA7VztCog4950",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"pyproject.toml\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_00_FUhcp5HFdiVPA7VztCog4950",
+      "name": "read_file",
+      "args": {
+        "path": "pyproject.toml"
+      },
+      "result": "[tool.poetry]\nname = \"gpt-engineer\"\nversion = \"0.3.1\"\ndescription = \"Specify what you want it to build, the AI asks for clarification, and then builds it.\"\nauthors = [\"Anton Osika <anton.osika@gmail.com>\"]\nlicense = \"MIT\"\nreadme = \"README.md\"\nhomepage = \"https://github.com/gpt-engineer-org/gpt-engineer\"\nrepository = \"https://github.com/gpt-engineer-org/gpt-engineer\"\ndocumentation = \"https://gpt-engineer.readthedocs.io/en/latest/\"\nclassifiers = [\n  \"Development Status :: 4 - Beta\",\n  \"Topic :: Scientific/Engineering :: Artificial Intelligence\",\n]\n\n[build-system]\nrequires = [\"poetry-core>=1.0.0\"]\nbuild-backend = \"poetry.core.masonry.api\"\n\n[tool.poetry.dependencies]\npython = \">=3.10,<3.13\"\nopenai = \"^1.0\"\ntermcolor = \"2.3.0\"\ntyper = \">=0.3.2\"\nrudder-sdk-python = \">=2.0.2\"\ndataclasses-json = \"0.5.7\"\ntiktoken = \">=0.0.4\"\ntabulate = \"0.9.0\"\npython-dotenv = \">=0.21.0\"\nlangchain = \">=0.1.2\"\nlangchain_openai = \"*\"\ntoml = \">=0.10.2\"\ntomlkit = \"^0.12.4\"\npyperclip = \"^1.8.2\"\nlangchain-anthropic = \"^0.1.1\"\nregex = \"^2023.12.25\"\npillow = \"^10.2.0\"\ndatasets = \"^2.17.1\"\nblack = \"23.3.0\"\nlangchain-community = \"^0.2.0\"\n\n[tool.poetry.group.dev.dependencies]\npytest = \">=7.3.1\"\npytest-cov = \"^4.1.0\"\nmypy = \"1.3.0\"\nruff = \">=0.0.272\"\npre-commit = \"3.3.3\"\ntox = \">=3.0.0\"\n\n[tool.poetry.group.docs.dependencies]\nautodoc_pydantic = \">=1.8.0\"\nmyst_parser = \">=0.18.1\"\nnbsphinx = \">=0.8.9\"\nsphinx = \">=5.0.0\"\nsphinx-autobuild = \">=2021.3.14\"\nsphinx_book_theme = \">=0.3.3\"\nsphinx_rtd_theme = \">=1.0.0\"\nsphinx-typlog-theme = \">=0.8.0\"\ntoml = \">=0.10.2\"\nmyst-nb = \">=0.17.1\"\nlinkchecker = \">=10.2.1\"\nsphinx-copybutton = \">=0.5.1\"\nmarkdown-include = \">=0.6.0\"\nsphinx_copybutton = \">=0.5.2\"\n\n[tool.poetry.scripts]\ngpt-engineer = 'gpt_engineer.applications.cli.main:app'\nge = 'gpt_engineer.applications.cli.main:app'\ngpte = 'gpt_engineer.applications.cli.main:app'\nbench = 'gpt_engineer.benchmark.__main__:app'\ngpte_test_application = 'tests.caching_main:app'\n\n[tool.poetry.extras]\ntest = [\"pytest\", \"pytest-cov\"]\ndoc = [\n  \"autodoc_pydantic\",\n  \"myst_parser\",\n  \"nbsphinx\",\n  \"sphinx\",\n  \"sphinx-autobuild\",\n  \"sphinx_book_theme\",\n  \"sphinx_rtd_theme\",\n  \"sphinx-typlog-theme\",\n  \"myst-nb\",\n  \"linkchecker\",\n  \"sphinx-copybutton\",\n  \"markdown-include\",\n  \"sphinx_copybutton\",\n]\n\n[tool.ruff]\nselect = [\"F\", \"E\", \"W\", \"I001\"]\nshow-fixes = false\ntarget-version = \"py310\"\ntask-tags = [\"TODO\", \"FIXME\"]\nextend-ignore = [\"E501\", \"E722\"]\n\n[tool.black]\ntarget-version = [\"py310\"]\n\n[tool.ruff.isort]\nknown-first-party = []\nknown-third-party = []\nsection-order = [\n  \"future\",\n  \"standard-library\",\n  \"third-party\",\n  \"first-party\",\n  \"local-folder\",\n]\ncombine-as-imports = true\nsplit-on-trailing-comma = false\nlines-between-types = 1\n\n[tool.pytest.ini_options]\nmarkers = [\n  \"requires_key: marks tests as requiring access to a valid OPENAI_API_KEY (deselect with '-m \\\"not requires_key\\\"')\",\n]\n"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_paat8yCzGi6JzH1UFmFa7018",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"model_name|model_kwargs|azure_deployment\", \"path\": \"gpt_engineer/core/ai.py\"}"
+          }
+        },
+        {
+          "id": "call_01_JwFdDyjIoqsVwIzD29gg2845",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"gpt_engineer/core/default/steps.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_00_paat8yCzGi6JzH1UFmFa7018",
+      "name": "search",
+      "args": {
+        "pattern": "model_name|model_kwargs|azure_deployment",
+        "path": "gpt_engineer/core/ai.py"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_01_JwFdDyjIoqsVwIzD29gg2845",
+      "name": "read_file",
+      "args": {
+        "path": "gpt_engineer/core/default/steps.py"
+      },
+      "result": "\"\"\"\nModule for defining the steps involved in generating and improving code using AI.\n\nThis module provides functions that represent different steps in the process of generating\nand improving code using an AI model. These steps include generating code from a prompt,\ncreating an entrypoint for the codebase, executing the entrypoint, and refining code edits.\n\nFunctions\n---------\ncurr_fn : function\n    Returns the name of the current function.\n\nsetup_sys_prompt : function\n    Sets up the system prompt for generating code.\n\ngen_code : function\n    Generates code from a prompt using AI and returns the generated files.\n\ngen_entrypoint : function\n    Generates an entrypoint for the codebase and returns the entrypoint files.\n\nexecute_entrypoint : function\n    Executes the entrypoint of the codebase.\n\nsetup_sys_prompt_existing_code : function\n    Sets up the system prompt for improving existing code.\n\n\nimprove : function\n    Improves the code based on user input and returns the updated files.\n\"\"\"\n\nimport inspect\nimport io\nimport re\nimport sys\nimport traceback\n\nfrom pathlib import Path\nfrom typing import List, MutableMapping, Union\n\nfrom langchain.schema import HumanMessage, SystemMessage\nfrom termcolor import colored\n\nfrom gpt_engineer.core.ai import AI\nfrom gpt_engineer.core.base_execution_env import BaseExecutionEnv\nfrom gpt_engineer.core.base_memory import BaseMemory\nfrom gpt_engineer.core.chat_to_files import apply_diffs, chat_to_files_dict, parse_diffs\nfrom gpt_engineer.core.default.constants import MAX_EDIT_REFINEMENT_STEPS\nfrom gpt_engineer.core.default.paths import (\n    CODE_GEN_LOG_FILE,\n    DEBUG_LOG_FILE,\n    DIFF_LOG_FILE,\n    ENTRYPOINT_FILE,\n    ENTRYPOINT_LOG_FILE,\n    IMPROVE_LOG_FILE,\n)\nfrom gpt_engineer.core.files_dict import FilesDict, file_to_lines_dict\nfrom gpt_engineer.core.preprompts_holder import PrepromptsHolder\nfrom gpt_engineer.core.prompt import Prompt\n\n\ndef curr_fn() -> str:\n    \"\"\"\n    Returns the name of the current function.\n\n    Returns\n    -------\n    str\n        The name of the function that called this function.\n    \"\"\"\n    return inspect.stack()[1].function\n\n\ndef setup_sys_prompt(preprompts: MutableMapping[Union[str, Path], str]) -> str:\n    \"\"\"\n    Sets up the system prompt for generating code.\n\n    Parameters\n    ----------\n    preprompts : MutableMapping[Union[str, Path], str]\n        A mapping of preprompt messages to guide the AI model.\n\n    Returns\n    -------\n    str\n        The system prompt message for the AI model.\n    \"\"\"\n    return (\n        preprompts[\"roadmap\"]\n        + preprompts[\"generate\"].replace(\"FILE_FORMAT\", preprompts[\"file_format\"])\n        + \"\\nUseful to know:\\n\"\n        + preprompts[\"philosophy\"]\n    )\n\n\ndef setup_sys_prompt_existing_code(\n    preprompts: MutableMapping[Union[str, Path], str]\n) -> str:\n    \"\"\"\n    Sets up the system prompt for improving existing code.\n\n    Parameters\n    ----------\n    preprompts : MutableMapping[Union[str, Path], str]\n        A mapping of preprompt messages to guide the AI model.\n\n    Returns\n    -------\n    str\n        The system prompt message for the AI model to improve existing code.\n    \"\"\"\n    return (\n        preprompts[\"roadmap\"]\n        + preprompts[\"improve\"].replace(\"FILE_FORMAT\", preprompts[\"file_format_diff\"])\n        + \"\\nUseful to know:\\n\"\n        + preprompts[\"philosophy\"]\n    )\n\n\ndef gen_code(\n    ai: AI, prompt: Prompt, memory: BaseMemory, preprompts_holder: PrepromptsHolder\n) -> FilesDict:\n    \"\"\"\n    Generates code from a prompt using AI and returns the generated files.\n\n    Parameters\n    ----------\n    ai : AI\n        The AI model used for generating code.\n    prompt : str\n        The user prompt to generate code from.\n    memory : BaseMemory\n        The memory interface where the code and related data are stored.\n    preprompts_holder : PrepromptsHolder\n        The holder for preprompt messages that guide the AI model.\n\n    Returns\n    -------\n    FilesDict\n        A dictionary of file names to their respective source code content.\n    \"\"\"\n    preprompts = preprompts_holder.get_preprompts()\n    messages = ai.start(\n        setup_sys_prompt(preprompts), prompt.to_langchain_content(), step_name=curr_fn()\n    )\n    chat = messages[-1].content.strip()\n    memory.log(CODE_GEN_LOG_FILE, \"\\n\\n\".join(x.pretty_repr() for x in messages))\n    files_dict = chat_to_files_dict(chat)\n    return files_dict\n\n\ndef gen_entrypoint(\n    ai: AI,\n    prompt: Prompt,\n    files_dict: FilesDict,\n    memory: BaseMemory,\n    preprompts_holder: PrepromptsHolder,\n) -> FilesDict:\n    \"\"\"\n    Generates an entrypoint for the codebase and returns the entrypoint files.\n\n    Parameters\n    ----------\n    ai : AI\n        The AI model used for generating the entrypoint.\n    files_dict : FilesDict\n        The dictionary of file names to their respective source code content.\n    memory : BaseMemory\n        The memory interface where the code and related data are stored.\n    preprompts_holder : PrepromptsHolder\n        The holder for preprompt messages that guide the AI model.\n\n    Returns\n    -------\n    FilesDict\n        A dictionary containing the entrypoint file.\n    \"\"\"\n    user_prompt = prompt.entrypoint_prompt\n    if not user_prompt:\n        user_prompt = \"\"\"\n        Make a unix script that\n        a) installs dependencies\n        b) runs all necessary parts of the codebase (in parallel if necessary)\n        \"\"\"\n    preprompts = preprompts_holder.get_preprompts()\n    messages = ai.start(\n        system=(preprompts[\"entrypoint\"]),\n        user=user_prompt\n        + \"\\nInformation about the codebase:\\n\\n\"\n        + files_dict.to_chat(),\n        step_name=curr_fn(),\n    )\n    print()\n    chat = messages[-1].content.strip()\n    regex = r\"```\\S*\\n(.+?)```\"\n    matches = re.finditer(regex, chat, re.DOTALL)\n    entrypoint_code = FilesDict(\n        {ENTRYPOINT_FILE: \"\\n\".join(match.group(1) for match in matches)}\n    )\n    memory.log(ENTRYPOINT_LOG_FILE, \"\\n\\n\".join(x.pretty_repr() for x in messages))\n    return entrypoint_code\n\n\ndef execute_entrypoint(\n    ai: AI,\n    execution_env: BaseExecutionEnv,\n    files_dict: FilesDict,\n    prompt: Prompt = None,\n    preprompts_holder: PrepromptsHolder = None,\n    memory: BaseMemory = None,\n) -> FilesDict:\n    \"\"\"\n    Executes the entrypoint of the codebase.\n\n    Parameters\n    ----------\n    ai : AI\n        The AI model used for generating the entrypoint.\n    execution_env : BaseExecutionEnv\n        The execution environment in which the code is executed.\n    files_dict : FilesDict\n        The dictionary of file names to their respective source code content.\n    preprompts_holder : PrepromptsHolder, optional\n        The holder for preprompt messages that guide the AI model.\n\n    Returns\n    -------\n    FilesDict\n        The dictionary of file names to their respective source code content after execution.\n    \"\"\"\n    if ENTRYPOINT_FILE not in files_dict:\n        raise FileNotFoundError(\n            \"The required entrypoint \"\n            + ENTRYPOINT_FILE\n            + \" does not exist in the code.\"\n        )\n\n    command = files_dict[ENTRYPOINT_FILE]\n\n    print()\n    print(\n        colored(\n            \"Do you want to execute this code? (Y/n)\",\n            \"red\",\n        )\n    )\n    print()\n    print(command)\n    print()\n    if input(\"\").lower() not in [\"\", \"y\", \"yes\"]:\n        print(\"Ok, not executing the code.\")\n        return files_dict\n    print(\"Executing the code...\")\n    print()\n    print(\n        colored(\n            \"Note: If it does not work as expected, consider running the code\"\n            + \" in another way than above.\",\n            \"green\",\n        )\n    )\n    print()\n    print(\"You can press ctrl+c *once* to stop the execution.\")\n    print()\n\n    execution_env.upload(files_dict).run(f\"bash {ENTRYPOINT_FILE}\")\n    return files_dict\n\n\ndef improve_fn(\n    ai: AI,\n    prompt: Prompt,\n    files_dict: FilesDict,\n    memory: BaseMemory,\n    preprompts_holder: PrepromptsHolder,\n) -> FilesDict:\n    \"\"\"\n    Improves the code based on user input and returns the updated files.\n\n    Parameters\n    ----------\n    ai : AI\n        The AI model used for improving code.\n    prompt :str\n        The user prompt to improve the code.\n    files_dict : FilesDict\n        The dictionary of file names to their respective source code content.\n    memory : BaseMemory\n        The memory interface where the code and related data are stored.\n    preprompts_holder : PrepromptsHolder\n        The holder for preprompt messages that guide the AI model.\n\n    Returns\n    -------\n    FilesDict\n        The dictionary of file names to their respective updated source code content.\n    \"\"\"\n    preprompts = preprompts_holder.get_preprompts()\n    messages = [\n        SystemMessage(content=setup_sys_prompt_existing_code(preprompts)),\n    ]\n\n    # Add files as input\n    messages.append(HumanMessage(content=f\"{files_dict.to_chat()}\"))\n    messages.append(HumanMessage(content=prompt.to_langchain_content()))\n    memory.log(\n        DEBUG_LOG_FILE,\n        \"UPLOADED FILES:\\n\" + files_dict.to_log() + \"\\nPROMPT:\\n\" + prompt.text,\n    )\n    return _improve_loop(ai, files_dict, memory, messages)\n\n\ndef _improve_loop(\n    ai: AI, files_dict: FilesDict, memory: BaseMemory, messages: List\n) -> FilesDict:\n    messages = ai.next(messages, step_name=curr_fn())\n    files_dict, errors = salvage_correct_hunks(messages, files_dict, memory)\n\n    retries = 0\n    while errors and retries < MAX_EDIT_REFINEMENT_STEPS:\n        messages.append(\n            HumanMessage(\n                content=\"Some previously produced diffs were not on the requested format, or the code part was not found in the code. Details:\\n\"\n                + \"\\n\".join(errors)\n                + \"\\n Only rewrite the problematic diffs, making sure that the failing ones are now on the correct format and can be found in the code. Make sure to not repeat past mistakes. \\n\"\n            )\n        )\n        messages = ai.next(messages, step_name=curr_fn())\n        files_dict, errors = salvage_correct_hunks(messages, files_dict, memory)\n        retries += 1\n\n    return files_dict\n\n\ndef salvage_correct_hunks(\n    messages: List,\n    files_dict: FilesDict,\n    memory: BaseMemory,\n) -> tuple[FilesDict, List[str]]:\n    error_messages = []\n    ai_response = messages[-1].content.strip()\n\n    diffs = parse_diffs(ai_response)\n    # validate and correct diffs\n\n    for _, diff in diffs.items():\n        # if diff is a new file, validation and correction is unnecessary\n        if not diff.is_new_file():\n            problems = diff.validate_and_correct(\n                file_to_lines_dict(files_dict[diff.filename_pre])\n            )\n            error_messages.extend(problems)\n    files_dict = apply_diffs(diffs, files_dict)\n    memory.log(IMPROVE_LOG_FILE, \"\\n\\n\".join(x.pretty_repr() for x in messages))\n    memory.log(DIFF_LOG_FILE, \"\\n\\n\".join(error_messages))\n    return files_dict, error_messages\n\n\nclass Tee(object):\n    def __init__(self, *files):\n        self.files = files\n\n    def write(self, obj):\n        for file in self.files:\n            file.write(obj)\n\n    def flush(self):\n        for file in self.files:\n            file.flush()\n\n\ndef handle_improve_mode(prompt, agent, memory, files_dict):\n    captured_output = io.StringIO()\n    old_stdout = sys.stdout\n    sys.stdout = Tee(sys.stdout, captured_output)\n\n    try:\n        files_dict = agent.improve(files_dict, prompt)\n    except Exception as e:\n        print(\n            f\"Error while improving the project: {e}\\nCould you please upload the debug_log_file.txt in {memory.path}/logs folder to github?\\nFULL STACK TRACE:\\n\"\n        )\n        traceback.print_exc(file=sys.stdout)  # Print the full stack trace\n    finally:\n        # Reset stdout\n        sys.stdout = old_stdout\n\n        # Get the captured output\n        captured_string = captured_output.getvalue()\n        print(captured_string)\n        memory.log(DEBUG_LOG_FILE, \"\\nCONSOLE OUTPUT:\\n\" + captured_string)\n\n    return files_dict\n"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_xJcbKptOfpiTsRuDh2QI6353",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"AzureChatOpenAI\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_00_xJcbKptOfpiTsRuDh2QI6353",
+      "name": "search",
+      "args": {
+        "pattern": "AzureChatOpenAI",
+        "path": "."
+      },
+      "result": "gpt_engineer/core/ai.py:39:from langchain_openai import AzureChatOpenAI, ChatOpenAI\ngpt_engineer/core/ai.py:347:            return AzureChatOpenAI("
+    },
+    {
+      "turn": 10,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_tp6mCYxqyZ8kg3X34dSC5235",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 10,
+      "role": "tool",
+      "tool_call_id": "call_00_tp6mCYxqyZ8kg3X34dSC5235",
+      "name": "list_files",
+      "args": {
+        "path": "."
+      },
+      "result": ".dockerignore\n.env.template\n.git\n.github\n.gitignore\n.pre-commit-config.yaml\n.readthedocs.yaml\nAcknowledgements.md\nDISCLAIMER.md\nGOVERNANCE.md\nLICENSE\nMANIFEST.in\nMakefile\nREADME.md\nROADMAP.md\nTERMS_OF_USE.md\nWINDOWS_README.md\ncitation.cff\ndocker\ndocker-compose.yml\ndocs\ngpt_engineer\npoetry.lock\nprojects\npyproject.toml\nscripts\nsweep.yaml\ntests\ntox.ini"
+    },
+    {
+      "turn": 11,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_kTTw3g5NIetG21BlmDhm4104",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"class AzureChatOpenAI\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 11,
+      "role": "tool",
+      "tool_call_id": "call_00_kTTw3g5NIetG21BlmDhm4104",
+      "name": "search",
+      "args": {
+        "pattern": "class AzureChatOpenAI",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 12,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_zZOVbisiBNY2AzFmAaiD1309",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"model_name|model_version\", \"path\": \"gpt_engineer/core/ai.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 12,
+      "role": "tool",
+      "tool_call_id": "call_00_zZOVbisiBNY2AzFmAaiD1309",
+      "name": "search",
+      "args": {
+        "pattern": "model_name|model_version",
+        "path": "gpt_engineer/core/ai.py"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 13,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ipvMcPdHG9jQlUyykvKb0292",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"langchain_openai\", \"path\": \"pyproject.toml\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 13,
+      "role": "tool",
+      "tool_call_id": "call_00_ipvMcPdHG9jQlUyykvKb0292",
+      "name": "search",
+      "args": {
+        "pattern": "langchain_openai",
+        "path": "pyproject.toml"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 14,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_m6AxYOqJZNVyDguZgp8v3998",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"langchain-openai\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 14,
+      "role": "tool",
+      "tool_call_id": "call_00_m6AxYOqJZNVyDguZgp8v3998",
+      "name": "search",
+      "args": {
+        "pattern": "langchain-openai",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 15,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_7C2WYhGMl47ILXkZPTa54584",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"poetry.lock\", \"limit\": 100}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 15,
+      "role": "tool",
+      "tool_call_id": "call_00_7C2WYhGMl47ILXkZPTa54584",
+      "name": "read_file",
+      "args": {
+        "path": "poetry.lock",
+        "limit": 100
+      },
+      "result": "[Lines 1\u2013100 of 5005]\n# This file is automatically @generated by Poetry 1.8.2 and should not be changed by hand.\n\n[[package]]\nname = \"accessible-pygments\"\nversion = \"0.0.4\"\ndescription = \"A collection of accessible pygments styles\"\noptional = false\npython-versions = \"*\"\nfiles = [\n    {file = \"accessible-pygments-0.0.4.tar.gz\", hash = \"sha256:e7b57a9b15958e9601c7e9eb07a440c813283545a20973f2574a5f453d0e953e\"},\n    {file = \"accessible_pygments-0.0.4-py2.py3-none-any.whl\", hash = \"sha256:416c6d8c1ea1c5ad8701903a20fcedf953c6e720d64f33dc47bfb2d3f2fa4e8d\"},\n]\n\n[package.dependencies]\npygments = \">=1.5\"\n\n[[package]]\nname = \"aiohttp\"\nversion = \"3.9.5\"\ndescription = \"Async http client/server framework (asyncio)\"\noptional = false\npython-versions = \">=3.8\"\nfiles = [\n    {file = \"aiohttp-3.9.5-cp310-cp310-macosx_10_9_universal2.whl\", hash = \"sha256:fcde4c397f673fdec23e6b05ebf8d4751314fa7c24f93334bf1f1364c1c69ac7\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-macosx_10_9_x86_64.whl\", hash = \"sha256:5d6b3f1fabe465e819aed2c421a6743d8debbde79b6a8600739300630a01bf2c\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-macosx_11_0_arm64.whl\", hash = \"sha256:6ae79c1bc12c34082d92bf9422764f799aee4746fd7a392db46b7fd357d4a17a\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:4d3ebb9e1316ec74277d19c5f482f98cc65a73ccd5430540d6d11682cd857430\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:84dabd95154f43a2ea80deffec9cb44d2e301e38a0c9d331cc4aa0166fe28ae3\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:c8a02fbeca6f63cb1f0475c799679057fc9268b77075ab7cf3f1c600e81dd46b\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:c26959ca7b75ff768e2776d8055bf9582a6267e24556bb7f7bd29e677932be72\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:714d4e5231fed4ba2762ed489b4aec07b2b9953cf4ee31e9871caac895a839c0\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-musllinux_1_1_aarch64.whl\", hash = \"sha256:e7a6a8354f1b62e15d48e04350f13e726fa08b62c3d7b8401c0a1314f02e3558\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-musllinux_1_1_i686.whl\", hash = \"sha256:c413016880e03e69d166efb5a1a95d40f83d5a3a648d16486592c49ffb76d0db\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-musllinux_1_1_ppc64le.whl\", hash = \"sha256:ff84aeb864e0fac81f676be9f4685f0527b660f1efdc40dcede3c251ef1e867f\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-musllinux_1_1_s390x.whl\", hash = \"sha256:ad7f2919d7dac062f24d6f5fe95d401597fbb015a25771f85e692d043c9d7832\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-musllinux_1_1_x86_64.whl\", hash = \"sha256:702e2c7c187c1a498a4e2b03155d52658fdd6fda882d3d7fbb891a5cf108bb10\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-win32.whl\", hash = \"sha256:67c3119f5ddc7261d47163ed86d760ddf0e625cd6246b4ed852e82159617b5fb\"},\n    {file = \"aiohttp-3.9.5-cp310-cp310-win_amd64.whl\", hash = \"sha256:471f0ef53ccedec9995287f02caf0c068732f026455f07db3f01a46e49d76bbb\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-macosx_10_9_universal2.whl\", hash = \"sha256:e0ae53e33ee7476dd3d1132f932eeb39bf6125083820049d06edcdca4381f342\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-macosx_10_9_x86_64.whl\", hash = \"sha256:c088c4d70d21f8ca5c0b8b5403fe84a7bc8e024161febdd4ef04575ef35d474d\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-macosx_11_0_arm64.whl\", hash = \"sha256:639d0042b7670222f33b0028de6b4e2fad6451462ce7df2af8aee37dcac55424\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:f26383adb94da5e7fb388d441bf09c61e5e35f455a3217bfd790c6b6bc64b2ee\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:66331d00fb28dc90aa606d9a54304af76b335ae204d1836f65797d6fe27f1ca2\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:4ff550491f5492ab5ed3533e76b8567f4b37bd2995e780a1f46bca2024223233\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:f22eb3a6c1080d862befa0a89c380b4dafce29dc6cd56083f630073d102eb595\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:a81b1143d42b66ffc40a441379387076243ef7b51019204fd3ec36b9f69e77d6\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-musllinux_1_1_aarch64.whl\", hash = \"sha256:f64fd07515dad67f24b6ea4a66ae2876c01031de91c93075b8093f07c0a2d93d\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-musllinux_1_1_i686.whl\", hash = \"sha256:93e22add827447d2e26d67c9ac0161756007f152fdc5210277d00a85f6c92323\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-musllinux_1_1_ppc64le.whl\", hash = \"sha256:55b39c8684a46e56ef8c8d24faf02de4a2b2ac60d26cee93bc595651ff545de9\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-musllinux_1_1_s390x.whl\", hash = \"sha256:4715a9b778f4293b9f8ae7a0a7cef9829f02ff8d6277a39d7f40565c737d3771\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-musllinux_1_1_x86_64.whl\", hash = \"sha256:afc52b8d969eff14e069a710057d15ab9ac17cd4b6753042c407dcea0e40bf75\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-win32.whl\", hash = \"sha256:b3df71da99c98534be076196791adca8819761f0bf6e08e07fd7da25127150d6\"},\n    {file = \"aiohttp-3.9.5-cp311-cp311-win_amd64.whl\", hash = \"sha256:88e311d98cc0bf45b62fc46c66753a83445f5ab20038bcc1b8a1cc05666f428a\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-macosx_10_9_universal2.whl\", hash = \"sha256:c7a4b7a6cf5b6eb11e109a9755fd4fda7d57395f8c575e166d363b9fc3ec4678\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-macosx_10_9_x86_64.whl\", hash = \"sha256:0a158704edf0abcac8ac371fbb54044f3270bdbc93e254a82b6c82be1ef08f3c\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-macosx_11_0_arm64.whl\", hash = \"sha256:d153f652a687a8e95ad367a86a61e8d53d528b0530ef382ec5aaf533140ed00f\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:82a6a97d9771cb48ae16979c3a3a9a18b600a8505b1115cfe354dfb2054468b4\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:60cdbd56f4cad9f69c35eaac0fbbdf1f77b0ff9456cebd4902f3dd1cf096464c\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:8676e8fd73141ded15ea586de0b7cda1542960a7b9ad89b2b06428e97125d4fa\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:da00da442a0e31f1c69d26d224e1efd3a1ca5bcbf210978a2ca7426dfcae9f58\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:18f634d540dd099c262e9f887c8bbacc959847cfe5da7a0e2e1cf3f14dbf2daf\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-musllinux_1_1_aarch64.whl\", hash = \"sha256:320e8618eda64e19d11bdb3bd04ccc0a816c17eaecb7e4945d01deee2a22f95f\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-musllinux_1_1_i686.whl\", hash = \"sha256:2faa61a904b83142747fc6a6d7ad8fccff898c849123030f8e75d5d967fd4a81\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-musllinux_1_1_ppc64le.whl\", hash = \"sha256:8c64a6dc3fe5db7b1b4d2b5cb84c4f677768bdc340611eca673afb7cf416ef5a\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-musllinux_1_1_s390x.whl\", hash = \"sha256:393c7aba2b55559ef7ab791c94b44f7482a07bf7640d17b341b79081f5e5cd1a\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-musllinux_1_1_x86_64.whl\", hash = \"sha256:c671dc117c2c21a1ca10c116cfcd6e3e44da7fcde37bf83b2be485ab377b25da\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-win32.whl\", hash = \"sha256:5a7ee16aab26e76add4afc45e8f8206c95d1d75540f1039b84a03c3b3800dd59\"},\n    {file = \"aiohttp-3.9.5-cp312-cp312-win_amd64.whl\", hash = \"sha256:5ca51eadbd67045396bc92a4345d1790b7301c14d1848feaac1d6a6c9289e888\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-macosx_10_9_universal2.whl\", hash = \"sha256:694d828b5c41255e54bc2dddb51a9f5150b4eefa9886e38b52605a05d96566e8\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-macosx_10_9_x86_64.whl\", hash = \"sha256:0605cc2c0088fcaae79f01c913a38611ad09ba68ff482402d3410bf59039bfb8\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-macosx_11_0_arm64.whl\", hash = \"sha256:4558e5012ee03d2638c681e156461d37b7a113fe13970d438d95d10173d25f78\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:9dbc053ac75ccc63dc3a3cc547b98c7258ec35a215a92bd9f983e0aac95d3d5b\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:4109adee842b90671f1b689901b948f347325045c15f46b39797ae1bf17019de\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:a6ea1a5b409a85477fd8e5ee6ad8f0e40bf2844c270955e09360418cfd09abac\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:f3c2890ca8c59ee683fd09adf32321a40fe1cf164e3387799efb2acebf090c11\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:3916c8692dbd9d55c523374a3b8213e628424d19116ac4308e434dbf6d95bbdd\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-musllinux_1_1_aarch64.whl\", hash = \"sha256:8d1964eb7617907c792ca00b341b5ec3e01ae8c280825deadbbd678447b127e1\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-musllinux_1_1_i686.whl\", hash = \"sha256:d5ab8e1f6bee051a4bf6195e38a5c13e5e161cb7bad83d8854524798bd9fcd6e\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-musllinux_1_1_ppc64le.whl\", hash = \"sha256:52c27110f3862a1afbcb2af4281fc9fdc40327fa286c4625dfee247c3ba90156\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-musllinux_1_1_s390x.whl\", hash = \"sha256:7f64cbd44443e80094309875d4f9c71d0401e966d191c3d469cde4642bc2e031\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-musllinux_1_1_x86_64.whl\", hash = \"sha256:8b4f72fbb66279624bfe83fd5eb6aea0022dad8eec62b71e7bf63ee1caadeafe\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-win32.whl\", hash = \"sha256:6380c039ec52866c06d69b5c7aad5478b24ed11696f0e72f6b807cfb261453da\"},\n    {file = \"aiohttp-3.9.5-cp38-cp38-win_amd64.whl\", hash = \"sha256:da22dab31d7180f8c3ac7c7635f3bcd53808f374f6aa333fe0b0b9e14b01f91a\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-macosx_10_9_universal2.whl\", hash = \"sha256:1732102949ff6087589408d76cd6dea656b93c896b011ecafff418c9661dc4ed\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-macosx_10_9_x86_64.whl\", hash = \"sha256:c6021d296318cb6f9414b48e6a439a7f5d1f665464da507e8ff640848ee2a58a\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-macosx_11_0_arm64.whl\", hash = \"sha256:239f975589a944eeb1bad26b8b140a59a3a320067fb3cd10b75c3092405a1372\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:3b7b30258348082826d274504fbc7c849959f1989d86c29bc355107accec6cfb\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:cd2adf5c87ff6d8b277814a28a535b59e20bfea40a101db6b3bdca7e9926bc24\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:e9a3d838441bebcf5cf442700e3963f58b5c33f015341f9ea86dcd7d503c07e2\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:9e3a1ae66e3d0c17cf65c08968a5ee3180c5a95920ec2731f53343fac9bad106\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:9c69e77370cce2d6df5d12b4e12bdcca60c47ba13d1cbbc8645dd005a20b738b\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-musllinux_1_1_aarch64.whl\", hash = \"sha256:0cbf56238f4bbf49dab8c2dc2e6b1b68502b1e88d335bea59b3f5b9f4c001475\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-musllinux_1_1_i686.whl\", hash = \"sha256:d1469f228cd9ffddd396d9948b8c9cd8022b6d1bf1e40c6f25b0fb90b4f893ed\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-musllinux_1_1_ppc64le.whl\", hash = \"sha256:45731330e754f5811c314901cebdf19dd776a44b31927fa4b4dbecab9e457b0c\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-musllinux_1_1_s390x.whl\", hash = \"sha256:3fcb4046d2904378e3aeea1df51f697b0467f2aac55d232c87ba162709478c46\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-musllinux_1_1_x86_64.whl\", hash = \"sha256:8cf142aa6c1a751fcb364158fd710b8a9be874b81889c2bd13aa8893197455e2\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-win32.whl\", hash = \"sha256:7b179eea70833c8dee51ec42f3b4097bd6370892fa93f510f76762105568cf09\"},\n    {file = \"aiohttp-3.9.5-cp39-cp39-win_amd64.whl\", hash = \"sha256:38d80498e2e169bc61418ff36170e0aad0cd268da8b38a17c4cf29d254a8b3f1\"},\n    {file = \"aiohttp-3.9.5.tar.gz\", hash = \"sha256:edea7d15772ceeb29db4aff55e482d4bcfb6ae160ce144f2682de02f6d693551\"},\n]\n"
+    },
+    {
+      "turn": 16,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_KnT2TziCxf9VC2IU0BtP0236",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"langchain-openai|langchain_openai\", \"path\": \"poetry.lock\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 16,
+      "role": "tool",
+      "tool_call_id": "call_00_KnT2TziCxf9VC2IU0BtP0236",
+      "name": "search",
+      "args": {
+        "pattern": "langchain-openai|langchain_openai",
+        "path": "poetry.lock"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 17,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_gdaiFPnKFSY91hRxBUW53838",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"name = \\\\\\\"langchain\\\"\", \"path\": \"poetry.lock\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 17,
+      "role": "tool",
+      "tool_call_id": "call_00_gdaiFPnKFSY91hRxBUW53838",
+      "name": "search",
+      "args": {
+        "pattern": "name = \\\"langchain\"",
+        "path": "poetry.lock"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 18,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_KYS2hiBz5tz30BH1aDXW0043",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"langchain\", \"path\": \"poetry.lock\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 18,
+      "role": "tool",
+      "tool_call_id": "call_00_KYS2hiBz5tz30BH1aDXW0043",
+      "name": "search",
+      "args": {
+        "pattern": "langchain",
+        "path": "poetry.lock"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 19,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_RcSmNxAxi42Q1NNHTBdH6495",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"poetry.lock\", \"offset\": 2000, \"limit\": 100}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 19,
+      "role": "tool",
+      "tool_call_id": "call_00_RcSmNxAxi42Q1NNHTBdH6495",
+      "name": "read_file",
+      "args": {
+        "path": "poetry.lock",
+        "offset": 2000,
+        "limit": 100
+      },
+      "result": "[Lines 2000\u20132099 of 5005]\n[[package]]\nname = \"mistune\"\nversion = \"3.0.2\"\ndescription = \"A sane and fast Markdown parser with useful plugins and renderers\"\noptional = false\npython-versions = \">=3.7\"\nfiles = [\n    {file = \"mistune-3.0.2-py3-none-any.whl\", hash = \"sha256:71481854c30fdbc938963d3605b72501f5c10a9320ecd412c121c163a1c7d205\"},\n    {file = \"mistune-3.0.2.tar.gz\", hash = \"sha256:fc7f93ded930c92394ef2cb6f04a8aabab4117a91449e72dcc8dfa646a508be8\"},\n]\n\n[[package]]\nname = \"monotonic\"\nversion = \"1.6\"\ndescription = \"An implementation of time.monotonic() for Python 2 & < 3.3\"\noptional = false\npython-versions = \"*\"\nfiles = [\n    {file = \"monotonic-1.6-py2.py3-none-any.whl\", hash = \"sha256:68687e19a14f11f26d140dd5c86f3dba4bf5df58003000ed467e0e2a69bca96c\"},\n    {file = \"monotonic-1.6.tar.gz\", hash = \"sha256:3a55207bcfed53ddd5c5bae174524062935efed17792e9de2ad0205ce9ad63f7\"},\n]\n\n[[package]]\nname = \"multidict\"\nversion = \"6.0.5\"\ndescription = \"multidict implementation\"\noptional = false\npython-versions = \">=3.7\"\nfiles = [\n    {file = \"multidict-6.0.5-cp310-cp310-macosx_10_9_universal2.whl\", hash = \"sha256:228b644ae063c10e7f324ab1ab6b548bdf6f8b47f3ec234fef1093bc2735e5f9\"},\n    {file = \"multidict-6.0.5-cp310-cp310-macosx_10_9_x86_64.whl\", hash = \"sha256:896ebdcf62683551312c30e20614305f53125750803b614e9e6ce74a96232604\"},\n    {file = \"multidict-6.0.5-cp310-cp310-macosx_11_0_arm64.whl\", hash = \"sha256:411bf8515f3be9813d06004cac41ccf7d1cd46dfe233705933dd163b60e37600\"},\n    {file = \"multidict-6.0.5-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:1d147090048129ce3c453f0292e7697d333db95e52616b3793922945804a433c\"},\n    {file = \"multidict-6.0.5-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:215ed703caf15f578dca76ee6f6b21b7603791ae090fbf1ef9d865571039ade5\"},\n    {file = \"multidict-6.0.5-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:7c6390cf87ff6234643428991b7359b5f59cc15155695deb4eda5c777d2b880f\"},\n    {file = \"multidict-6.0.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:21fd81c4ebdb4f214161be351eb5bcf385426bf023041da2fd9e60681f3cebae\"},\n    {file = \"multidict-6.0.5-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:3cc2ad10255f903656017363cd59436f2111443a76f996584d1077e43ee51182\"},\n    {file = \"multidict-6.0.5-cp310-cp310-musllinux_1_1_aarch64.whl\", hash = \"sha256:6939c95381e003f54cd4c5516740faba40cf5ad3eeff460c3ad1d3e0ea2549bf\"},\n    {file = \"multidict-6.0.5-cp310-cp310-musllinux_1_1_i686.whl\", hash = \"sha256:220dd781e3f7af2c2c1053da9fa96d9cf3072ca58f057f4c5adaaa1cab8fc442\"},\n    {file = \"multidict-6.0.5-cp310-cp310-musllinux_1_1_ppc64le.whl\", hash = \"sha256:766c8f7511df26d9f11cd3a8be623e59cca73d44643abab3f8c8c07620524e4a\"},\n    {file = \"multidict-6.0.5-cp310-cp310-musllinux_1_1_s390x.whl\", hash = \"sha256:fe5d7785250541f7f5019ab9cba2c71169dc7d74d0f45253f8313f436458a4ef\"},\n    {file = \"multidict-6.0.5-cp310-cp310-musllinux_1_1_x86_64.whl\", hash = \"sha256:c1c1496e73051918fcd4f58ff2e0f2f3066d1c76a0c6aeffd9b45d53243702cc\"},\n    {file = \"multidict-6.0.5-cp310-cp310-win32.whl\", hash = \"sha256:7afcdd1fc07befad18ec4523a782cde4e93e0a2bf71239894b8d61ee578c1319\"},\n    {file = \"multidict-6.0.5-cp310-cp310-win_amd64.whl\", hash = \"sha256:99f60d34c048c5c2fabc766108c103612344c46e35d4ed9ae0673d33c8fb26e8\"},\n    {file = \"multidict-6.0.5-cp311-cp311-macosx_10_9_universal2.whl\", hash = \"sha256:f285e862d2f153a70586579c15c44656f888806ed0e5b56b64489afe4a2dbfba\"},\n    {file = \"multidict-6.0.5-cp311-cp311-macosx_10_9_x86_64.whl\", hash = \"sha256:53689bb4e102200a4fafa9de9c7c3c212ab40a7ab2c8e474491914d2305f187e\"},\n    {file = \"multidict-6.0.5-cp311-cp311-macosx_11_0_arm64.whl\", hash = \"sha256:612d1156111ae11d14afaf3a0669ebf6c170dbb735e510a7438ffe2369a847fd\"},\n    {file = \"multidict-6.0.5-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:7be7047bd08accdb7487737631d25735c9a04327911de89ff1b26b81745bd4e3\"},\n    {file = \"multidict-6.0.5-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:de170c7b4fe6859beb8926e84f7d7d6c693dfe8e27372ce3b76f01c46e489fcf\"},\n    {file = \"multidict-6.0.5-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:04bde7a7b3de05732a4eb39c94574db1ec99abb56162d6c520ad26f83267de29\"},\n    {file = \"multidict-6.0.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:85f67aed7bb647f93e7520633d8f51d3cbc6ab96957c71272b286b2f30dc70ed\"},\n    {file = \"multidict-6.0.5-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:425bf820055005bfc8aa9a0b99ccb52cc2f4070153e34b701acc98d201693733\"},\n    {file = \"multidict-6.0.5-cp311-cp311-musllinux_1_1_aarch64.whl\", hash = \"sha256:d3eb1ceec286eba8220c26f3b0096cf189aea7057b6e7b7a2e60ed36b373b77f\"},\n    {file = \"multidict-6.0.5-cp311-cp311-musllinux_1_1_i686.whl\", hash = \"sha256:7901c05ead4b3fb75113fb1dd33eb1253c6d3ee37ce93305acd9d38e0b5f21a4\"},\n    {file = \"multidict-6.0.5-cp311-cp311-musllinux_1_1_ppc64le.whl\", hash = \"sha256:e0e79d91e71b9867c73323a3444724d496c037e578a0e1755ae159ba14f4f3d1\"},\n    {file = \"multidict-6.0.5-cp311-cp311-musllinux_1_1_s390x.whl\", hash = \"sha256:29bfeb0dff5cb5fdab2023a7a9947b3b4af63e9c47cae2a10ad58394b517fddc\"},\n    {file = \"multidict-6.0.5-cp311-cp311-musllinux_1_1_x86_64.whl\", hash = \"sha256:e030047e85cbcedbfc073f71836d62dd5dadfbe7531cae27789ff66bc551bd5e\"},\n    {file = \"multidict-6.0.5-cp311-cp311-win32.whl\", hash = \"sha256:2f4848aa3baa109e6ab81fe2006c77ed4d3cd1e0ac2c1fbddb7b1277c168788c\"},\n    {file = \"multidict-6.0.5-cp311-cp311-win_amd64.whl\", hash = \"sha256:2faa5ae9376faba05f630d7e5e6be05be22913782b927b19d12b8145968a85ea\"},\n    {file = \"multidict-6.0.5-cp312-cp312-macosx_10_9_universal2.whl\", hash = \"sha256:51d035609b86722963404f711db441cf7134f1889107fb171a970c9701f92e1e\"},\n    {file = \"multidict-6.0.5-cp312-cp312-macosx_10_9_x86_64.whl\", hash = \"sha256:cbebcd5bcaf1eaf302617c114aa67569dd3f090dd0ce8ba9e35e9985b41ac35b\"},\n    {file = \"multidict-6.0.5-cp312-cp312-macosx_11_0_arm64.whl\", hash = \"sha256:2ffc42c922dbfddb4a4c3b438eb056828719f07608af27d163191cb3e3aa6cc5\"},\n    {file = \"multidict-6.0.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:ceb3b7e6a0135e092de86110c5a74e46bda4bd4fbfeeb3a3bcec79c0f861e450\"},\n    {file = \"multidict-6.0.5-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:79660376075cfd4b2c80f295528aa6beb2058fd289f4c9252f986751a4cd0496\"},\n    {file = \"multidict-6.0.5-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:e4428b29611e989719874670fd152b6625500ad6c686d464e99f5aaeeaca175a\"},\n    {file = \"multidict-6.0.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:d84a5c3a5f7ce6db1f999fb9438f686bc2e09d38143f2d93d8406ed2dd6b9226\"},\n    {file = \"multidict-6.0.5-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:76c0de87358b192de7ea9649beb392f107dcad9ad27276324c24c91774ca5271\"},\n    {file = \"multidict-6.0.5-cp312-cp312-musllinux_1_1_aarch64.whl\", hash = \"sha256:79a6d2ba910adb2cbafc95dad936f8b9386e77c84c35bc0add315b856d7c3abb\"},\n    {file = \"multidict-6.0.5-cp312-cp312-musllinux_1_1_i686.whl\", hash = \"sha256:92d16a3e275e38293623ebf639c471d3e03bb20b8ebb845237e0d3664914caef\"},\n    {file = \"multidict-6.0.5-cp312-cp312-musllinux_1_1_ppc64le.whl\", hash = \"sha256:fb616be3538599e797a2017cccca78e354c767165e8858ab5116813146041a24\"},\n    {file = \"multidict-6.0.5-cp312-cp312-musllinux_1_1_s390x.whl\", hash = \"sha256:14c2976aa9038c2629efa2c148022ed5eb4cb939e15ec7aace7ca932f48f9ba6\"},\n    {file = \"multidict-6.0.5-cp312-cp312-musllinux_1_1_x86_64.whl\", hash = \"sha256:435a0984199d81ca178b9ae2c26ec3d49692d20ee29bc4c11a2a8d4514c67eda\"},\n    {file = \"multidict-6.0.5-cp312-cp312-win32.whl\", hash = \"sha256:9fe7b0653ba3d9d65cbe7698cca585bf0f8c83dbbcc710db9c90f478e175f2d5\"},\n    {file = \"multidict-6.0.5-cp312-cp312-win_amd64.whl\", hash = \"sha256:01265f5e40f5a17f8241d52656ed27192be03bfa8764d88e8220141d1e4b3556\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-macosx_10_9_x86_64.whl\", hash = \"sha256:19fe01cea168585ba0f678cad6f58133db2aa14eccaf22f88e4a6dccadfad8b3\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:6bf7a982604375a8d49b6cc1b781c1747f243d91b81035a9b43a2126c04766f5\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:107c0cdefe028703fb5dafe640a409cb146d44a6ae201e55b35a4af8e95457dd\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:403c0911cd5d5791605808b942c88a8155c2592e05332d2bf78f18697a5fa15e\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:aeaf541ddbad8311a87dd695ed9642401131ea39ad7bc8cf3ef3967fd093b626\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:e4972624066095e52b569e02b5ca97dbd7a7ddd4294bf4e7247d52635630dd83\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-musllinux_1_1_aarch64.whl\", hash = \"sha256:d946b0a9eb8aaa590df1fe082cee553ceab173e6cb5b03239716338629c50c7a\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-musllinux_1_1_i686.whl\", hash = \"sha256:b55358304d7a73d7bdf5de62494aaf70bd33015831ffd98bc498b433dfe5b10c\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-musllinux_1_1_ppc64le.whl\", hash = \"sha256:a3145cb08d8625b2d3fee1b2d596a8766352979c9bffe5d7833e0503d0f0b5e5\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-musllinux_1_1_s390x.whl\", hash = \"sha256:d65f25da8e248202bd47445cec78e0025c0fe7582b23ec69c3b27a640dd7a8e3\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-musllinux_1_1_x86_64.whl\", hash = \"sha256:c9bf56195c6bbd293340ea82eafd0071cb3d450c703d2c93afb89f93b8386ccc\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-win32.whl\", hash = \"sha256:69db76c09796b313331bb7048229e3bee7928eb62bab5e071e9f7fcc4879caee\"},\n    {file = \"multidict-6.0.5-cp37-cp37m-win_amd64.whl\", hash = \"sha256:fce28b3c8a81b6b36dfac9feb1de115bab619b3c13905b419ec71d03a3fc1423\"},\n    {file = \"multidict-6.0.5-cp38-cp38-macosx_10_9_universal2.whl\", hash = \"sha256:76f067f5121dcecf0d63a67f29080b26c43c71a98b10c701b0677e4a065fbd54\"},\n    {file = \"multidict-6.0.5-cp38-cp38-macosx_10_9_x86_64.whl\", hash = \"sha256:b82cc8ace10ab5bd93235dfaab2021c70637005e1ac787031f4d1da63d493c1d\"},\n    {file = \"multidict-6.0.5-cp38-cp38-macosx_11_0_arm64.whl\", hash = \"sha256:5cb241881eefd96b46f89b1a056187ea8e9ba14ab88ba632e68d7a2ecb7aadf7\"},\n    {file = \"multidict-6.0.5-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:e8e94e6912639a02ce173341ff62cc1201232ab86b8a8fcc05572741a5dc7d93\"},\n    {file = \"multidict-6.0.5-cp38-cp38-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:09a892e4a9fb47331da06948690ae38eaa2426de97b4ccbfafbdcbe5c8f37ff8\"},\n    {file = \"multidict-6.0.5-cp38-cp38-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:55205d03e8a598cfc688c71ca8ea5f66447164efff8869517f175ea632c7cb7b\"},\n    {file = \"multidict-6.0.5-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:37b15024f864916b4951adb95d3a80c9431299080341ab9544ed148091b53f50\"},\n    {file = \"multidict-6.0.5-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:f2a1dee728b52b33eebff5072817176c172050d44d67befd681609b4746e1c2e\"},\n    {file = \"multidict-6.0.5-cp38-cp38-musllinux_1_1_aarch64.whl\", hash = \"sha256:edd08e6f2f1a390bf137080507e44ccc086353c8e98c657e666c017718561b89\"},\n    {file = \"multidict-6.0.5-cp38-cp38-musllinux_1_1_i686.whl\", hash = \"sha256:60d698e8179a42ec85172d12f50b1668254628425a6bd611aba022257cac1386\"},\n    {file = \"multidict-6.0.5-cp38-cp38-musllinux_1_1_ppc64le.whl\", hash = \"sha256:3d25f19500588cbc47dc19081d78131c32637c25804df8414463ec908631e453\"},\n    {file = \"multidict-6.0.5-cp38-cp38-musllinux_1_1_s390x.whl\", hash = \"sha256:4cc0ef8b962ac7a5e62b9e826bd0cd5040e7d401bc45a6835910ed699037a461\"},\n    {file = \"multidict-6.0.5-cp38-cp38-musllinux_1_1_x86_64.whl\", hash = \"sha256:eca2e9d0cc5a889850e9bbd68e98314ada174ff6ccd1129500103df7a94a7a44\"},\n"
+    },
+    {
+      "turn": 20,
+      "role": "assistant",
+      "content": "Let me check how langchain-openai's AzureChatOpenAI is structured to understand the constructor parameters.",
+      "tool_calls": [
+        {
+          "id": "call_00_sZi8J7QynLRJEvSLQnKh7018",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"model_name|model_version|azure_deployment\", \"path\": \"gpt_engineer\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 20,
+      "role": "tool",
+      "tool_call_id": "call_00_sZi8J7QynLRJEvSLQnKh7018",
+      "name": "search",
+      "args": {
+        "pattern": "model_name|model_version|azure_deployment",
+        "path": "gpt_engineer"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 21,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_inaqSkhUctc8hvA6JVcD6098",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"gpt_engineer/applications/cli/cli_agent.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 21,
+      "role": "tool",
+      "tool_call_id": "call_00_inaqSkhUctc8hvA6JVcD6098",
+      "name": "read_file",
+      "args": {
+        "path": "gpt_engineer/applications/cli/cli_agent.py"
+      },
+      "result": "\"\"\"\nThis module provides the CliAgent class which manages the lifecycle of code generation and improvement\nusing an AI model. It includes functionalities to initialize code generation, improve existing code,\nand process the code through various steps defined in the step bundle.\n\"\"\"\n\nfrom typing import Callable, Optional, TypeVar\n\n# from gpt_engineer.core.default.git_version_manager import GitVersionManager\nfrom gpt_engineer.core.ai import AI\nfrom gpt_engineer.core.base_agent import BaseAgent\nfrom gpt_engineer.core.base_execution_env import BaseExecutionEnv\nfrom gpt_engineer.core.base_memory import BaseMemory\nfrom gpt_engineer.core.default.disk_execution_env import DiskExecutionEnv\nfrom gpt_engineer.core.default.disk_memory import DiskMemory\nfrom gpt_engineer.core.default.paths import PREPROMPTS_PATH\nfrom gpt_engineer.core.default.steps import (\n    execute_entrypoint,\n    gen_code,\n    gen_entrypoint,\n    improve_fn,\n)\nfrom gpt_engineer.core.files_dict import FilesDict\nfrom gpt_engineer.core.preprompts_holder import PrepromptsHolder\nfrom gpt_engineer.core.prompt import Prompt\n\nCodeGenType = TypeVar(\"CodeGenType\", bound=Callable[[AI, str, BaseMemory], FilesDict])\nCodeProcessor = TypeVar(\n    \"CodeProcessor\", bound=Callable[[AI, BaseExecutionEnv, FilesDict], FilesDict]\n)\nImproveType = TypeVar(\n    \"ImproveType\", bound=Callable[[AI, str, FilesDict, BaseMemory], FilesDict]\n)\n\n\nclass CliAgent(BaseAgent):\n    \"\"\"\n    The `CliAgent` class is responsible for managing the lifecycle of code generation and improvement\n    using an AI model. It orchestrates the generation of new code and the improvement of existing code\n    based on given prompts and utilizes a memory system and execution environment for processing.\n\n    Parameters\n    ----------\n    memory : BaseMemory\n        An instance of a class that adheres to the BaseMemory interface, used for storing and retrieving\n        information during the code generation process.\n    execution_env : BaseExecutionEnv\n        An instance of a class that adheres to the BaseExecutionEnv interface, used for executing code\n        and managing the execution environment.\n    ai : AI, optional\n        An instance of the AI class that manages calls to the language model. If not provided, a default\n        instance is created.\n    code_gen_fn : CodeGenType, optional\n        A callable that takes an AI instance, a prompt, and a memory instance to generate code. Defaults\n        to the `gen_code` function.\n    improve_fn : ImproveType, optional\n        A callable that takes an AI instance, a prompt, a FilesDict instance, and a memory instance to\n        improve code. Defaults to the `improve` function.\n    process_code_fn : CodeProcessor, optional\n        A callable that takes an AI instance, an execution environment, and a FilesDict instance to\n        process code. Defaults to the `execute_entrypoint` function.\n    preprompts_holder : PrepromptsHolder, optional\n        An instance of PrepromptsHolder that manages preprompt templates. If not provided, a default\n        instance is created using the PREPROMPTS_PATH.\n\n    Attributes\n    ----------\n    memory : BaseMemory\n        The memory instance where the agent stores and retrieves information.\n    execution_env : BaseExecutionEnv\n        The execution environment instance where the agent executes and manages code.\n    ai : AI\n        The AI instance used for interacting with the language model.\n    code_gen_fn : CodeGenType\n        The function used for generating code.\n    improve_fn : ImproveType\n        The function used for improving code.\n    process_code_fn : CodeProcessor\n        The function used for processing code.\n    preprompts_holder : PrepromptsHolder\n        The holder for preprompt templates.\n    \"\"\"\n\n    def __init__(\n        self,\n        memory: BaseMemory,\n        execution_env: BaseExecutionEnv,\n        ai: AI = None,\n        code_gen_fn: CodeGenType = gen_code,\n        improve_fn: ImproveType = improve_fn,\n        process_code_fn: CodeProcessor = execute_entrypoint,\n        preprompts_holder: PrepromptsHolder = None,\n    ):\n        self.memory = memory\n        self.execution_env = execution_env\n        self.ai = ai or AI()\n        self.code_gen_fn = code_gen_fn\n        self.process_code_fn = process_code_fn\n        self.improve_fn = improve_fn\n        self.preprompts_holder = preprompts_holder or PrepromptsHolder(PREPROMPTS_PATH)\n\n    @classmethod\n    def with_default_config(\n        cls,\n        memory: DiskMemory,\n        execution_env: DiskExecutionEnv,\n        ai: AI = None,\n        code_gen_fn: CodeGenType = gen_code,\n        improve_fn: ImproveType = improve_fn,\n        process_code_fn: CodeProcessor = execute_entrypoint,\n        preprompts_holder: PrepromptsHolder = None,\n    ):\n        \"\"\"\n        Creates a new instance of CliAgent with default configurations for memory, execution environment,\n        AI, and other functional parameters.\n\n        Parameters\n        ----------\n        memory : DiskMemory\n            An instance of DiskMemory for storing and retrieving information.\n        execution_env : DiskExecutionEnv\n            An instance of DiskExecutionEnv for executing code.\n        ai : AI, optional\n            An instance of AI for interacting with the language model. Defaults to None, which will create\n            a new AI instance.\n        code_gen_fn : CodeGenType, optional\n            A function for generating code. Defaults to `gen_code`.\n        improve_fn : ImproveType, optional\n            A function for improving code. Defaults to `improve`.\n        process_code_fn : CodeProcessor, optional\n            A function for processing code. Defaults to `execute_entrypoint`.\n        preprompts_holder : PrepromptsHolder, optional\n            An instance of PrepromptsHolder for managing preprompt templates. Defaults to None, which will\n            create a new PrepromptsHolder instance using PREPROMPTS_PATH.\n\n        Returns\n        -------\n        CliAgent\n            An instance of CliAgent configured with the provided or default parameters.\n        \"\"\"\n        return cls(\n            memory=memory,\n            execution_env=execution_env,\n            ai=ai,\n            code_gen_fn=code_gen_fn,\n            process_code_fn=process_code_fn,\n            improve_fn=improve_fn,\n            preprompts_holder=preprompts_holder or PrepromptsHolder(PREPROMPTS_PATH),\n        )\n\n    def init(self, prompt: Prompt) -> FilesDict:\n        \"\"\"\n        Generates a new piece of code using the AI and step bundle based on the provided prompt.\n\n        Parameters\n        ----------\n        prompt : str\n            A string prompt that guides the code generation process.\n\n        Returns\n        -------\n        FilesDict\n            An instance of the `FilesDict` class containing the generated code.\n        \"\"\"\n\n        files_dict = self.code_gen_fn(\n            self.ai, prompt, self.memory, self.preprompts_holder\n        )\n        entrypoint = gen_entrypoint(\n            self.ai, prompt, files_dict, self.memory, self.preprompts_holder\n        )\n        combined_dict = {**files_dict, **entrypoint}\n        files_dict = FilesDict(combined_dict)\n        files_dict = self.process_code_fn(\n            self.ai,\n            self.execution_env,\n            files_dict,\n            preprompts_holder=self.preprompts_holder,\n            prompt=prompt,\n            memory=self.memory,\n        )\n        return files_dict\n\n    def improve(\n        self,\n        files_dict: FilesDict,\n        prompt: Prompt,\n        execution_command: Optional[str] = None,\n    ) -> FilesDict:\n        \"\"\"\n        Improves an existing piece of code using the AI and step bundle based on the provided prompt.\n\n        Parameters\n        ----------\n        files_dict : FilesDict\n            An instance of `FilesDict` containing the code to be improved.\n        prompt : str\n            A string prompt that guides the code improvement process.\n        execution_command : str, optional\n            An optional command to execute the code. If not provided, the default execution command is used.\n\n        Returns\n        -------\n        FilesDict\n            An instance of the `FilesDict` class containing the improved code.\n        \"\"\"\n\n        files_dict = self.improve_fn(\n            self.ai, prompt, files_dict, self.memory, self.preprompts_holder\n        )\n        # entrypoint = gen_entrypoint(\n        #     self.ai, prompt, files_dict, self.memory, self.preprompts_holder\n        # )\n        # combined_dict = {**files_dict, **entrypoint}\n        # files_dict = FilesDict(combined_dict)\n        # files_dict = self.process_code_fn(\n        #     self.ai,\n        #     self.execution_env,\n        #     files_dict,\n        #     preprompts_holder=self.preprompts_holder,\n        #     prompt=prompt,\n        #     memory=self.memory,\n        # )\n\n        return files_dict\n"
+    },
+    {
+      "turn": 22,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_16yhJA8VGBSFrGh8vhSV2729",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"langchain-openai\", \"path\": \"poetry.lock\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 22,
+      "role": "tool",
+      "tool_call_id": "call_00_16yhJA8VGBSFrGh8vhSV2729",
+      "name": "search",
+      "args": {
+        "pattern": "langchain-openai",
+        "path": "poetry.lock"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 23,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_lUNNWayk0xYMM3H8yV2s2818",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"langchain\", \"path\": \"poetry.lock\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 23,
+      "role": "tool",
+      "tool_call_id": "call_00_lUNNWayk0xYMM3H8yV2s2818",
+      "name": "search",
+      "args": {
+        "pattern": "langchain",
+        "path": "poetry.lock"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 24,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_OtAqRvi0ZiDvAnxg3m4C8626",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"poetry.lock\", \"offset\": 1, \"limit\": 8}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 24,
+      "role": "tool",
+      "tool_call_id": "call_00_OtAqRvi0ZiDvAnxg3m4C8626",
+      "name": "read_file",
+      "args": {
+        "path": "poetry.lock",
+        "offset": 1,
+        "limit": 8
+      },
+      "result": "[Lines 1\u20138 of 5005]\n# This file is automatically @generated by Poetry 1.8.2 and should not be changed by hand.\n\n[[package]]\nname = \"accessible-pygments\"\nversion = \"0.0.4\"\ndescription = \"A collection of accessible pygments styles\"\noptional = false\npython-versions = \"*\"\n"
+    },
+    {
+      "turn": 25,
+      "role": "assistant",
+      "content": "Let me look at how the langchain-openai AzureChatOpenAI constructor actually works to understand the parameter mismatch.",
+      "tool_calls": [
+        {
+          "id": "call_00_YBBSJOv8JpLO6oQcrZtf4673",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"class AzureChatOpenAI|def __init__.*AzureChatOpenAI\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 25,
+      "role": "tool",
+      "tool_call_id": "call_00_YBBSJOv8JpLO6oQcrZtf4673",
+      "name": "search",
+      "args": {
+        "pattern": "class AzureChatOpenAI|def __init__.*AzureChatOpenAI",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 26,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_IAzIKlZBNIEOFxogpv5k7450",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"langchain-openai\", \"path\": \"poetry.lock\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 26,
+      "role": "tool",
+      "tool_call_id": "call_00_IAzIKlZBNIEOFxogpv5k7450",
+      "name": "search",
+      "args": {
+        "pattern": "langchain-openai",
+        "path": "poetry.lock"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 27,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Vf1RRvngbBL7K4Uchp5A7927",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"azure_deployment|deployment_name\", \"path\": \"gpt_engineer\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 27,
+      "role": "tool",
+      "tool_call_id": "call_00_Vf1RRvngbBL7K4Uchp5A7927",
+      "name": "search",
+      "args": {
+        "pattern": "azure_deployment|deployment_name",
+        "path": "gpt_engineer"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 28,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_urC25Hd1fvs8cPlMFk9u6993",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"poetry.lock\", \"offset\": 2800, \"limit\": 200}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 28,
+      "role": "tool",
+      "tool_call_id": "call_00_urC25Hd1fvs8cPlMFk9u6993",
+      "name": "read_file",
+      "args": {
+        "path": "poetry.lock",
+        "offset": 2800,
+        "limit": 200
+      },
+      "result": "[Lines 2800\u20132999 of 5005]\n    {file = \"psutil-5.9.8-cp27-cp27m-manylinux2010_i686.whl\", hash = \"sha256:05806de88103b25903dff19bb6692bd2e714ccf9e668d050d144012055cbca73\"},\n    {file = \"psutil-5.9.8-cp27-cp27m-manylinux2010_x86_64.whl\", hash = \"sha256:611052c4bc70432ec770d5d54f64206aa7203a101ec273a0cd82418c86503bb7\"},\n    {file = \"psutil-5.9.8-cp27-cp27mu-manylinux2010_i686.whl\", hash = \"sha256:50187900d73c1381ba1454cf40308c2bf6f34268518b3f36a9b663ca87e65e36\"},\n    {file = \"psutil-5.9.8-cp27-cp27mu-manylinux2010_x86_64.whl\", hash = \"sha256:02615ed8c5ea222323408ceba16c60e99c3f91639b07da6373fb7e6539abc56d\"},\n    {file = \"psutil-5.9.8-cp27-none-win32.whl\", hash = \"sha256:36f435891adb138ed3c9e58c6af3e2e6ca9ac2f365efe1f9cfef2794e6c93b4e\"},\n    {file = \"psutil-5.9.8-cp27-none-win_amd64.whl\", hash = \"sha256:bd1184ceb3f87651a67b2708d4c3338e9b10c5df903f2e3776b62303b26cb631\"},\n    {file = \"psutil-5.9.8-cp36-abi3-macosx_10_9_x86_64.whl\", hash = \"sha256:aee678c8720623dc456fa20659af736241f575d79429a0e5e9cf88ae0605cc81\"},\n    {file = \"psutil-5.9.8-cp36-abi3-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:8cb6403ce6d8e047495a701dc7c5bd788add903f8986d523e3e20b98b733e421\"},\n    {file = \"psutil-5.9.8-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:d06016f7f8625a1825ba3732081d77c94589dca78b7a3fc072194851e88461a4\"},\n    {file = \"psutil-5.9.8-cp36-cp36m-win32.whl\", hash = \"sha256:7d79560ad97af658a0f6adfef8b834b53f64746d45b403f225b85c5c2c140eee\"},\n    {file = \"psutil-5.9.8-cp36-cp36m-win_amd64.whl\", hash = \"sha256:27cc40c3493bb10de1be4b3f07cae4c010ce715290a5be22b98493509c6299e2\"},\n    {file = \"psutil-5.9.8-cp37-abi3-win32.whl\", hash = \"sha256:bc56c2a1b0d15aa3eaa5a60c9f3f8e3e565303b465dbf57a1b730e7a2b9844e0\"},\n    {file = \"psutil-5.9.8-cp37-abi3-win_amd64.whl\", hash = \"sha256:8db4c1b57507eef143a15a6884ca10f7c73876cdf5d51e713151c1236a0e68cf\"},\n    {file = \"psutil-5.9.8-cp38-abi3-macosx_11_0_arm64.whl\", hash = \"sha256:d16bbddf0693323b8c6123dd804100241da461e41d6e332fb0ba6058f630f8c8\"},\n    {file = \"psutil-5.9.8.tar.gz\", hash = \"sha256:6be126e3225486dff286a8fb9a06246a5253f4c7c53b475ea5f5ac934e64194c\"},\n]\n\n[package.extras]\ntest = [\"enum34\", \"ipaddress\", \"mock\", \"pywin32\", \"wmi\"]\n\n[[package]]\nname = \"ptyprocess\"\nversion = \"0.7.0\"\ndescription = \"Run a subprocess in a pseudo terminal\"\noptional = false\npython-versions = \"*\"\nfiles = [\n    {file = \"ptyprocess-0.7.0-py2.py3-none-any.whl\", hash = \"sha256:4b41f3967fce3af57cc7e94b888626c18bf37a083e3651ca8feeb66d492fef35\"},\n    {file = \"ptyprocess-0.7.0.tar.gz\", hash = \"sha256:5c5d0a3b48ceee0b48485e0c26037c0acd7d29765ca3fbb5cb3831d347423220\"},\n]\n\n[[package]]\nname = \"pure-eval\"\nversion = \"0.2.2\"\ndescription = \"Safely evaluate AST nodes without side effects\"\noptional = false\npython-versions = \"*\"\nfiles = [\n    {file = \"pure_eval-0.2.2-py3-none-any.whl\", hash = \"sha256:01eaab343580944bc56080ebe0a674b39ec44a945e6d09ba7db3cb8cec289350\"},\n    {file = \"pure_eval-0.2.2.tar.gz\", hash = \"sha256:2b45320af6dfaa1750f543d714b6d1c520a1688dec6fd24d339063ce0aaa9ac3\"},\n]\n\n[package.extras]\ntests = [\"pytest\"]\n\n[[package]]\nname = \"pyarrow\"\nversion = \"16.0.0\"\ndescription = \"Python library for Apache Arrow\"\noptional = false\npython-versions = \">=3.8\"\nfiles = [\n    {file = \"pyarrow-16.0.0-cp310-cp310-macosx_10_15_x86_64.whl\", hash = \"sha256:22a1fdb1254e5095d629e29cd1ea98ed04b4bbfd8e42cc670a6b639ccc208b60\"},\n    {file = \"pyarrow-16.0.0-cp310-cp310-macosx_11_0_arm64.whl\", hash = \"sha256:574a00260a4ed9d118a14770edbd440b848fcae5a3024128be9d0274dbcaf858\"},\n    {file = \"pyarrow-16.0.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:c0815d0ddb733b8c1b53a05827a91f1b8bde6240f3b20bf9ba5d650eb9b89cdf\"},\n    {file = \"pyarrow-16.0.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:df0080339387b5d30de31e0a149c0c11a827a10c82f0c67d9afae3981d1aabb7\"},\n    {file = \"pyarrow-16.0.0-cp310-cp310-manylinux_2_28_aarch64.whl\", hash = \"sha256:edf38cce0bf0dcf726e074159c60516447e4474904c0033f018c1f33d7dac6c5\"},\n    {file = \"pyarrow-16.0.0-cp310-cp310-manylinux_2_28_x86_64.whl\", hash = \"sha256:91d28f9a40f1264eab2af7905a4d95320ac2f287891e9c8b0035f264fe3c3a4b\"},\n    {file = \"pyarrow-16.0.0-cp310-cp310-win_amd64.whl\", hash = \"sha256:99af421ee451a78884d7faea23816c429e263bd3618b22d38e7992c9ce2a7ad9\"},\n    {file = \"pyarrow-16.0.0-cp311-cp311-macosx_10_15_x86_64.whl\", hash = \"sha256:d22d0941e6c7bafddf5f4c0662e46f2075850f1c044bf1a03150dd9e189427ce\"},\n    {file = \"pyarrow-16.0.0-cp311-cp311-macosx_11_0_arm64.whl\", hash = \"sha256:266ddb7e823f03733c15adc8b5078db2df6980f9aa93d6bb57ece615df4e0ba7\"},\n    {file = \"pyarrow-16.0.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:5cc23090224b6594f5a92d26ad47465af47c1d9c079dd4a0061ae39551889efe\"},\n    {file = \"pyarrow-16.0.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:56850a0afe9ef37249d5387355449c0f94d12ff7994af88f16803a26d38f2016\"},\n    {file = \"pyarrow-16.0.0-cp311-cp311-manylinux_2_28_aarch64.whl\", hash = \"sha256:705db70d3e2293c2f6f8e84874b5b775f690465798f66e94bb2c07bab0a6bb55\"},\n    {file = \"pyarrow-16.0.0-cp311-cp311-manylinux_2_28_x86_64.whl\", hash = \"sha256:5448564754c154997bc09e95a44b81b9e31ae918a86c0fcb35c4aa4922756f55\"},\n    {file = \"pyarrow-16.0.0-cp311-cp311-win_amd64.whl\", hash = \"sha256:729f7b262aa620c9df8b9967db96c1575e4cfc8c25d078a06968e527b8d6ec05\"},\n    {file = \"pyarrow-16.0.0-cp312-cp312-macosx_10_15_x86_64.whl\", hash = \"sha256:fb8065dbc0d051bf2ae2453af0484d99a43135cadabacf0af588a3be81fbbb9b\"},\n    {file = \"pyarrow-16.0.0-cp312-cp312-macosx_11_0_arm64.whl\", hash = \"sha256:20ce707d9aa390593ea93218b19d0eadab56390311cb87aad32c9a869b0e958c\"},\n    {file = \"pyarrow-16.0.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:5823275c8addbbb50cd4e6a6839952682a33255b447277e37a6f518d6972f4e1\"},\n    {file = \"pyarrow-16.0.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:1ab8b9050752b16a8b53fcd9853bf07d8daf19093533e990085168f40c64d978\"},\n    {file = \"pyarrow-16.0.0-cp312-cp312-manylinux_2_28_aarch64.whl\", hash = \"sha256:42e56557bc7c5c10d3e42c3b32f6cff649a29d637e8f4e8b311d334cc4326730\"},\n    {file = \"pyarrow-16.0.0-cp312-cp312-manylinux_2_28_x86_64.whl\", hash = \"sha256:2a7abdee4a4a7cfa239e2e8d721224c4b34ffe69a0ca7981354fe03c1328789b\"},\n    {file = \"pyarrow-16.0.0-cp312-cp312-win_amd64.whl\", hash = \"sha256:ef2f309b68396bcc5a354106741d333494d6a0d3e1951271849787109f0229a6\"},\n    {file = \"pyarrow-16.0.0-cp38-cp38-macosx_10_15_x86_64.whl\", hash = \"sha256:ed66e5217b4526fa3585b5e39b0b82f501b88a10d36bd0d2a4d8aa7b5a48e2df\"},\n    {file = \"pyarrow-16.0.0-cp38-cp38-macosx_11_0_arm64.whl\", hash = \"sha256:cc8814310486f2a73c661ba8354540f17eef51e1b6dd090b93e3419d3a097b3a\"},\n    {file = \"pyarrow-16.0.0-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:3c2f5e239db7ed43e0ad2baf46a6465f89c824cc703f38ef0fde927d8e0955f7\"},\n    {file = \"pyarrow-16.0.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:f293e92d1db251447cb028ae12f7bc47526e4649c3a9924c8376cab4ad6b98bd\"},\n    {file = \"pyarrow-16.0.0-cp38-cp38-manylinux_2_28_aarch64.whl\", hash = \"sha256:dd9334a07b6dc21afe0857aa31842365a62eca664e415a3f9536e3a8bb832c07\"},\n    {file = \"pyarrow-16.0.0-cp38-cp38-manylinux_2_28_x86_64.whl\", hash = \"sha256:d91073d1e2fef2c121154680e2ba7e35ecf8d4969cc0af1fa6f14a8675858159\"},\n    {file = \"pyarrow-16.0.0-cp38-cp38-win_amd64.whl\", hash = \"sha256:71d52561cd7aefd22cf52538f262850b0cc9e4ec50af2aaa601da3a16ef48877\"},\n    {file = \"pyarrow-16.0.0-cp39-cp39-macosx_10_15_x86_64.whl\", hash = \"sha256:b93c9a50b965ee0bf4fef65e53b758a7e8dcc0c2d86cebcc037aaaf1b306ecc0\"},\n    {file = \"pyarrow-16.0.0-cp39-cp39-macosx_11_0_arm64.whl\", hash = \"sha256:d831690844706e374c455fba2fb8cfcb7b797bfe53ceda4b54334316e1ac4fa4\"},\n    {file = \"pyarrow-16.0.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:35692ce8ad0b8c666aa60f83950957096d92f2a9d8d7deda93fb835e6053307e\"},\n    {file = \"pyarrow-16.0.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:9dd3151d098e56f16a8389c1247137f9e4c22720b01c6f3aa6dec29a99b74d80\"},\n    {file = \"pyarrow-16.0.0-cp39-cp39-manylinux_2_28_aarch64.whl\", hash = \"sha256:bd40467bdb3cbaf2044ed7a6f7f251c8f941c8b31275aaaf88e746c4f3ca4a7a\"},\n    {file = \"pyarrow-16.0.0-cp39-cp39-manylinux_2_28_x86_64.whl\", hash = \"sha256:00a1dcb22ad4ceb8af87f7bd30cc3354788776c417f493089e0a0af981bc8d80\"},\n    {file = \"pyarrow-16.0.0-cp39-cp39-win_amd64.whl\", hash = \"sha256:fda9a7cebd1b1d46c97b511f60f73a5b766a6de4c5236f144f41a5d5afec1f35\"},\n    {file = \"pyarrow-16.0.0.tar.gz\", hash = \"sha256:59bb1f1edbbf4114c72415f039f1359f1a57d166a331c3229788ccbfbb31689a\"},\n]\n\n[package.dependencies]\nnumpy = \">=1.16.6\"\n\n[[package]]\nname = \"pyarrow-hotfix\"\nversion = \"0.6\"\ndescription = \"\"\noptional = false\npython-versions = \">=3.5\"\nfiles = [\n    {file = \"pyarrow_hotfix-0.6-py3-none-any.whl\", hash = \"sha256:dcc9ae2d220dff0083be6a9aa8e0cdee5182ad358d4931fce825c545e5c89178\"},\n    {file = \"pyarrow_hotfix-0.6.tar.gz\", hash = \"sha256:79d3e030f7ff890d408a100ac16d6f00b14d44a502d7897cd9fc3e3a534e9945\"},\n]\n\n[[package]]\nname = \"pycparser\"\nversion = \"2.22\"\ndescription = \"C parser in Python\"\noptional = false\npython-versions = \">=3.8\"\nfiles = [\n    {file = \"pycparser-2.22-py3-none-any.whl\", hash = \"sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc\"},\n    {file = \"pycparser-2.22.tar.gz\", hash = \"sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6\"},\n]\n\n[[package]]\nname = \"pydantic\"\nversion = \"2.7.1\"\ndescription = \"Data validation using Python type hints\"\noptional = false\npython-versions = \">=3.8\"\nfiles = [\n    {file = \"pydantic-2.7.1-py3-none-any.whl\", hash = \"sha256:e029badca45266732a9a79898a15ae2e8b14840b1eabbb25844be28f0b33f3d5\"},\n    {file = \"pydantic-2.7.1.tar.gz\", hash = \"sha256:e9dbb5eada8abe4d9ae5f46b9939aead650cd2b68f249bb3a8139dbe125803cc\"},\n]\n\n[package.dependencies]\nannotated-types = \">=0.4.0\"\npydantic-core = \"2.18.2\"\ntyping-extensions = \">=4.6.1\"\n\n[package.extras]\nemail = [\"email-validator (>=2.0.0)\"]\n\n[[package]]\nname = \"pydantic-core\"\nversion = \"2.18.2\"\ndescription = \"Core functionality for Pydantic validation and serialization\"\noptional = false\npython-versions = \">=3.8\"\nfiles = [\n    {file = \"pydantic_core-2.18.2-cp310-cp310-macosx_10_12_x86_64.whl\", hash = \"sha256:9e08e867b306f525802df7cd16c44ff5ebbe747ff0ca6cf3fde7f36c05a59a81\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-macosx_11_0_arm64.whl\", hash = \"sha256:f0a21cbaa69900cbe1a2e7cad2aa74ac3cf21b10c3efb0fa0b80305274c0e8a2\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:0680b1f1f11fda801397de52c36ce38ef1c1dc841a0927a94f226dea29c3ae3d\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:95b9d5e72481d3780ba3442eac863eae92ae43a5f3adb5b4d0a1de89d42bb250\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:c4fcf5cd9c4b655ad666ca332b9a081112cd7a58a8b5a6ca7a3104bc950f2038\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:9b5155ff768083cb1d62f3e143b49a8a3432e6789a3abee8acd005c3c7af1c74\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:553ef617b6836fc7e4df130bb851e32fe357ce36336d897fd6646d6058d980af\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:b89ed9eb7d616ef5714e5590e6cf7f23b02d0d539767d33561e3675d6f9e3857\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-musllinux_1_1_aarch64.whl\", hash = \"sha256:75f7e9488238e920ab6204399ded280dc4c307d034f3924cd7f90a38b1829563\"},\n    {file = \"pydantic_core-2.18.2-cp310-cp310-musllinux_1_1_x86_64.whl\", hash = \"sha256:ef26c9e94a8c04a1b2924149a9cb081836913818e55681722d7f29af88fe7b38\"},\n    {file = \"pydantic_core-2.18.2-cp310-none-win32.whl\", hash = \"sha256:182245ff6b0039e82b6bb585ed55a64d7c81c560715d1bad0cbad6dfa07b4027\"},\n    {file = \"pydantic_core-2.18.2-cp310-none-win_amd64.whl\", hash = \"sha256:e23ec367a948b6d812301afc1b13f8094ab7b2c280af66ef450efc357d2ae543\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-macosx_10_12_x86_64.whl\", hash = \"sha256:219da3f096d50a157f33645a1cf31c0ad1fe829a92181dd1311022f986e5fbe3\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-macosx_11_0_arm64.whl\", hash = \"sha256:cc1cfd88a64e012b74e94cd00bbe0f9c6df57049c97f02bb07d39e9c852e19a4\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:05b7133a6e6aeb8df37d6f413f7705a37ab4031597f64ab56384c94d98fa0e90\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:224c421235f6102e8737032483f43c1a8cfb1d2f45740c44166219599358c2cd\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:b14d82cdb934e99dda6d9d60dc84a24379820176cc4a0d123f88df319ae9c150\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:2728b01246a3bba6de144f9e3115b532ee44bd6cf39795194fb75491824a1413\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:470b94480bb5ee929f5acba6995251ada5e059a5ef3e0dfc63cca287283ebfa6\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:997abc4df705d1295a42f95b4eec4950a37ad8ae46d913caeee117b6b198811c\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-musllinux_1_1_aarch64.whl\", hash = \"sha256:75250dbc5290e3f1a0f4618db35e51a165186f9034eff158f3d490b3fed9f8a0\"},\n    {file = \"pydantic_core-2.18.2-cp311-cp311-musllinux_1_1_x86_64.whl\", hash = \"sha256:4456f2dca97c425231d7315737d45239b2b51a50dc2b6f0c2bb181fce6207664\"},\n    {file = \"pydantic_core-2.18.2-cp311-none-win32.whl\", hash = \"sha256:269322dcc3d8bdb69f054681edff86276b2ff972447863cf34c8b860f5188e2e\"},\n    {file = \"pydantic_core-2.18.2-cp311-none-win_amd64.whl\", hash = \"sha256:800d60565aec896f25bc3cfa56d2277d52d5182af08162f7954f938c06dc4ee3\"},\n    {file = \"pydantic_core-2.18.2-cp311-none-win_arm64.whl\", hash = \"sha256:1404c69d6a676245199767ba4f633cce5f4ad4181f9d0ccb0577e1f66cf4c46d\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-macosx_10_12_x86_64.whl\", hash = \"sha256:fb2bd7be70c0fe4dfd32c951bc813d9fe6ebcbfdd15a07527796c8204bd36242\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-macosx_11_0_arm64.whl\", hash = \"sha256:6132dd3bd52838acddca05a72aafb6eab6536aa145e923bb50f45e78b7251043\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:d7d904828195733c183d20a54230c0df0eb46ec746ea1a666730787353e87182\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:c9bd70772c720142be1020eac55f8143a34ec9f82d75a8e7a07852023e46617f\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:2b8ed04b3582771764538f7ee7001b02e1170223cf9b75dff0bc698fadb00cf3\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:e6dac87ddb34aaec85f873d737e9d06a3555a1cc1a8e0c44b7f8d5daeb89d86f\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:7ca4ae5a27ad7a4ee5170aebce1574b375de390bc01284f87b18d43a3984df72\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:886eec03591b7cf058467a70a87733b35f44707bd86cf64a615584fd72488b7c\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-musllinux_1_1_aarch64.whl\", hash = \"sha256:ca7b0c1f1c983e064caa85f3792dd2fe3526b3505378874afa84baf662e12241\"},\n    {file = \"pydantic_core-2.18.2-cp312-cp312-musllinux_1_1_x86_64.whl\", hash = \"sha256:4b4356d3538c3649337df4074e81b85f0616b79731fe22dd11b99499b2ebbdf3\"},\n    {file = \"pydantic_core-2.18.2-cp312-none-win32.whl\", hash = \"sha256:8b172601454f2d7701121bbec3425dd71efcb787a027edf49724c9cefc14c038\"},\n    {file = \"pydantic_core-2.18.2-cp312-none-win_amd64.whl\", hash = \"sha256:b1bd7e47b1558ea872bd16c8502c414f9e90dcf12f1395129d7bb42a09a95438\"},\n    {file = \"pydantic_core-2.18.2-cp312-none-win_arm64.whl\", hash = \"sha256:98758d627ff397e752bc339272c14c98199c613f922d4a384ddc07526c86a2ec\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-macosx_10_12_x86_64.whl\", hash = \"sha256:9fdad8e35f278b2c3eb77cbdc5c0a49dada440657bf738d6905ce106dc1de439\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-macosx_11_0_arm64.whl\", hash = \"sha256:1d90c3265ae107f91a4f279f4d6f6f1d4907ac76c6868b27dc7fb33688cfb347\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:390193c770399861d8df9670fb0d1874f330c79caaca4642332df7c682bf6b91\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:82d5d4d78e4448683cb467897fe24e2b74bb7b973a541ea1dcfec1d3cbce39fb\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:4774f3184d2ef3e14e8693194f661dea5a4d6ca4e3dc8e39786d33a94865cefd\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:d4d938ec0adf5167cb335acb25a4ee69a8107e4984f8fbd2e897021d9e4ca21b\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:e0e8b1be28239fc64a88a8189d1df7fad8be8c1ae47fcc33e43d4be15f99cc70\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:868649da93e5a3d5eacc2b5b3b9235c98ccdbfd443832f31e075f54419e1b96b\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-musllinux_1_1_aarch64.whl\", hash = \"sha256:78363590ef93d5d226ba21a90a03ea89a20738ee5b7da83d771d283fd8a56761\"},\n    {file = \"pydantic_core-2.18.2-cp38-cp38-musllinux_1_1_x86_64.whl\", hash = \"sha256:852e966fbd035a6468fc0a3496589b45e2208ec7ca95c26470a54daed82a0788\"},\n    {file = \"pydantic_core-2.18.2-cp38-none-win32.whl\", hash = \"sha256:6a46e22a707e7ad4484ac9ee9f290f9d501df45954184e23fc29408dfad61350\"},\n    {file = \"pydantic_core-2.18.2-cp38-none-win_amd64.whl\", hash = \"sha256:d91cb5ea8b11607cc757675051f61b3d93f15eca3cefb3e6c704a5d6e8440f4e\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-macosx_10_12_x86_64.whl\", hash = \"sha256:ae0a8a797a5e56c053610fa7be147993fe50960fa43609ff2a9552b0e07013e8\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-macosx_11_0_arm64.whl\", hash = \"sha256:042473b6280246b1dbf530559246f6842b56119c2926d1e52b631bdc46075f2a\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:1a388a77e629b9ec814c1b1e6b3b595fe521d2cdc625fcca26fbc2d44c816804\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:e25add29b8f3b233ae90ccef2d902d0ae0432eb0d45370fe315d1a5cf231004b\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:f459a5ce8434614dfd39bbebf1041952ae01da6bed9855008cb33b875cb024c0\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:eff2de745698eb46eeb51193a9f41d67d834d50e424aef27df2fcdee1b153845\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:a8309f67285bdfe65c372ea3722b7a5642680f3dba538566340a9d36e920b5f0\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:f93a8a2e3938ff656a7c1bc57193b1319960ac015b6e87d76c76bf14fe0244b4\"},\n    {file = \"pydantic_core-2.18.2-cp39-cp39-musllinux_1_1_aarch64.whl\", hash = \"sha256:22057013c8c1e272eb8d0eebc796701167d8377441ec894a8fed1af64a0bf399\"},\n"
+    },
+    {
+      "turn": 29,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_OwA28FAfv2pTSY17GvX60597",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"openai\", \"path\": \"poetry.lock\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 29,
+      "role": "tool",
+      "tool_call_id": "call_00_OwA28FAfv2pTSY17GvX60597",
+      "name": "search",
+      "args": {
+        "pattern": "openai",
+        "path": "poetry.lock"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": "final",
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "submit_answer",
+          "arguments": "{\"files\": [\"gpt_engineer/core/ai.py\", \"gpt_engineer/applications/cli/main.py\"]}"
+        }
+      ]
+    }
+  ]
+}

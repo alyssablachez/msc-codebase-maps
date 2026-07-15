@@ -1,0 +1,102 @@
+{
+  "model": "fireworks_ai/accounts/fireworks/models/gpt-oss-120b",
+  "repo": "keras",
+  "issue_idx": 12,
+  "tier": "medium",
+  "role": "multi",
+  "map_type": "ast_compact",
+  "rep": 1,
+  "worker_id": 3,
+  "issue_title": "Performance Using HDF5 File vs In-Memory Dataset",
+  "base_commit": "3d9428d3445a429b535a247168d93b8a5910219d",
+  "metrics": {
+    "total_input_tokens": 69732,
+    "total_output_tokens": 2491,
+    "total_cached_tokens": 44989,
+    "total_cost": 0.011954,
+    "num_turns": 2,
+    "wall_time_seconds": 33.71,
+    "stop_reason": "end_turn",
+    "hit_turn_cap": false,
+    "submission_type": "end_turn",
+    "trial_token": "910c93f7"
+  },
+  "final_files_predicted": [
+    "keras/utils/io_utils.py",
+    "keras/preprocessing/sequence.py",
+    "keras/engine/training.py",
+    "keras/layers/wrappers.py"
+  ],
+  "final_files_predicted_scorable": [
+    "keras/utils/io_utils.py",
+    "keras/preprocessing/sequence.py",
+    "keras/engine/training.py",
+    "keras/layers/wrappers.py"
+  ],
+  "ground_truth": [
+    "keras/utils/data_utils.py",
+    "keras/utils/__init__.py",
+    "keras/legacy/interfaces.py",
+    "keras/engine/training.py",
+    "keras/models.py"
+  ],
+  "ground_truth_scorable": [
+    "keras/utils/data_utils.py",
+    "keras/utils/__init__.py",
+    "keras/legacy/interfaces.py",
+    "keras/engine/training.py",
+    "keras/models.py"
+  ],
+  "scores": {
+    "precision": 0.25,
+    "recall": 0.2,
+    "f1": 0.2222
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_JbjDousWp0ISeABx819NPxJk",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"class HDF5Matrix\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_JbjDousWp0ISeABx819NPxJk",
+      "name": "search",
+      "args": {
+        "pattern": "class HDF5Matrix",
+        "path": ""
+      },
+      "result": "keras/utils/io_utils.py:15:class HDF5Matrix(object):"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "**Short answer**\n\nYes \u2013 the 10\u202f\u00d7 slowdown you see is typical when you train a Keras\u202f1.x model with a plain `HDF5Matrix`.  \n`HDF5Matrix` reads *one slice at a time* from the HDF5 file, and each slice incurs a separate Python\u2011level I/O call, extra seeking, and a small copy into a new NumPy array. When you ask Keras for a batch of 10\u202f000 samples it ends up performing 10\u202f000 individual reads (or a few large reads that are still split into many small NumPy allocations). The cost of those reads usually dominates the time spent in the forward / backward pass, so the epoch becomes an order of magnitude slower than the in\u2011memory case.\n\nThe usual way to avoid that penalty is **not to use `HDF5Matrix` for training**, but to feed the data through a generator (or, in newer Keras, a `tf.data.Dataset`) that reads *contiguous blocks* of data in a single HDF5 read and optionally pre\u2011fetches the next block while the GPU is working.\n\n---\n\n## Why `HDF5Matrix` is slow\n\n| What `HDF5Matrix` does | Why it hurts performance |\n|-------------------------|--------------------------|\n| Implements `__getitem__(self, index)` by doing `self.dataset[index]` for **every index** you request. | Each call translates into a new `h5py` read, a seek on disk, and a copy into a fresh NumPy array. |\n| Returns a **new array** for every slice (no caching). | Python has to allocate memory for each batch, which adds overhead. |\n| The slicing is often **non\u2011contiguous** (e.g. when shuffling). | Random reads break the benefit of HDF5\u2019s chunk cache and cause many small disk reads. |\n| It is a **pure\u2011Python wrapper** that lives on top of the Keras training loop (Keras\u202f1.x) which does not batch\u2011prefetch. | The training loop cannot overlap I/O and GPU work, so the GPU sits idle while the file is read. |\n\nWith a 20\u202fM\u202f\u00d7\u202f10 float matrix (\u22481.6\u202fGB) stored in a single HDF5 dataset, reading the whole epoch via `HDF5Matrix` typically generates several hundred megabytes of tiny reads per second, which is why you see something like 30\u202fs\u202f\u2192\u202f360\u202fs.\n\n---\n\n## Recommended ways to load large HDF5 data efficiently\n\n### 1. Write a **fit\u2011generator** (or a `keras.utils.Sequence`) yourself\n\n```python\nimport h5py\nimport numpy as np\nfrom keras.utils import Sequence\n\nclass H5BatchGenerator(Sequence):\n    def __init__(self, h5_path, batch_size=10000, shuffle=False):\n        self.f = h5py.File(h5_path, 'r')\n        self.X = self.f['train_X']          # shape (n_samples, n_features)\n        self.y = self.f['train_y']          # shape (n_samples, )\n        self.batch_size = batch_size\n        self.indices = np.arange(self.X.shape[0])\n        self.shuffle = shuffle\n        if self.shuffle:\n            np.random.shuffle(self.indices)\n\n    def __len__(self):\n        return int(np.ceil(len(self.indices) / float(self.batch_size)))\n\n    def __getitem__(self, idx):\n        # slice indices for this batch (contiguous in memory)\n        batch_idx = self.indices[idx * self.batch_size : (idx + 1) * self.batch_size]\n        # **single** h5py read for X and y\n        batch_X = self.X[batch_idx, ...]\n        batch_y = self.y[batch_idx, ...]\n        return batch_X, batch_y\n\n    def on_epoch_end(self):\n        if self.shuffle:\n            np.random.shuffle(self.indices)\n\n# usage\ngen = H5BatchGenerator('mydata.h5', batch_size=10000, shuffle=True)\nmodel.fit_generator(gen,\n                    steps_per_epoch=len(gen),\n                    epochs=10,\n                    workers=4,               # optional multiprocessing\n                    use_multiprocessing=True)\n```\n\n* Why is this faster?\n  * The generator pulls **one contiguous block** of rows per batch (`self.X[batch_idx]`), which translates into a single HDF5 read.\n  * `Sequence` guarantees that `__getitem__` is called **in order** and that Keras can pre\u2011fetch the next batch in a separate worker process, overlapping I/O with GPU computation.\n  * You can control the **chunk size** of the HDF5 dataset when you create it (`chunks=(batch_size, n_features)`) so that each batch aligns with a chunk on disk, letting the HDF5 library use its internal cache efficiently.\n\n### 2. Tune the HDF5 dataset layout\n\nWhen you create the HDF5 file, store the data **chunked** with a chunk size that matches (or is a divisor of) your batch size:\n\n```python\nimport h5py, numpy as np\n\nwith h5py.File('mydata.h5', 'w') as f:\n    # Suppose you have data in a NumPy array `X` (20M, 10) and `y`\n    dset_X = f.create_dataset('train_X',\n                               data=X,\n                               chunks=(10000, 10),   # <-- batch\u2011size aligned chunk\n                               compression='gzip',   # optional, may reduce I/O if CPU can keep up\n                               shuffle=True)\n    dset_y = f.create_dataset('train_y',\n                               data=y,\n                               chunks=(10000,),       # same for labels\n                               compression='gzip')\n```\n\n* Chunk\u2011aligned reads mean each batch is served from **one disk block**; the HDF5 library can keep the last\u2011used chunk(s) in its internal cache, dramatically reducing the number of syscalls.\n\n### 3. Use the newer `tf.data` pipeline (if you can upgrade)\n\nIf you can move to Keras\u202f2.x / TensorFlow\u202f2.x, the recommended way is:\n\n```python\nimport tensorflow as tf\n\ndef parse_h5(example):\n    # example is just the index, we fetch the row from the HDF5 file\n    # (tf.data can also read the whole dataset directly with tf.experimental.io\n    #   but the classic approach is to use a py_function wrapper)\n    ...\n\ndataset = tf.data.Dataset.from_tensor_slices(np.arange(N))\ndataset = dataset.shuffle(buffer_size=10000)\ndataset = dataset.map(lambda i: tf.py_function(parse_h5, [i], [tf.float32, tf.float32]),\n                      num_parallel_calls=tf.data.AUTOTUNE)\ndataset = dataset.batch(10000).prefetch(tf.data.AUTOTUNE)\n\nmodel.fit(dataset, epochs=10)\n```\n\nThe `tf.data` API automatically overlaps the I/O thread pool with the GPU, does automatic pre\u2011fetch, and can read *multiple* rows per I/O call if you design `parse_h5` to fetch a contiguous slice.\n\n### 4. If you really want to stick with `HDF5Matrix`\n\n* **Do not shuffle** \u2013 disabling shuffling makes each batch a simple slice (`data[i:j]`) which HDF5 can satisfy with one read.  \n* **Cache the whole dataset** in RAM if you have enough memory (`HDF5Matrix` has a `cache` argument in newer Keras, but not in 1.2.0).  \n* **Avoid** calling `model.fit(x=HDF5Matrix(...), ...)` directly; wrap it in a generator that reads a *few* batches per call (e.g. 5\u201110 consecutive slices) and returns a concatenated NumPy array, thereby reducing the number of Python\u2011level reads.\n\n---\n\n## Bottom line for your specific situation\n\n* The 30\u202fs\u202f\u2192\u202f360\u202fs slowdown you observed is **expected** with the stock `HDF5Matrix` implementation in Keras\u202f1.2.0.  \n* The remedy is to **replace `HDF5Matrix` with a custom generator (or `Sequence`) that reads whole batches in a single HDF5 call**, and optionally set the HDF5 dataset to be chunked on the same size as your batch.  \n* Doing so will bring the epoch time back to the same order of magnitude as the in\u2011memory case (often within a factor of 1.1\u20131.3, depending on disk speed).  \n* If you can upgrade to a recent Keras/TensorFlow version, the `tf.data` API will give you this behavior automatically and also give you additional features like multi\u2011threaded prefetching and on\u2011the\u2011fly data augmentation.\n\nImplementing a generator is relatively short (see the `H5BatchGenerator` example above) and will give you a **substantial speedup** without having to rewrite the whole training script.",
+      "tool_calls": [],
+      "finish_reason": "stop"
+    },
+    {
+      "turn": "final",
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "submit_answer",
+          "arguments": "{\n\"files\": [\n\"keras/utils/io_utils.py\",\n\"keras/preprocessing/sequence.py\",\n\"keras/engine/training.py\",\n\"keras/layers/wrappers.py\"\n]\n}"
+        }
+      ]
+    }
+  ]
+}

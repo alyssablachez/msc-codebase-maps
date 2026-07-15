@@ -1,0 +1,126 @@
+{
+  "model": "fireworks_ai/accounts/fireworks/models/gpt-oss-120b",
+  "repo": "stable-diffusion-webui",
+  "issue_idx": 0,
+  "tier": "medium",
+  "role": "single",
+  "map_type": "ast_compact",
+  "rep": 3,
+  "worker_id": 3,
+  "issue_title": "[Bug]: KeyError: \"do_not_save\" when trying to save a prompt",
+  "base_commit": "f92d61497a426a19818625c3ccdaae9beeb82b31",
+  "metrics": {
+    "total_input_tokens": 110005,
+    "total_output_tokens": 488,
+    "total_cached_tokens": 72934,
+    "total_cost": 0.016794,
+    "num_turns": 3,
+    "wall_time_seconds": 16.68,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "37906adc"
+  },
+  "final_files_predicted": [
+    "modules/styles.py"
+  ],
+  "final_files_predicted_scorable": [
+    "modules/styles.py"
+  ],
+  "ground_truth": [
+    "modules/styles.py"
+  ],
+  "ground_truth_scorable": [
+    "modules/styles.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_yT70seUuIoZs7i3RVZeaMjy8",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\n\"path\": \"modules/styles.py\",\n\"offset\": 1,\n\"limit\": 300\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_yT70seUuIoZs7i3RVZeaMjy8",
+      "name": "read_file",
+      "args": {
+        "path": "modules/styles.py",
+        "offset": 1,
+        "limit": 300
+      },
+      "result": "[Lines 1\u2013258 of 258]\nimport csv\nimport fnmatch\nimport os\nimport os.path\nimport typing\nimport shutil\n\n\nclass PromptStyle(typing.NamedTuple):\n    name: str\n    prompt: str\n    negative_prompt: str\n    path: str = None\n\n\ndef merge_prompts(style_prompt: str, prompt: str) -> str:\n    if \"{prompt}\" in style_prompt:\n        res = style_prompt.replace(\"{prompt}\", prompt)\n    else:\n        parts = filter(None, (prompt.strip(), style_prompt.strip()))\n        res = \", \".join(parts)\n\n    return res\n\n\ndef apply_styles_to_prompt(prompt, styles):\n    for style in styles:\n        prompt = merge_prompts(style, prompt)\n\n    return prompt\n\n\ndef unwrap_style_text_from_prompt(style_text, prompt):\n    \"\"\"\n    Checks the prompt to see if the style text is wrapped around it. If so,\n    returns True plus the prompt text without the style text. Otherwise, returns\n    False with the original prompt.\n\n    Note that the \"cleaned\" version of the style text is only used for matching\n    purposes here. It isn't returned; the original style text is not modified.\n    \"\"\"\n    stripped_prompt = prompt\n    stripped_style_text = style_text\n    if \"{prompt}\" in stripped_style_text:\n        # Work out whether the prompt is wrapped in the style text. If so, we\n        # return True and the \"inner\" prompt text that isn't part of the style.\n        try:\n            left, right = stripped_style_text.split(\"{prompt}\", 2)\n        except ValueError as e:\n            # If the style text has multple \"{prompt}\"s, we can't split it into\n            # two parts. This is an error, but we can't do anything about it.\n            print(f\"Unable to compare style text to prompt:\\n{style_text}\")\n            print(f\"Error: {e}\")\n            return False, prompt\n        if stripped_prompt.startswith(left) and stripped_prompt.endswith(right):\n            prompt = stripped_prompt[len(left) : len(stripped_prompt) - len(right)]\n            return True, prompt\n    else:\n        # Work out whether the given prompt ends with the style text. If so, we\n        # return True and the prompt text up to where the style text starts.\n        if stripped_prompt.endswith(stripped_style_text):\n            prompt = stripped_prompt[: len(stripped_prompt) - len(stripped_style_text)]\n            if prompt.endswith(\", \"):\n                prompt = prompt[:-2]\n            return True, prompt\n\n    return False, prompt\n\n\ndef extract_original_prompts(style: PromptStyle, prompt, negative_prompt):\n    \"\"\"\n    Takes a style and compares it to the prompt and negative prompt. If the style\n    matches, returns True plus the prompt and negative prompt with the style text\n    removed. Otherwise, returns False with the original prompt and negative prompt.\n    \"\"\"\n    if not style.prompt and not style.negative_prompt:\n        return False, prompt, negative_prompt\n\n    match_positive, extracted_positive = unwrap_style_text_from_prompt(\n        style.prompt, prompt\n    )\n    if not match_positive:\n        return False, prompt, negative_prompt\n\n    match_negative, extracted_negative = unwrap_style_text_from_prompt(\n        style.negative_prompt, negative_prompt\n    )\n    if not match_negative:\n        return False, prompt, negative_prompt\n\n    return True, extracted_positive, extracted_negative\n\n\nclass StyleDatabase:\n    def __init__(self, path: str):\n        self.no_style = PromptStyle(\"None\", \"\", \"\", None)\n        self.styles = {}\n        self.path = path\n\n        folder, file = os.path.split(self.path)\n        self.default_file = file.split(\"*\")[0] + \".csv\"\n        if self.default_file == \".csv\":\n            self.default_file = \"styles.csv\"\n        self.default_path = os.path.join(folder, self.default_file)\n\n        self.prompt_fields = [field for field in PromptStyle._fields if field != \"path\"]\n\n        self.reload()\n\n    def reload(self):\n        \"\"\"\n        Clears the style database and reloads the styles from the CSV file(s)\n        matching the path used to initialize the database.\n        \"\"\"\n        self.styles.clear()\n\n        path, filename = os.path.split(self.path)\n\n        if \"*\" in filename:\n            fileglob = filename.split(\"*\")[0] + \"*.csv\"\n            filelist = []\n            for file in os.listdir(path):\n                if fnmatch.fnmatch(file, fileglob):\n                    filelist.append(file)\n                    # Add a visible divider to the style list\n                    half_len = round(len(file) / 2)\n                    divider = f\"{'-' * (20 - half_len)} {file.upper()}\"\n                    divider = f\"{divider} {'-' * (40 - len(divider))}\"\n                    self.styles[divider] = PromptStyle(\n                        f\"{divider}\", None, None, \"do_not_save\"\n                    )\n                    # Add styles from this CSV file\n                    self.load_from_csv(os.path.join(path, file))\n            if len(filelist) == 0:\n                print(f\"No styles found in {path} matching {fileglob}\")\n                return\n        elif not os.path.exists(self.path):\n            print(f\"Style database not found: {self.path}\")\n            return\n        else:\n            self.load_from_csv(self.path)\n\n    def load_from_csv(self, path: str):\n        with open(path, \"r\", encoding=\"utf-8-sig\", newline=\"\") as file:\n            reader = csv.DictReader(file, skipinitialspace=True)\n            for row in reader:\n                # Ignore empty rows or rows starting with a comment\n                if not row or row[\"name\"].startswith(\"#\"):\n                    continue\n                # Support loading old CSV format with \"name, text\"-columns\n                prompt = row[\"prompt\"] if \"prompt\" in row else row[\"text\"]\n                negative_prompt = row.get(\"negative_prompt\", \"\")\n                # Add style to database\n                self.styles[row[\"name\"]] = PromptStyle(\n                    row[\"name\"], prompt, negative_prompt, path\n                )\n\n    def get_style_paths(self) -> list():\n        \"\"\"\n        Returns a list of all distinct paths, including the default path, of\n        files that styles are loaded from.\"\"\"\n        # Update any styles without a path to the default path\n        for style in list(self.styles.values()):\n            if not style.path:\n                self.styles[style.name] = style._replace(path=self.default_path)\n\n        # Create a list of all distinct paths, including the default path\n        style_paths = set()\n        style_paths.add(self.default_path)\n        for _, style in self.styles.items():\n            if style.path:\n                style_paths.add(style.path)\n\n        # Remove any paths for styles that are just list dividers\n        style_paths.remove(\"do_not_save\")\n\n        return list(style_paths)\n\n    def get_style_prompts(self, styles):\n        return [self.styles.get(x, self.no_style).prompt for x in styles]\n\n    def get_negative_style_prompts(self, styles):\n        return [self.styles.get(x, self.no_style).negative_prompt for x in styles]\n\n    def apply_styles_to_prompt(self, prompt, styles):\n        return apply_styles_to_prompt(\n            prompt, [self.styles.get(x, self.no_style).prompt for x in styles]\n        )\n\n    def apply_negative_styles_to_prompt(self, prompt, styles):\n        return apply_styles_to_prompt(\n            prompt, [self.styles.get(x, self.no_style).negative_prompt for x in styles]\n        )\n\n    def save_styles(self, path: str = None) -> None:\n        # The path argument is deprecated, but kept for backwards compatibility\n        _ = path\n\n        # Update any styles without a path to the default path\n        for style in list(self.styles.values()):\n            if not style.path:\n                self.styles[style.name] = style._replace(path=self.default_path)\n\n        # Create a list of all distinct paths, including the default path\n        style_paths = set()\n        style_paths.add(self.default_path)\n        for _, style in self.styles.items():\n            if style.path:\n                style_paths.add(style.path)\n\n        # Remove any paths for styles that are just list dividers\n        style_paths.remove(\"do_not_save\")\n\n        csv_names = [os.path.split(path)[1].lower() for path in style_paths]\n\n        for style_path in style_paths:\n            # Always keep a backup file around\n            if os.path.exists(style_path):\n                shutil.copy(style_path, f\"{style_path}.bak\")\n\n            # Write the styles to the CSV file\n            with open(style_path, \"w\", encoding=\"utf-8-sig\", newline=\"\") as file:\n                writer = csv.DictWriter(file, fieldnames=self.prompt_fields)\n                writer.writeheader()\n                for style in (s for s in self.styles.values() if s.path == style_path):\n                    # Skip style list dividers, e.g. \"STYLES.CSV\"\n                    if style.name.lower().strip(\"# \") in csv_names:\n                        continue\n                    # Write style fields, ignoring the path field\n                    writer.writerow(\n                        {k: v for k, v in style._asdict().items() if k != \"path\"}\n                    )\n\n    def extract_styles_from_prompt(self, prompt, negative_prompt):\n        extracted = []\n\n        applicable_styles = list(self.styles.values())\n\n        while True:\n            found_style = None\n\n            for style in applicable_styles:\n                is_match, new_prompt, new_neg_prompt = extract_original_prompts(\n                    style, prompt, negative_prompt\n                )\n                if is_match:\n                    found_style = style\n                    prompt = new_prompt\n                    negative_prompt = new_neg_prompt\n                    break\n\n            if not found_style:\n                break\n\n            applicable_styles.remove(found_style)\n            extracted.append(found_style.name)\n\n        return list(reversed(extracted)), prompt, negative_prompt\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_Pey9CXPV4LDdFz2db8fs8inN",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\n\"pattern\": \"remove(\\\"do_not_save\\\")\",\n\"path\": \"\"\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_Pey9CXPV4LDdFz2db8fs8inN",
+      "name": "search",
+      "args": {
+        "pattern": "remove(\"do_not_save\")",
+        "path": ""
+      },
+      "result": "modules/styles.py:175:        style_paths.remove(\"do_not_save\")\nmodules/styles.py:212:        style_paths.remove(\"do_not_save\")"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_VU7bHG03imQAhaCojmmM20ax",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\n\"files\": [\n\"modules/styles.py\"\n]\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_VU7bHG03imQAhaCojmmM20ax",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "modules/styles.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

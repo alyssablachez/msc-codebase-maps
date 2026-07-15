@@ -1,0 +1,97 @@
+{
+  "model": "deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+  "repo": "requests",
+  "issue_idx": 13,
+  "tier": "small",
+  "role": "flexible",
+  "map_type": "ast_compact",
+  "rep": 2,
+  "worker_id": 5,
+  "issue_title": "Problem with missing cookies after redirect",
+  "base_commit": "1642996798416efaca754e4678506502e4c4c1f3",
+  "metrics": {
+    "total_input_tokens": 11757,
+    "total_output_tokens": 7548,
+    "total_cached_tokens": 0,
+    "total_cost": 0.0,
+    "num_turns": 2,
+    "wall_time_seconds": 97.68,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "3e6cbe0f"
+  },
+  "final_files_predicted": [
+    "requests/sessions.py"
+  ],
+  "final_files_predicted_scorable": [
+    "requests/sessions.py"
+  ],
+  "ground_truth": [
+    "requests/sessions.py"
+  ],
+  "ground_truth_scorable": [
+    "requests/sessions.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_e340ed975d07b1c4",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/sessions.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_e340ed975d07b1c4",
+      "name": "read_file",
+      "args": {
+        "path": "requests/sessions.py"
+      },
+      "result": "# -*- coding: utf-8 -*-\n\n\"\"\"\nrequests.session\n~~~~~~~~~~~~~~~~\n\nThis module provides a Session object to manage and persist settings across\nrequests (cookies, auth, proxies).\n\n\"\"\"\nimport os\nfrom datetime import datetime\n\nfrom .compat import cookielib\nfrom .cookies import cookiejar_from_dict\nfrom .models import Request, PreparedRequest\nfrom .hooks import default_hooks, dispatch_hook\nfrom .utils import from_key_val_list, default_headers\nfrom .exceptions import TooManyRedirects, InvalidSchema\n\nfrom .compat import urlparse, urljoin\nfrom .adapters import HTTPAdapter\n\nfrom .utils import requote_uri, get_environ_proxies, get_netrc_auth\n\nfrom .status_codes import codes\nREDIRECT_STATI = (\n    codes.moved, # 301\n    codes.found, # 302\n    codes.other, # 303\n    codes.temporary_moved, # 307\n)\nDEFAULT_REDIRECT_LIMIT = 30\n\n\ndef merge_kwargs(local_kwarg, default_kwarg):\n    \"\"\"Merges kwarg dictionaries.\n\n    If a local key in the dictionary is set to None, it will be removed.\n    \"\"\"\n\n    if default_kwarg is None:\n        return local_kwarg\n\n    if isinstance(local_kwarg, str):\n        return local_kwarg\n\n    if local_kwarg is None:\n        return default_kwarg\n\n    # Bypass if not a dictionary (e.g. timeout)\n    if not hasattr(default_kwarg, 'items'):\n        return local_kwarg\n\n    default_kwarg = from_key_val_list(default_kwarg)\n    local_kwarg = from_key_val_list(local_kwarg)\n\n    # Update new values in a case-insensitive way\n    def get_original_key(original_keys, new_key):\n        \"\"\"\n        Finds the key from original_keys that case-insensitive matches new_key.\n        \"\"\"\n        for original_key in original_keys:\n            if key.lower() == original_key.lower():\n                return original_key\n        return new_key\n\n    kwargs = default_kwarg.copy()\n    original_keys = kwargs.keys()\n    for key, value in local_kwarg.items():\n        kwargs[get_original_key(original_keys, key)] = value\n\n    # Remove keys that are set to None.\n    for (k, v) in local_kwarg.items():\n        if v is None:\n            del kwargs[k]\n\n    return kwargs\n\n\nclass SessionRedirectMixin(object):\n    def resolve_redirects(self, resp, req, stream=False, timeout=None,\n                          verify=True, cert=None, proxies=None):\n        \"\"\"Receives a Response. Returns a generator of Responses.\"\"\"\n\n        i = 0\n        prepared_request = PreparedRequest()\n        prepared_request.body = req.body\n        prepared_request.headers = req.headers.copy()\n        prepared_request.hooks = req.hooks\n        prepared_request.method = req.method\n        prepared_request.url = req.url\n        cookiejar = resp.cookies\n\n        # ((resp.status_code is codes.see_other))\n        while (('location' in resp.headers and resp.status_code in REDIRECT_STATI)):\n\n            resp.content  # Consume socket so it can be released\n\n            if i >= self.max_redirects:\n                raise TooManyRedirects('Exceeded %s redirects.' % self.max_redirects)\n\n            # Release the connection back into the pool.\n            resp.close()\n\n            url = resp.headers['location']\n            method = prepared_request.method\n\n            # Handle redirection without scheme (see: RFC 1808 Section 4)\n            if url.startswith('//'):\n                parsed_rurl = urlparse(resp.url)\n                url = '%s:%s' % (parsed_rurl.scheme, url)\n\n            # Facilitate non-RFC2616-compliant 'location' headers\n            # (e.g. '/path/to/resource' instead of 'http://domain.tld/path/to/resource')\n            if not urlparse(url).netloc:\n                # Compliant with RFC3986, we percent encode the url.\n                url = urljoin(resp.url, requote_uri(url))\n\n            prepared_request.url = url\n\n            # http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.4\n            if (resp.status_code == codes.see_other and\n                    prepared_request.method != 'HEAD'):\n                method = 'GET'\n\n            # Do what the browsers do, despite standards...\n            if (resp.status_code in (codes.moved, codes.found) and\n                    prepared_request.method == 'POST'):\n                method = 'GET'\n\n            prepared_request.method = method\n\n            if resp.status_code is not codes.temporary:\n                if 'Content-Length' in prepared_request.headers:\n                    del prepared_request.headers['Content-Length']\n\n                prepared_request.body = None\n\n            headers = prepared_request.headers\n            try:\n                del headers['Cookie']\n            except KeyError:\n                pass\n\n            prepared_request.prepare_cookies(cookiejar)\n\n            resp = self.send(\n                prepared_request,\n                stream=stream,\n                timeout=timeout,\n                verify=verify,\n                cert=cert,\n                proxies=proxies,\n                allow_redirects=False,\n            )\n\n            cookiejar.update(resp.cookies)\n\n            i += 1\n            yield resp\n\n        resp.cookies.update(cookiejar)\n\n\nclass Session(SessionRedirectMixin):\n    \"\"\"A Requests session.\n\n    Provides cookie persistience, connection-pooling, and configuration.\n\n    Basic Usage::\n\n      >>> import requests\n      >>> s = requests.Session()\n      >>> s.get('http://httpbin.org/get')\n      200\n    \"\"\"\n\n    __attrs__ = [\n        'headers', 'cookies', 'auth', 'timeout', 'proxies', 'hooks',\n        'params', 'verify', 'cert', 'prefetch', 'adapters', 'stream',\n        'trust_env']\n\n    def __init__(self):\n\n        #: A case-insensitive dictionary of headers to be sent on each\n        #: :class:`Request <Request>` sent from this\n        #: :class:`Session <Session>`.\n        self.headers = default_headers()\n\n        #: Default Authentication tuple or object to attach to\n        #: :class:`Request <Request>`.\n        self.auth = None\n\n        #: Dictionary mapping protocol to the URL of the proxy (e.g.\n        #: {'http': 'foo.bar:3128'}) to be used on each\n        #: :class:`Request <Request>`.\n        self.proxies = {}\n\n        #: Event-handling hooks.\n        self.hooks = default_hooks()\n\n        #: Dictionary of querystring data to attach to each\n        #: :class:`Request <Request>`. The dictionary values may be lists for\n        #: representing multivalued query parameters.\n        self.params = {}\n\n        #: Stream response content default.\n        self.stream = False\n\n        #: SSL Verification default.\n        self.verify = True\n\n        #: SSL certificate default.\n        self.cert = None\n\n        #: Maximum number of redirects to follow.\n        self.max_redirects = DEFAULT_REDIRECT_LIMIT\n\n        #: Should we trust the environment?\n        self.trust_env = True\n\n        # Set up a CookieJar to be used by default\n        self.cookies = cookiejar_from_dict({})\n\n        # Default connection adapters.\n        self.adapters = {}\n        self.mount('http://', HTTPAdapter())\n        self.mount('https://', HTTPAdapter())\n\n    def __enter__(self):\n        return self\n\n    def __exit__(self, *args):\n        self.close()\n\n    def request(self, method, url,\n        params=None,\n        data=None,\n        headers=None,\n        cookies=None,\n        files=None,\n        auth=None,\n        timeout=None,\n        allow_redirects=True,\n        proxies=None,\n        hooks=None,\n        stream=None,\n        verify=None,\n        cert=None):\n\n        cookies = cookies or {}\n        proxies = proxies or {}\n\n        # Bootstrap CookieJar.\n        if not isinstance(cookies, cookielib.CookieJar):\n            cookies = cookiejar_from_dict(cookies)\n\n        # Merge with session cookies\n        merged_cookies = self.cookies.copy()\n        merged_cookies.update(cookies)\n        cookies = merged_cookies\n\n        # Gather clues from the surrounding environment.\n        if self.trust_env:\n            # Set environment's proxies.\n            env_proxies = get_environ_proxies(url) or {}\n            for (k, v) in env_proxies.items():\n                proxies.setdefault(k, v)\n\n            # Set environment's basic authentication.\n            if not auth:\n                auth = get_netrc_auth(url)\n\n            # Look for configuration.\n            if not verify and verify is not False:\n                verify = os.environ.get('REQUESTS_CA_BUNDLE')\n\n            # Curl compatibility.\n            if not verify and verify is not False:\n                verify = os.environ.get('CURL_CA_BUNDLE')\n\n        # Merge all the kwargs.\n        params = merge_kwargs(params, self.params)\n        headers = merge_kwargs(headers, self.headers)\n        auth = merge_kwargs(auth, self.auth)\n        proxies = merge_kwargs(proxies, self.proxies)\n        hooks = merge_kwargs(hooks, self.hooks)\n        stream = merge_kwargs(stream, self.stream)\n        verify = merge_kwargs(verify, self.verify)\n        cert = merge_kwargs(cert, self.cert)\n\n        # Create the Request.\n        req = Request()\n        req.method = method.upper()\n        req.url = url\n        req.headers = headers\n        req.files = files\n        req.data = data\n        req.params = params\n        req.auth = auth\n        req.cookies = cookies\n        req.hooks = hooks\n\n        # Prepare the Request.\n        prep = req.prepare()\n\n        # Send the request.\n        send_kwargs = {\n            'stream': stream,\n            'timeout': timeout,\n            'verify': verify,\n            'cert': cert,\n            'proxies': proxies,\n            'allow_redirects': allow_redirects,\n            'req': req,\n        }\n        resp = self.send(prep, **send_kwargs)\n\n        # Persist cookies.\n        self.cookies.update(resp.cookies)\n\n        return resp\n\n    def get(self, url, **kwargs):\n        \"\"\"Sends a GET request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        kwargs.setdefault('allow_redirects', True)\n        return self.request('GET', url, **kwargs)\n\n    def options(self, url, **kwargs):\n        \"\"\"Sends a OPTIONS request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        kwargs.setdefault('allow_redirects', True)\n        return self.request('OPTIONS', url, **kwargs)\n\n    def head(self, url, **kwargs):\n        \"\"\"Sends a HEAD request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        kwargs.setdefault('allow_redirects', False)\n        return self.request('HEAD', url, **kwargs)\n\n    def post(self, url, data=None, **kwargs):\n        \"\"\"Sends a POST request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param data: (optional) Dictionary, bytes, or file-like object to send in the body of the :class:`Request`.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('POST', url, data=data, **kwargs)\n\n    def put(self, url, data=None, **kwargs):\n        \"\"\"Sends a PUT request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param data: (optional) Dictionary, bytes, or file-like object to send in the body of the :class:`Request`.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('PUT', url, data=data, **kwargs)\n\n    def patch(self, url, data=None, **kwargs):\n        \"\"\"Sends a PATCH request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param data: (optional) Dictionary, bytes, or file-like object to send in the body of the :class:`Request`.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('PATCH', url,  data=data, **kwargs)\n\n    def delete(self, url, **kwargs):\n        \"\"\"Sends a DELETE request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('DELETE', url, **kwargs)\n\n    def send(self, request, **kwargs):\n        \"\"\"Send a given PreparedRequest.\"\"\"\n        # It's possible that users might accidentally send a Request object.\n        # Guard against that specific failure case.\n        if getattr(request, 'prepare', None):\n            raise ValueError('You can only send PreparedRequests.')\n\n        # Set up variables needed for resolve_redirects and dispatching of\n        # hooks\n        allow_redirects = kwargs.pop('allow_redirects', True)\n        req = kwargs.pop('req', None)\n        stream = kwargs.get('stream', False)\n        timeout = kwargs.get('timeout')\n        verify = kwargs.get('verify')\n        cert = kwargs.get('cert')\n        proxies = kwargs.get('proxies')\n        hooks = request.hooks\n\n        # Get the appropriate adapter to use\n        adapter = self.get_adapter(url=request.url)\n\n        # Start time (approximately) of the request\n        start = datetime.utcnow()\n        # Send the request\n        r = adapter.send(request, **kwargs)\n        # Total elapsed time of the request (approximately)\n        r.elapsed = datetime.utcnow() - start\n\n        # Response manipulation hooks\n        r = dispatch_hook('response', hooks, r, **kwargs)\n\n        # Redirect resolving generator.\n        gen = self.resolve_redirects(r, request, stream=stream,\n                                     timeout=timeout, verify=verify, cert=cert,\n                                     proxies=proxies)\n\n        # Resolve redirects if allowed.\n        history = [resp for resp in gen] if allow_redirects else []\n\n        # Shuffle things around if there's history.\n        if history:\n            # Insert the first (original) request at the start\n            history.insert(0, r)\n            # Get the last request made\n            r = history.pop()\n            r.history = tuple(history)\n\n        return r\n\n    def get_adapter(self, url):\n        \"\"\"Returns the appropriate connnection adapter for the given URL.\"\"\"\n        for (prefix, adapter) in self.adapters.items():\n\n            if url.startswith(prefix):\n                return adapter\n\n        # Nothing matches :-/\n        raise InvalidSchema(\"No connection adapters were found for '%s'\" % url)\n\n    def close(self):\n        \"\"\"Closes all adapters and as such the session\"\"\"\n        for _, v in self.adapters.items():\n            v.close()\n\n    def mount(self, prefix, adapter):\n        \"\"\"Registers a connection adapter to a prefix.\"\"\"\n        self.adapters[prefix] = adapter\n\n    def __getstate__(self):\n        return dict((attr, getattr(self, attr, None)) for attr in self.__attrs__)\n\n    def __setstate__(self, state):\n        for attr, value in state.items():\n            setattr(self, attr, value)\n\n\ndef session():\n    \"\"\"Returns a :class:`Session` for context-management.\"\"\"\n\n    return Session()\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_04aca62a6e6d774e",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"requests/sessions.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_04aca62a6e6d774e",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "requests/sessions.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

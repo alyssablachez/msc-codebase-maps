@@ -1,0 +1,960 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "fastapi",
+  "issue_idx": 17,
+  "tier": "small",
+  "role": "single",
+  "map_type": "freq",
+  "rep": 3,
+  "worker_id": 1,
+  "issue_title": "Error while opening swagger docs while uploading file in APIRouter",
+  "base_commit": "c6aa28bea2f751a91078bd8d845133ff83f352bf",
+  "metrics": {
+    "total_input_tokens": 557007,
+    "total_output_tokens": 21134,
+    "total_cached_tokens": 513280,
+    "total_cost": 0.013476,
+    "num_turns": 30,
+    "wall_time_seconds": 234.62,
+    "stop_reason": "max_turns",
+    "hit_turn_cap": true,
+    "submission_type": "max_turns",
+    "trial_token": "8eb349a0"
+  },
+  "final_files_predicted": [
+    "fastapi/utils.py",
+    "fastapi/openapi/utils.py",
+    "fastapi/dependencies/utils.py"
+  ],
+  "final_files_predicted_scorable": [
+    "fastapi/utils.py",
+    "fastapi/openapi/utils.py",
+    "fastapi/dependencies/utils.py"
+  ],
+  "ground_truth": [
+    "fastapi/routing.py"
+  ],
+  "ground_truth_scorable": [
+    "fastapi/routing.py"
+  ],
+  "scores": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_1zBXUFYq22mvyAkylt4X5550",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/utils.py\"}"
+          }
+        },
+        {
+          "id": "call_01_UnaSBKBF1dvcYej7MogX0448",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/openapi/utils.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_1zBXUFYq22mvyAkylt4X5550",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/utils.py"
+      },
+      "result": "import functools\nimport re\nimport warnings\nfrom dataclasses import is_dataclass\nfrom enum import Enum\nfrom typing import TYPE_CHECKING, Any, Dict, Optional, Set, Type, Union, cast\n\nimport fastapi\nfrom fastapi.datastructures import DefaultPlaceholder, DefaultType\nfrom fastapi.openapi.constants import REF_PREFIX\nfrom pydantic import BaseConfig, BaseModel, create_model\nfrom pydantic.class_validators import Validator\nfrom pydantic.fields import FieldInfo, ModelField, UndefinedType\nfrom pydantic.schema import model_process_schema\nfrom pydantic.utils import lenient_issubclass\n\nif TYPE_CHECKING:  # pragma: nocover\n    from .routing import APIRoute\n\n\ndef is_body_allowed_for_status_code(status_code: Union[int, str, None]) -> bool:\n    if status_code is None:\n        return True\n    current_status_code = int(status_code)\n    return not (current_status_code < 200 or current_status_code in {204, 304})\n\n\ndef get_model_definitions(\n    *,\n    flat_models: Set[Union[Type[BaseModel], Type[Enum]]],\n    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\n) -> Dict[str, Any]:\n    definitions: Dict[str, Dict[str, Any]] = {}\n    for model in flat_models:\n        m_schema, m_definitions, m_nested_models = model_process_schema(\n            model, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n        )\n        definitions.update(m_definitions)\n        model_name = model_name_map[model]\n        if \"description\" in m_schema:\n            m_schema[\"description\"] = m_schema[\"description\"].split(\"\\f\")[0]\n        definitions[model_name] = m_schema\n    return definitions\n\n\ndef get_path_param_names(path: str) -> Set[str]:\n    return set(re.findall(\"{(.*?)}\", path))\n\n\ndef create_response_field(\n    name: str,\n    type_: Type[Any],\n    class_validators: Optional[Dict[str, Validator]] = None,\n    default: Optional[Any] = None,\n    required: Union[bool, UndefinedType] = True,\n    model_config: Type[BaseConfig] = BaseConfig,\n    field_info: Optional[FieldInfo] = None,\n    alias: Optional[str] = None,\n) -> ModelField:\n    \"\"\"\n    Create a new response field. Raises if type_ is invalid.\n    \"\"\"\n    class_validators = class_validators or {}\n    field_info = field_info or FieldInfo()\n\n    response_field = functools.partial(\n        ModelField,\n        name=name,\n        type_=type_,\n        class_validators=class_validators,\n        default=default,\n        required=required,\n        model_config=model_config,\n        alias=alias,\n    )\n\n    try:\n        return response_field(field_info=field_info)\n    except RuntimeError:\n        raise fastapi.exceptions.FastAPIError(\n            f\"Invalid args for response field! Hint: check that {type_} is a valid pydantic field type\"\n        )\n\n\ndef create_cloned_field(\n    field: ModelField,\n    *,\n    cloned_types: Optional[Dict[Type[BaseModel], Type[BaseModel]]] = None,\n) -> ModelField:\n    # _cloned_types has already cloned types, to support recursive models\n    if cloned_types is None:\n        cloned_types = {}\n    original_type = field.type_\n    if is_dataclass(original_type) and hasattr(original_type, \"__pydantic_model__\"):\n        original_type = original_type.__pydantic_model__\n    use_type = original_type\n    if lenient_issubclass(original_type, BaseModel):\n        original_type = cast(Type[BaseModel], original_type)\n        use_type = cloned_types.get(original_type)\n        if use_type is None:\n            use_type = create_model(original_type.__name__, __base__=original_type)\n            cloned_types[original_type] = use_type\n            for f in original_type.__fields__.values():\n                use_type.__fields__[f.name] = create_cloned_field(\n                    f, cloned_types=cloned_types\n                )\n    new_field = create_response_field(name=field.name, type_=use_type)\n    new_field.has_alias = field.has_alias\n    new_field.alias = field.alias\n    new_field.class_validators = field.class_validators\n    new_field.default = field.default\n    new_field.required = field.required\n    new_field.model_config = field.model_config\n    new_field.field_info = field.field_info\n    new_field.allow_none = field.allow_none\n    new_field.validate_always = field.validate_always\n    if field.sub_fields:\n        new_field.sub_fields = [\n            create_cloned_field(sub_field, cloned_types=cloned_types)\n            for sub_field in field.sub_fields\n        ]\n    if field.key_field:\n        new_field.key_field = create_cloned_field(\n            field.key_field, cloned_types=cloned_types\n        )\n    new_field.validators = field.validators\n    new_field.pre_validators = field.pre_validators\n    new_field.post_validators = field.post_validators\n    new_field.parse_json = field.parse_json\n    new_field.shape = field.shape\n    new_field.populate_validators()\n    return new_field\n\n\ndef generate_operation_id_for_path(\n    *, name: str, path: str, method: str\n) -> str:  # pragma: nocover\n    warnings.warn(\n        \"fastapi.utils.generate_operation_id_for_path() was deprecated, \"\n        \"it is not used internally, and will be removed soon\",\n        DeprecationWarning,\n        stacklevel=2,\n    )\n    operation_id = name + path\n    operation_id = re.sub(r\"\\W\", \"_\", operation_id)\n    operation_id = operation_id + \"_\" + method.lower()\n    return operation_id\n\n\ndef generate_unique_id(route: \"APIRoute\") -> str:\n    operation_id = route.name + route.path_format\n    operation_id = re.sub(r\"\\W\", \"_\", operation_id)\n    assert route.methods\n    operation_id = operation_id + \"_\" + list(route.methods)[0].lower()\n    return operation_id\n\n\ndef deep_dict_update(main_dict: Dict[Any, Any], update_dict: Dict[Any, Any]) -> None:\n    for key, value in update_dict.items():\n        if (\n            key in main_dict\n            and isinstance(main_dict[key], dict)\n            and isinstance(value, dict)\n        ):\n            deep_dict_update(main_dict[key], value)\n        elif (\n            key in main_dict\n            and isinstance(main_dict[key], list)\n            and isinstance(update_dict[key], list)\n        ):\n            main_dict[key] = main_dict[key] + update_dict[key]\n        else:\n            main_dict[key] = value\n\n\ndef get_value_or_default(\n    first_item: Union[DefaultPlaceholder, DefaultType],\n    *extra_items: Union[DefaultPlaceholder, DefaultType],\n) -> Union[DefaultPlaceholder, DefaultType]:\n    \"\"\"\n    Pass items or `DefaultPlaceholder`s by descending priority.\n\n    The first one to _not_ be a `DefaultPlaceholder` will be returned.\n\n    Otherwise, the first item (a `DefaultPlaceholder`) will be returned.\n    \"\"\"\n    items = (first_item,) + extra_items\n    for item in items:\n        if not isinstance(item, DefaultPlaceholder):\n            return item\n    return first_item\n"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_01_UnaSBKBF1dvcYej7MogX0448",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/openapi/utils.py"
+      },
+      "result": "import http.client\nimport inspect\nimport warnings\nfrom enum import Enum\nfrom typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Type, Union, cast\n\nfrom fastapi import routing\nfrom fastapi.datastructures import DefaultPlaceholder\nfrom fastapi.dependencies.models import Dependant\nfrom fastapi.dependencies.utils import get_flat_dependant, get_flat_params\nfrom fastapi.encoders import jsonable_encoder\nfrom fastapi.openapi.constants import METHODS_WITH_BODY, REF_PREFIX\nfrom fastapi.openapi.models import OpenAPI\nfrom fastapi.params import Body, Param\nfrom fastapi.responses import Response\nfrom fastapi.utils import (\n    deep_dict_update,\n    generate_operation_id_for_path,\n    get_model_definitions,\n    is_body_allowed_for_status_code,\n)\nfrom pydantic import BaseModel\nfrom pydantic.fields import ModelField, Undefined\nfrom pydantic.schema import (\n    field_schema,\n    get_flat_models_from_fields,\n    get_model_name_map,\n)\nfrom pydantic.utils import lenient_issubclass\nfrom starlette.responses import JSONResponse\nfrom starlette.routing import BaseRoute\nfrom starlette.status import HTTP_422_UNPROCESSABLE_ENTITY\n\nvalidation_error_definition = {\n    \"title\": \"ValidationError\",\n    \"type\": \"object\",\n    \"properties\": {\n        \"loc\": {\n            \"title\": \"Location\",\n            \"type\": \"array\",\n            \"items\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"integer\"}]},\n        },\n        \"msg\": {\"title\": \"Message\", \"type\": \"string\"},\n        \"type\": {\"title\": \"Error Type\", \"type\": \"string\"},\n    },\n    \"required\": [\"loc\", \"msg\", \"type\"],\n}\n\nvalidation_error_response_definition = {\n    \"title\": \"HTTPValidationError\",\n    \"type\": \"object\",\n    \"properties\": {\n        \"detail\": {\n            \"title\": \"Detail\",\n            \"type\": \"array\",\n            \"items\": {\"$ref\": REF_PREFIX + \"ValidationError\"},\n        }\n    },\n}\n\nstatus_code_ranges: Dict[str, str] = {\n    \"1XX\": \"Information\",\n    \"2XX\": \"Success\",\n    \"3XX\": \"Redirection\",\n    \"4XX\": \"Client Error\",\n    \"5XX\": \"Server Error\",\n    \"DEFAULT\": \"Default Response\",\n}\n\n\ndef get_openapi_security_definitions(\n    flat_dependant: Dependant,\n) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:\n    security_definitions = {}\n    operation_security = []\n    for security_requirement in flat_dependant.security_requirements:\n        security_definition = jsonable_encoder(\n            security_requirement.security_scheme.model,\n            by_alias=True,\n            exclude_none=True,\n        )\n        security_name = security_requirement.security_scheme.scheme_name\n        security_definitions[security_name] = security_definition\n        operation_security.append({security_name: security_requirement.scopes})\n    return security_definitions, operation_security\n\n\ndef get_openapi_operation_parameters(\n    *,\n    all_route_params: Sequence[ModelField],\n    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\n) -> List[Dict[str, Any]]:\n    parameters = []\n    for param in all_route_params:\n        field_info = param.field_info\n        field_info = cast(Param, field_info)\n        if not field_info.include_in_schema:\n            continue\n        parameter = {\n            \"name\": param.alias,\n            \"in\": field_info.in_.value,\n            \"required\": param.required,\n            \"schema\": field_schema(\n                param, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n            )[0],\n        }\n        if field_info.description:\n            parameter[\"description\"] = field_info.description\n        if field_info.examples:\n            parameter[\"examples\"] = jsonable_encoder(field_info.examples)\n        elif field_info.example != Undefined:\n            parameter[\"example\"] = jsonable_encoder(field_info.example)\n        if field_info.deprecated:\n            parameter[\"deprecated\"] = field_info.deprecated\n        parameters.append(parameter)\n    return parameters\n\n\ndef get_openapi_operation_request_body(\n    *,\n    body_field: Optional[ModelField],\n    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\n) -> Optional[Dict[str, Any]]:\n    if not body_field:\n        return None\n    assert isinstance(body_field, ModelField)\n    body_schema, _, _ = field_schema(\n        body_field, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n    )\n    field_info = cast(Body, body_field.field_info)\n    request_media_type = field_info.media_type\n    required = body_field.required\n    request_body_oai: Dict[str, Any] = {}\n    if required:\n        request_body_oai[\"required\"] = required\n    request_media_content: Dict[str, Any] = {\"schema\": body_schema}\n    if field_info.examples:\n        request_media_content[\"examples\"] = jsonable_encoder(field_info.examples)\n    elif field_info.example != Undefined:\n        request_media_content[\"example\"] = jsonable_encoder(field_info.example)\n    request_body_oai[\"content\"] = {request_media_type: request_media_content}\n    return request_body_oai\n\n\ndef generate_operation_id(\n    *, route: routing.APIRoute, method: str\n) -> str:  # pragma: nocover\n    warnings.warn(\n        \"fastapi.openapi.utils.generate_operation_id() was deprecated, \"\n        \"it is not used internally, and will be removed soon\",\n        DeprecationWarning,\n        stacklevel=2,\n    )\n    if route.operation_id:\n        return route.operation_id\n    path: str = route.path_format\n    return generate_operation_id_for_path(name=route.name, path=path, method=method)\n\n\ndef generate_operation_summary(*, route: routing.APIRoute, method: str) -> str:\n    if route.summary:\n        return route.summary\n    return route.name.replace(\"_\", \" \").title()\n\n\ndef get_openapi_operation_metadata(\n    *, route: routing.APIRoute, method: str, operation_ids: Set[str]\n) -> Dict[str, Any]:\n    operation: Dict[str, Any] = {}\n    if route.tags:\n        operation[\"tags\"] = route.tags\n    operation[\"summary\"] = generate_operation_summary(route=route, method=method)\n    if route.description:\n        operation[\"description\"] = route.description\n    operation_id = route.operation_id or route.unique_id\n    if operation_id in operation_ids:\n        message = (\n            f\"Duplicate Operation ID {operation_id} for function \"\n            + f\"{route.endpoint.__name__}\"\n        )\n        file_name = getattr(route.endpoint, \"__globals__\", {}).get(\"__file__\")\n        if file_name:\n            message += f\" at {file_name}\"\n        warnings.warn(message)\n    operation_ids.add(operation_id)\n    operation[\"operationId\"] = operation_id\n    if route.deprecated:\n        operation[\"deprecated\"] = route.deprecated\n    return operation\n\n\ndef get_openapi_path(\n    *, route: routing.APIRoute, model_name_map: Dict[type, str], operation_ids: Set[str]\n) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:\n    path = {}\n    security_schemes: Dict[str, Any] = {}\n    definitions: Dict[str, Any] = {}\n    assert route.methods is not None, \"Methods must be a list\"\n    if isinstance(route.response_class, DefaultPlaceholder):\n        current_response_class: Type[Response] = route.response_class.value\n    else:\n        current_response_class = route.response_class\n    assert current_response_class, \"A response class is needed to generate OpenAPI\"\n    route_response_media_type: Optional[str] = current_response_class.media_type\n    if route.include_in_schema:\n        for method in route.methods:\n            operation = get_openapi_operation_metadata(\n                route=route, method=method, operation_ids=operation_ids\n            )\n            parameters: List[Dict[str, Any]] = []\n            flat_dependant = get_flat_dependant(route.dependant, skip_repeats=True)\n            security_definitions, operation_security = get_openapi_security_definitions(\n                flat_dependant=flat_dependant\n            )\n            if operation_security:\n                operation.setdefault(\"security\", []).extend(operation_security)\n            if security_definitions:\n                security_schemes.update(security_definitions)\n            all_route_params = get_flat_params(route.dependant)\n            operation_parameters = get_openapi_operation_parameters(\n                all_route_params=all_route_params, model_name_map=model_name_map\n            )\n            parameters.extend(operation_parameters)\n            if parameters:\n                all_parameters = {\n                    (param[\"in\"], param[\"name\"]): param for param in parameters\n                }\n                required_parameters = {\n                    (param[\"in\"], param[\"name\"]): param\n                    for param in parameters\n                    if param.get(\"required\")\n                }\n                # Make sure required definitions of the same parameter take precedence\n                # over non-required definitions\n                all_parameters.update(required_parameters)\n                operation[\"parameters\"] = list(all_parameters.values())\n            if method in METHODS_WITH_BODY:\n                request_body_oai = get_openapi_operation_request_body(\n                    body_field=route.body_field, model_name_map=model_name_map\n                )\n                if request_body_oai:\n                    operation[\"requestBody\"] = request_body_oai\n            if route.callbacks:\n                callbacks = {}\n                for callback in route.callbacks:\n                    if isinstance(callback, routing.APIRoute):\n                        (\n                            cb_path,\n                            cb_security_schemes,\n                            cb_definitions,\n                        ) = get_openapi_path(\n                            route=callback,\n                            model_name_map=model_name_map,\n                            operation_ids=operation_ids,\n                        )\n                        callbacks[callback.name] = {callback.path: cb_path}\n                operation[\"callbacks\"] = callbacks\n            if route.status_code is not None:\n                status_code = str(route.status_code)\n            else:\n                # It would probably make more sense for all response classes to have an\n                # explicit default status_code, and to extract it from them, instead of\n                # doing this inspection tricks, that would probably be in the future\n                # TODO: probably make status_code a default class attribute for all\n                # responses in Starlette\n                response_signature = inspect.signature(current_response_class.__init__)\n                status_code_param = response_signature.parameters.get(\"status_code\")\n                if status_code_param is not None:\n                    if isinstance(status_code_param.default, int):\n                        status_code = str(status_code_param.default)\n            operation.setdefault(\"responses\", {}).setdefault(status_code, {})[\n                \"description\"\n            ] = route.response_description\n            if route_response_media_type and is_body_allowed_for_status_code(\n                route.status_code\n            ):\n                response_schema = {\"type\": \"string\"}\n                if lenient_issubclass(current_response_class, JSONResponse):\n                    if route.response_field:\n                        response_schema, _, _ = field_schema(\n                            route.response_field,\n                            model_name_map=model_name_map,\n                            ref_prefix=REF_PREFIX,\n                        )\n                    else:\n                        response_schema = {}\n                operation.setdefault(\"responses\", {}).setdefault(\n                    status_code, {}\n                ).setdefault(\"content\", {}).setdefault(route_response_media_type, {})[\n                    \"schema\"\n                ] = response_schema\n            if route.responses:\n                operation_responses = operation.setdefault(\"responses\", {})\n                for (\n                    additional_status_code,\n                    additional_response,\n                ) in route.responses.items():\n                    process_response = additional_response.copy()\n                    process_response.pop(\"model\", None)\n                    status_code_key = str(additional_status_code).upper()\n                    if status_code_key == \"DEFAULT\":\n                        status_code_key = \"default\"\n                    openapi_response = operation_responses.setdefault(\n                        status_code_key, {}\n                    )\n                    assert isinstance(\n                        process_response, dict\n                    ), \"An additional response must be a dict\"\n                    field = route.response_fields.get(additional_status_code)\n                    additional_field_schema: Optional[Dict[str, Any]] = None\n                    if field:\n                        additional_field_schema, _, _ = field_schema(\n                            field, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n                        )\n                        media_type = route_response_media_type or \"application/json\"\n                        additional_schema = (\n                            process_response.setdefault(\"content\", {})\n                            .setdefault(media_type, {})\n                            .setdefault(\"schema\", {})\n                        )\n                        deep_dict_update(additional_schema, additional_field_schema)\n                    status_text: Optional[str] = status_code_ranges.get(\n                        str(additional_status_code).upper()\n                    ) or http.client.responses.get(int(additional_status_code))\n                    description = (\n                        process_response.get(\"description\")\n                        or openapi_response.get(\"description\")\n                        or status_text\n                        or \"Additional Response\"\n                    )\n                    deep_dict_update(openapi_response, process_response)\n                    openapi_response[\"description\"] = description\n            http422 = str(HTTP_422_UNPROCESSABLE_ENTITY)\n            if (all_route_params or route.body_field) and not any(\n                [\n                    status in operation[\"responses\"]\n                    for status in [http422, \"4XX\", \"default\"]\n                ]\n            ):\n                operation[\"responses\"][http422] = {\n                    \"description\": \"Validation Error\",\n                    \"content\": {\n                        \"application/json\": {\n                            \"schema\": {\"$ref\": REF_PREFIX + \"HTTPValidationError\"}\n                        }\n                    },\n                }\n                if \"ValidationError\" not in definitions:\n                    definitions.update(\n                        {\n                            \"ValidationError\": validation_error_definition,\n                            \"HTTPValidationError\": validation_error_response_definition,\n                        }\n                    )\n            if route.openapi_extra:\n                deep_dict_update(operation, route.openapi_extra)\n            path[method.lower()] = operation\n    return path, security_schemes, definitions\n\n\ndef get_flat_models_from_routes(\n    routes: Sequence[BaseRoute],\n) -> Set[Union[Type[BaseModel], Type[Enum]]]:\n    body_fields_from_routes: List[ModelField] = []\n    responses_from_routes: List[ModelField] = []\n    request_fields_from_routes: List[ModelField] = []\n    callback_flat_models: Set[Union[Type[BaseModel], Type[Enum]]] = set()\n    for route in routes:\n        if getattr(route, \"include_in_schema\", None) and isinstance(\n            route, routing.APIRoute\n        ):\n            if route.body_field:\n                assert isinstance(\n                    route.body_field, ModelField\n                ), \"A request body must be a Pydantic Field\"\n                body_fields_from_routes.append(route.body_field)\n            if route.response_field:\n                responses_from_routes.append(route.response_field)\n            if route.response_fields:\n                responses_from_routes.extend(route.response_fields.values())\n            if route.callbacks:\n                callback_flat_models |= get_flat_models_from_routes(route.callbacks)\n            params = get_flat_params(route.dependant)\n            request_fields_from_routes.extend(params)\n\n    flat_models = callback_flat_models | get_flat_models_from_fields(\n        body_fields_from_routes + responses_from_routes + request_fields_from_routes,\n        known_models=set(),\n    )\n    return flat_models\n\n\ndef get_openapi(\n    *,\n    title: str,\n    version: str,\n    openapi_version: str = \"3.0.2\",\n    description: Optional[str] = None,\n    routes: Sequence[BaseRoute],\n    tags: Optional[List[Dict[str, Any]]] = None,\n    servers: Optional[List[Dict[str, Union[str, Any]]]] = None,\n    terms_of_service: Optional[str] = None,\n    contact: Optional[Dict[str, Union[str, Any]]] = None,\n    license_info: Optional[Dict[str, Union[str, Any]]] = None,\n) -> Dict[str, Any]:\n    info: Dict[str, Any] = {\"title\": title, \"version\": version}\n    if description:\n        info[\"description\"] = description\n    if terms_of_service:\n        info[\"termsOfService\"] = terms_of_service\n    if contact:\n        info[\"contact\"] = contact\n    if license_info:\n        info[\"license\"] = license_info\n    output: Dict[str, Any] = {\"openapi\": openapi_version, \"info\": info}\n    if servers:\n        output[\"servers\"] = servers\n    components: Dict[str, Dict[str, Any]] = {}\n    paths: Dict[str, Dict[str, Any]] = {}\n    operation_ids: Set[str] = set()\n    flat_models = get_flat_models_from_routes(routes)\n    model_name_map = get_model_name_map(flat_models)\n    definitions = get_model_definitions(\n        flat_models=flat_models, model_name_map=model_name_map\n    )\n    for route in routes:\n        if isinstance(route, routing.APIRoute):\n            result = get_openapi_path(\n                route=route, model_name_map=model_name_map, operation_ids=operation_ids\n            )\n            if result:\n                path, security_schemes, path_definitions = result\n                if path:\n                    paths.setdefault(route.path_format, {}).update(path)\n                if security_schemes:\n                    components.setdefault(\"securitySchemes\", {}).update(\n                        security_schemes\n                    )\n                if path_definitions:\n                    definitions.update(path_definitions)\n    if definitions:\n        components[\"schemas\"] = {k: definitions[k] for k in sorted(definitions)}\n    if components:\n        output[\"components\"] = components\n    output[\"paths\"] = paths\n    if tags:\n        output[\"tags\"] = tags\n    return jsonable_encoder(OpenAPI(**output), by_alias=True, exclude_none=True)  # type: ignore\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_JEUz9KXQQ7o5acbEsWeO9376",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"Body_predict\", \"path\": \"fastapi\"}"
+          }
+        },
+        {
+          "id": "call_01_0KmLeGgIacm9eN7uVTvY1348",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/routing.py\", \"offset\": 1, \"limit\": 50}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_JEUz9KXQQ7o5acbEsWeO9376",
+      "name": "search",
+      "args": {
+        "pattern": "Body_predict",
+        "path": "fastapi"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_01_0KmLeGgIacm9eN7uVTvY1348",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/routing.py",
+        "offset": 1,
+        "limit": 50
+      },
+      "result": "[Lines 1\u201350 of 1237]\nimport asyncio\nimport dataclasses\nimport email.message\nimport inspect\nimport json\nfrom enum import Enum, IntEnum\nfrom typing import (\n    Any,\n    Callable,\n    Coroutine,\n    Dict,\n    List,\n    Optional,\n    Sequence,\n    Set,\n    Tuple,\n    Type,\n    Union,\n)\n\nfrom fastapi import params\nfrom fastapi.datastructures import Default, DefaultPlaceholder\nfrom fastapi.dependencies.models import Dependant\nfrom fastapi.dependencies.utils import (\n    get_body_field,\n    get_dependant,\n    get_parameterless_sub_dependant,\n    solve_dependencies,\n)\nfrom fastapi.encoders import DictIntStrAny, SetIntStr, jsonable_encoder\nfrom fastapi.exceptions import RequestValidationError, WebSocketRequestValidationError\nfrom fastapi.types import DecoratedCallable\nfrom fastapi.utils import (\n    create_cloned_field,\n    create_response_field,\n    generate_unique_id,\n    get_value_or_default,\n    is_body_allowed_for_status_code,\n)\nfrom pydantic import BaseModel\nfrom pydantic.error_wrappers import ErrorWrapper, ValidationError\nfrom pydantic.fields import ModelField, Undefined\nfrom starlette import routing\nfrom starlette.concurrency import run_in_threadpool\nfrom starlette.exceptions import HTTPException\nfrom starlette.requests import Request\nfrom starlette.responses import JSONResponse, Response\nfrom starlette.routing import BaseRoute, Match\nfrom starlette.routing import Mount as Mount  # noqa\nfrom starlette.routing import (\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_4yia3YpwS5xEDqzy5m7M3891",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"body_field\", \"path\": \"fastapi/routing.py\"}"
+          }
+        },
+        {
+          "id": "call_01_tpwWx904DWOgwylA9dlv8307",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_body_field\", \"path\": \"fastapi/dependencies/utils.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_4yia3YpwS5xEDqzy5m7M3891",
+      "name": "search",
+      "args": {
+        "pattern": "body_field",
+        "path": "fastapi/routing.py"
+      },
+      "result": "25:    get_body_field,\n167:    body_field: Optional[ModelField] = None,\n181:    is_body_form = body_field and isinstance(body_field.field_info, params.Form)\n190:            if body_field:\n440:        self.body_field = get_body_field(dependant=self.dependant, name=self.unique_id)\n446:            body_field=self.body_field,"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_01_tpwWx904DWOgwylA9dlv8307",
+      "name": "search",
+      "args": {
+        "pattern": "get_body_field",
+        "path": "fastapi/dependencies/utils.py"
+      },
+      "result": "712:def get_body_field(*, dependant: Dependant, name: str) -> Optional[ModelField]:"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Tn02irRsaT8EmFn2iVrk8156",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/dependencies/utils.py\", \"offset\": 712, \"limit\": 60}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_Tn02irRsaT8EmFn2iVrk8156",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/dependencies/utils.py",
+        "offset": 712,
+        "limit": 60
+      },
+      "result": "[Lines 712\u2013757 of 757]\ndef get_body_field(*, dependant: Dependant, name: str) -> Optional[ModelField]:\n    flat_dependant = get_flat_dependant(dependant)\n    if not flat_dependant.body_params:\n        return None\n    first_param = flat_dependant.body_params[0]\n    field_info = first_param.field_info\n    embed = getattr(field_info, \"embed\", None)\n    body_param_names_set = {param.name for param in flat_dependant.body_params}\n    if len(body_param_names_set) == 1 and not embed:\n        check_file_field(first_param)\n        return first_param\n    # If one field requires to embed, all have to be embedded\n    # in case a sub-dependency is evaluated with a single unique body field\n    # That is combined (embedded) with other body fields\n    for param in flat_dependant.body_params:\n        setattr(param.field_info, \"embed\", True)\n    model_name = \"Body_\" + name\n    BodyModel: Type[BaseModel] = create_model(model_name)\n    for f in flat_dependant.body_params:\n        BodyModel.__fields__[f.name] = f\n    required = any(True for f in flat_dependant.body_params if f.required)\n\n    BodyFieldInfo_kwargs: Dict[str, Any] = dict(default=None)\n    if any(isinstance(f.field_info, params.File) for f in flat_dependant.body_params):\n        BodyFieldInfo: Type[params.Body] = params.File\n    elif any(isinstance(f.field_info, params.Form) for f in flat_dependant.body_params):\n        BodyFieldInfo = params.Form\n    else:\n        BodyFieldInfo = params.Body\n\n        body_param_media_types = [\n            getattr(f.field_info, \"media_type\")\n            for f in flat_dependant.body_params\n            if isinstance(f.field_info, params.Body)\n        ]\n        if len(set(body_param_media_types)) == 1:\n            BodyFieldInfo_kwargs[\"media_type\"] = body_param_media_types[0]\n    final_field = create_response_field(\n        name=\"body\",\n        type_=BodyModel,\n        required=required,\n        alias=\"body\",\n        field_info=BodyFieldInfo(**BodyFieldInfo_kwargs),\n    )\n    check_file_field(final_field)\n    return final_field\n"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_J1ZmoEGrrodTMpjore6E1081",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \"fastapi\"}"
+          }
+        },
+        {
+          "id": "call_01_fTg25VIEfHSM4I9dTQA64515",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_J1ZmoEGrrodTMpjore6E1081",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "fastapi"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_01_fTg25VIEfHSM4I9dTQA64515",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "fastapi"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Wvyfs04rTrOOn990wEO57410",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \".\"}"
+          }
+        },
+        {
+          "id": "call_01_mocSoOvv6y1vJTkcv0t76646",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_Wvyfs04rTrOOn990wEO57410",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_01_mocSoOvv6y1vJTkcv0t76646",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_lEeNd6PsqQeV7IkieLji8360",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"from pydantic.schema import\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_lEeNd6PsqQeV7IkieLji8360",
+      "name": "search",
+      "args": {
+        "pattern": "from pydantic.schema import",
+        "path": "fastapi"
+      },
+      "result": "fastapi/utils.py:14:from pydantic.schema import model_process_schema\nfastapi/openapi/utils.py:24:from pydantic.schema import (\nfastapi/dependencies/utils.py:50:from pydantic.schema import get_annotation_from_field_info"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_0Ew1hhZMmnheCgZPE43G6540",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \"/\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_00_0Ew1hhZMmnheCgZPE43G6540",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "/"
+      },
+      "result": "Error executing search: path '/' escapes the repository root"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Y88IQZByDH6TUV4rAWbX5808",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/utils.py\", \"offset\": 1, \"limit\": 10}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_00_Y88IQZByDH6TUV4rAWbX5808",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/utils.py",
+        "offset": 1,
+        "limit": 10
+      },
+      "result": "[Lines 1\u201310 of 191]\nimport functools\nimport re\nimport warnings\nfrom dataclasses import is_dataclass\nfrom enum import Enum\nfrom typing import TYPE_CHECKING, Any, Dict, Optional, Set, Type, Union, cast\n\nimport fastapi\nfrom fastapi.datastructures import DefaultPlaceholder, DefaultType\nfrom fastapi.openapi.constants import REF_PREFIX\n"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_AJuAPW2Q8ryKOk76pfhZ4600",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/openapi/utils.py\", \"offset\": 24, \"limit\": 6}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_00_AJuAPW2Q8ryKOk76pfhZ4600",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/openapi/utils.py",
+        "offset": 24,
+        "limit": 6
+      },
+      "result": "[Lines 24\u201329 of 448]\nfrom pydantic.schema import (\n    field_schema,\n    get_flat_models_from_fields,\n    get_model_name_map,\n)\nfrom pydantic.utils import lenient_issubclass\n"
+    },
+    {
+      "turn": 10,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_QSaA6SQszmv5V85atXD43037",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 10,
+      "role": "tool",
+      "tool_call_id": "call_00_QSaA6SQszmv5V85atXD43037",
+      "name": "list_files",
+      "args": {
+        "path": ""
+      },
+      "result": ".flake8\n.git\n.github\n.gitignore\n.pre-commit-config.yaml\nCONTRIBUTING.md\nLICENSE\nREADME.md\nSECURITY.md\ndocs\ndocs_src\nfastapi\npyproject.toml\nscripts\ntests"
+    },
+    {
+      "turn": 11,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ybL98s5iUyaDSzoDF9OQ2361",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_params\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 11,
+      "role": "tool",
+      "tool_call_id": "call_00_ybL98s5iUyaDSzoDF9OQ2361",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_params",
+        "path": "fastapi"
+      },
+      "result": "fastapi/dependencies/utils.py:208:def get_flat_params(dependant: Dependant) -> List[ModelField]:"
+    },
+    {
+      "turn": 12,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ET_OP9sGlxDSb8ipF0Tk18n2374",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"offset\": 208, \"path\": \"fastapi/dependencies/utils.py\", \"limit\": 15}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 12,
+      "role": "tool",
+      "tool_call_id": "call_00_ET_OP9sGlxDSb8ipF0Tk18n2374",
+      "name": "read_file",
+      "args": {
+        "offset": 208,
+        "path": "fastapi/dependencies/utils.py",
+        "limit": 15
+      },
+      "result": "[Lines 208\u2013222 of 757]\ndef get_flat_params(dependant: Dependant) -> List[ModelField]:\n    flat_dependant = get_flat_dependant(dependant, skip_repeats=True)\n    return (\n        flat_dependant.path_params\n        + flat_dependant.query_params\n        + flat_dependant.header_params\n        + flat_dependant.cookie_params\n    )\n\n\ndef is_scalar_field(field: ModelField) -> bool:\n    field_info = field.field_info\n    if not (\n        field.shape == SHAPE_SINGLETON\n        and not lenient_issubclass(field.type_, BaseModel)\n"
+    },
+    {
+      "turn": 13,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_52B0XmP3SxDDK8mXhLCW7910",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def check_file_field\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 13,
+      "role": "tool",
+      "tool_call_id": "call_00_52B0XmP3SxDDK8mXhLCW7910",
+      "name": "search",
+      "args": {
+        "pattern": "def check_file_field",
+        "path": "fastapi"
+      },
+      "result": "fastapi/dependencies/utils.py:93:def check_file_field(field: ModelField) -> None:"
+    },
+    {
+      "turn": 14,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_LK2orCILKRtLFakNdNzr2967",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"offset\": 93, \"path\": \"fastapi/dependencies/utils.py\", \"limit\": 30}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 14,
+      "role": "tool",
+      "tool_call_id": "call_00_LK2orCILKRtLFakNdNzr2967",
+      "name": "read_file",
+      "args": {
+        "offset": 93,
+        "path": "fastapi/dependencies/utils.py",
+        "limit": 30
+      },
+      "result": "[Lines 93\u2013122 of 757]\ndef check_file_field(field: ModelField) -> None:\n    field_info = field.field_info\n    if isinstance(field_info, params.Form):\n        try:\n            # __version__ is available in both multiparts, and can be mocked\n            from multipart import __version__  # type: ignore\n\n            assert __version__\n            try:\n                # parse_options_header is only available in the right multipart\n                from multipart.multipart import parse_options_header  # type: ignore\n\n                assert parse_options_header\n            except ImportError:\n                logger.error(multipart_incorrect_install_error)\n                raise RuntimeError(multipart_incorrect_install_error)\n        except ImportError:\n            logger.error(multipart_not_installed_error)\n            raise RuntimeError(multipart_not_installed_error)\n\n\ndef get_param_sub_dependant(\n    *, param: inspect.Parameter, path: str, security_scopes: Optional[List[str]] = None\n) -> Dependant:\n    depends: params.Depends = param.default\n    if depends.dependency:\n        dependency = depends.dependency\n    else:\n        dependency = param.annotation\n    return get_sub_dependant(\n"
+    },
+    {
+      "turn": 15,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_uSV51714UZ1SNRTkPyJa9275",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/params.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 15,
+      "role": "tool",
+      "tool_call_id": "call_00_uSV51714UZ1SNRTkPyJa9275",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/params.py"
+      },
+      "result": "from enum import Enum\nfrom typing import Any, Callable, Dict, Optional, Sequence\n\nfrom pydantic.fields import FieldInfo, Undefined\n\n\nclass ParamTypes(Enum):\n    query = \"query\"\n    header = \"header\"\n    path = \"path\"\n    cookie = \"cookie\"\n\n\nclass Param(FieldInfo):\n    in_: ParamTypes\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        self.deprecated = deprecated\n        self.example = example\n        self.examples = examples\n        self.include_in_schema = include_in_schema\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            **extra,\n        )\n\n    def __repr__(self) -> str:\n        return f\"{self.__class__.__name__}({self.default})\"\n\n\nclass Path(Param):\n    in_ = ParamTypes.path\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        self.in_ = self.in_\n        super().__init__(\n            default=...,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Query(Param):\n    in_ = ParamTypes.query\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Header(Param):\n    in_ = ParamTypes.header\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        convert_underscores: bool = True,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        self.convert_underscores = convert_underscores\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Cookie(Param):\n    in_ = ParamTypes.cookie\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Body(FieldInfo):\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        embed: bool = False,\n        media_type: str = \"application/json\",\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        **extra: Any,\n    ):\n        self.embed = embed\n        self.media_type = media_type\n        self.example = example\n        self.examples = examples\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            **extra,\n        )\n\n    def __repr__(self) -> str:\n        return f\"{self.__class__.__name__}({self.default})\"\n\n\nclass Form(Body):\n    def __init__(\n        self,\n        default: Any,\n        *,\n        media_type: str = \"application/x-www-form-urlencoded\",\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            embed=True,\n            media_type=media_type,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            example=example,\n            examples=examples,\n            **extra,\n        )\n\n\nclass File(Form):\n    def __init__(\n        self,\n        default: Any,\n        *,\n        media_type: str = \"multipart/form-data\",\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            media_type=media_type,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            example=example,\n            examples=examples,\n            **extra,\n        )\n\n\nclass Depends:\n    def __init__(\n        self, dependency: Optional[Callable[..., Any]] = None, *, use_cache: bool = True\n    ):\n        self.dependency = dependency\n        self.use_cache = use_cache\n\n    def __repr__(self) -> str:\n        attr = getattr(self.dependency, \"__name__\", type(self.dependency).__name__)\n        cache = \"\" if self.use_cache else \", use_cache=False\"\n        return f\"{self.__class__.__name__}({attr}{cache})\"\n\n\nclass Security(Depends):\n    def __init__(\n        self,\n        dependency: Optional[Callable[..., Any]] = None,\n        *,\n        scopes: Optional[Sequence[str]] = None,\n        use_cache: bool = True,\n    ):\n        super().__init__(dependency=dependency, use_cache=use_cache)\n        self.scopes = scopes or []\n"
+    },
+    {
+      "turn": 16,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_fp6MLUhMHlpU3vAYNcvs0153",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"pydantic\", \"path\": \"pyproject.toml\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 16,
+      "role": "tool",
+      "tool_call_id": "call_00_fp6MLUhMHlpU3vAYNcvs0153",
+      "name": "search",
+      "args": {
+        "pattern": "pydantic",
+        "path": "pyproject.toml"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 17,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_vqnpXth6viuJEpkrdaPa4804",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"pyproject.toml\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 17,
+      "role": "tool",
+      "tool_call_id": "call_00_vqnpXth6viuJEpkrdaPa4804",
+      "name": "read_file",
+      "args": {
+        "path": "pyproject.toml"
+      },
+      "result": "[build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"\n\n[project]\nname = \"fastapi\"\ndescription = \"FastAPI framework, high performance, easy to learn, fast to code, ready for production\"\nreadme = \"README.md\"\nrequires-python = \">=3.7\"\nlicense = \"MIT\"\nauthors = [\n    { name = \"Sebasti\u00e1n Ram\u00edrez\", email = \"tiangolo@gmail.com\" },\n]\nclassifiers = [\n    \"Intended Audience :: Information Technology\",\n    \"Intended Audience :: System Administrators\",\n    \"Operating System :: OS Independent\",\n    \"Programming Language :: Python :: 3\",\n    \"Programming Language :: Python\",\n    \"Topic :: Internet\",\n    \"Topic :: Software Development :: Libraries :: Application Frameworks\",\n    \"Topic :: Software Development :: Libraries :: Python Modules\",\n    \"Topic :: Software Development :: Libraries\",\n    \"Topic :: Software Development\",\n    \"Typing :: Typed\",\n    \"Development Status :: 4 - Beta\",\n    \"Environment :: Web Environment\",\n    \"Framework :: AsyncIO\",\n    \"Framework :: FastAPI\",\n    \"Intended Audience :: Developers\",\n    \"License :: OSI Approved :: MIT License\",\n    \"Programming Language :: Python :: 3 :: Only\",\n    \"Programming Language :: Python :: 3.7\",\n    \"Programming Language :: Python :: 3.8\",\n    \"Programming Language :: Python :: 3.9\",\n    \"Programming Language :: Python :: 3.10\",\n    \"Topic :: Internet :: WWW/HTTP :: HTTP Servers\",\n    \"Topic :: Internet :: WWW/HTTP\",\n]\ndependencies = [\n    \"starlette==0.20.4\",\n    \"pydantic >=1.6.2,!=1.7,!=1.7.1,!=1.7.2,!=1.7.3,!=1.8,!=1.8.1,<2.0.0\",\n]\ndynamic = [\"version\"]\n\n[project.urls]\nHomepage = \"https://github.com/tiangolo/fastapi\"\nDocumentation = \"https://fastapi.tiangolo.com/\"\n\n[project.optional-dependencies]\ntest = [\n    \"pytest >=7.1.3,<8.0.0\",\n    \"pytest-cov >=2.12.0,<4.0.0\",\n    \"mypy ==0.971\",\n    \"flake8 >=3.8.3,<6.0.0\",\n    \"black == 22.8.0\",\n    \"isort >=5.0.6,<6.0.0\",\n    \"requests >=2.24.0,<3.0.0\",\n    \"httpx >=0.23.0,<0.24.0\",\n    \"email_validator >=1.1.1,<2.0.0\",\n    \"sqlalchemy >=1.3.18,<1.5.0\",\n    \"peewee >=3.13.3,<4.0.0\",\n    \"databases[sqlite] >=0.3.2,<0.7.0\",\n    \"orjson >=3.2.1,<4.0.0\",\n    \"ujson >=4.0.1,!=4.0.2,!=4.1.0,!=4.2.0,!=4.3.0,!=5.0.0,!=5.1.0,<6.0.0\",\n    \"python-multipart >=0.0.5,<0.0.6\",\n    \"flask >=1.1.2,<3.0.0\",\n    \"anyio[trio] >=3.2.1,<4.0.0\",\n    \"python-jose[cryptography] >=3.3.0,<4.0.0\",\n    \"pyyaml >=5.3.1,<7.0.0\",\n    \"passlib[bcrypt] >=1.7.2,<2.0.0\",\n\n    # types\n    \"types-ujson ==5.4.0\",\n    \"types-orjson ==3.6.2\",\n]\ndoc = [\n    \"mkdocs >=1.1.2,<2.0.0\",\n    \"mkdocs-material >=8.1.4,<9.0.0\",\n    \"mdx-include >=1.4.1,<2.0.0\",\n    \"mkdocs-markdownextradata-plugin >=0.1.7,<0.3.0\",\n    # TODO: upgrade and enable typer-cli once it supports Click 8.x.x\n    # \"typer-cli >=0.0.12,<0.0.13\",\n    \"typer >=0.4.1,<0.7.0\",\n    \"pyyaml >=5.3.1,<7.0.0\",\n]\ndev = [\n    \"autoflake >=1.4.0,<2.0.0\",\n    \"flake8 >=3.8.3,<6.0.0\",\n    \"uvicorn[standard] >=0.12.0,<0.19.0\",\n    \"pre-commit >=2.17.0,<3.0.0\",\n]\nall = [\n    \"requests >=2.24.0,<3.0.0\",\n    \"jinja2 >=2.11.2,<4.0.0\",\n    \"python-multipart >=0.0.5,<0.0.6\",\n    \"itsdangerous >=1.1.0,<3.0.0\",\n    \"pyyaml >=5.3.1,<7.0.0\",\n    \"ujson >=4.0.1,!=4.0.2,!=4.1.0,!=4.2.0,!=4.3.0,!=5.0.0,!=5.1.0,<6.0.0\",\n    \"orjson >=3.2.1,<4.0.0\",\n    \"email_validator >=1.1.1,<2.0.0\",\n    \"uvicorn[standard] >=0.12.0,<0.19.0\",\n]\n\n[tool.hatch.version]\npath = \"fastapi/__init__.py\"\n\n[tool.isort]\nprofile = \"black\"\nknown_third_party = [\"fastapi\", \"pydantic\", \"starlette\"]\n\n[tool.mypy]\nstrict = true\n\n[[tool.mypy.overrides]]\nmodule = \"fastapi.concurrency\"\nwarn_unused_ignores = false\nignore_missing_imports = true\n\n[[tool.mypy.overrides]]\nmodule = \"fastapi.tests.*\"\nignore_missing_imports = true\ncheck_untyped_defs = true\n\n[tool.pytest.ini_options]\naddopts = [\n  \"--strict-config\",\n  \"--strict-markers\",\n]\nxfail_strict = true\njunit_family = \"xunit2\"\nfilterwarnings = [\n    \"error\",\n    # TODO: needed by asyncio in Python 3.9.7 https://bugs.python.org/issue45097, try to remove on 3.9.8\n    'ignore:The loop argument is deprecated since Python 3\\.8, and scheduled for removal in Python 3\\.10:DeprecationWarning:asyncio',\n    'ignore:starlette.middleware.wsgi is deprecated and will be removed in a future release\\..*:DeprecationWarning:starlette',\n]\n"
+    },
+    {
+      "turn": 18,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_n46Igu8w5brln7ImbZiy6566",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/__init__.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 18,
+      "role": "tool",
+      "tool_call_id": "call_00_n46Igu8w5brln7ImbZiy6566",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/__init__.py"
+      },
+      "result": "\"\"\"FastAPI framework, high performance, easy to learn, fast to code, ready for production\"\"\"\n\n__version__ = \"0.85.0\"\n\nfrom starlette import status as status\n\nfrom .applications import FastAPI as FastAPI\nfrom .background import BackgroundTasks as BackgroundTasks\nfrom .datastructures import UploadFile as UploadFile\nfrom .exceptions import HTTPException as HTTPException\nfrom .param_functions import Body as Body\nfrom .param_functions import Cookie as Cookie\nfrom .param_functions import Depends as Depends\nfrom .param_functions import File as File\nfrom .param_functions import Form as Form\nfrom .param_functions import Header as Header\nfrom .param_functions import Path as Path\nfrom .param_functions import Query as Query\nfrom .param_functions import Security as Security\nfrom .requests import Request as Request\nfrom .responses import Response as Response\nfrom .routing import APIRouter as APIRouter\nfrom .websockets import WebSocket as WebSocket\nfrom .websockets import WebSocketDisconnect as WebSocketDisconnect\n"
+    },
+    {
+      "turn": 19,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_UR1BF3d535WEIVoR46hW5171",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \"/usr\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 19,
+      "role": "tool",
+      "tool_call_id": "call_00_UR1BF3d535WEIVoR46hW5171",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "/usr"
+      },
+      "result": "Error executing search: path '/usr' escapes the repository root"
+    },
+    {
+      "turn": 20,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_s3mmBSwlyuXZvY8oow4X2885",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_flat_models_from_fields\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 20,
+      "role": "tool",
+      "tool_call_id": "call_00_s3mmBSwlyuXZvY8oow4X2885",
+      "name": "search",
+      "args": {
+        "pattern": "get_flat_models_from_fields",
+        "path": "."
+      },
+      "result": "fastapi/openapi/utils.py:26:    get_flat_models_from_fields,\nfastapi/openapi/utils.py:386:    flat_models = callback_flat_models | get_flat_models_from_fields("
+    },
+    {
+      "turn": 21,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_S6dOtVl8Lgu9avxG53sr1962",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"Body_\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 21,
+      "role": "tool",
+      "tool_call_id": "call_00_S6dOtVl8Lgu9avxG53sr1962",
+      "name": "search",
+      "args": {
+        "pattern": "Body_",
+        "path": "fastapi"
+      },
+      "result": "fastapi/dependencies/utils.py:728:    model_name = \"Body_\" + name"
+    },
+    {
+      "turn": 22,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_8UAe8OLJyH6GU64rrMaG4833",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"Body_\", \"path\": \"tests\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 22,
+      "role": "tool",
+      "tool_call_id": "call_00_8UAe8OLJyH6GU64rrMaG4833",
+      "name": "search",
+      "args": {
+        "pattern": "Body_",
+        "path": "tests"
+      },
+      "result": "tests/test_security_oauth2_optional.py:75:                                \"$ref\": \"#/components/schemas/Body_login_login_post\"\ntests/test_security_oauth2_optional.py:99:            \"Body_login_login_post\": {\ntests/test_security_oauth2_optional.py:100:                \"title\": \"Body_login_login_post\",\ntests/test_dependency_duplicates.py:89:                                \"$ref\": \"#/components/schemas/Body_no_duplicates_no_duplicates_post\"\ntests/test_dependency_duplicates.py:146:            \"Body_no_duplicates_no_duplicates_post\": {\ntests/test_dependency_duplicates.py:147:                \"title\": \"Body_no_duplicates_no_duplicates_post\",\ntests/test_request_body_parameters_media_type.py:39:            \"schema\": {\"$ref\": \"#/components/schemas/Body_create_product_products_post\"}\ntests/test_request_body_parameters_media_type.py:48:            \"schema\": {\"$ref\": \"#/components/schemas/Body_create_shop_shops_post\"}\ntests/test_generate_unique_id_function.py:62:                                    \"$ref\": \"#/components/schemas/Body_foo_post_root\"\ntests/test_generate_unique_id_function.py:116:                                    \"$ref\": \"#/components/schemas/Body_foo_post_router\"\ntests/test_generate_unique_id_function.py:165:                \"Body_foo_post_root\": {\ntests/test_generate_unique_id_function.py:166:                    \"title\": \"Body_foo_post_root\",\ntests/test_generate_unique_id_function.py:174:                \"Body_foo_post_router\": {\ntests/test_generate_unique_id_function.py:175:                    \"title\": \"Body_foo_post_router\",\ntests/test_generate_unique_id_function.py:263:                                    \"$ref\": \"#/components/schemas/Body_foo_post_root\"\ntests/test_generate_unique_id_function.py:317:                                    \"$ref\": \"#/components/schemas/Body_bar_post_router\"\ntests/test_generate_unique_id_function.py:366:                \"Body_bar_post_router\": {\ntests/test_generate_unique_id_function.py:367:                    \"title\": \"Body_bar_post_router\",\ntests/test_generate_unique_id_function.py:375:                \"Body_foo_post_root\": {\ntests/test_generate_unique_id_function.py:376:                    \"title\": \"Body_foo_post_root\",\ntests/test_generate_unique_id_function.py:464:                                    \"$ref\": \"#/components/schemas/Body_foo_post_root\"\ntests/test_generate_unique_id_function.py:518:                                    \"$ref\": \"#/components/schemas/Body_bar_post_router\"\ntests/test_generate_unique_id_function.py:567:                \"Body_bar_post_router\": {\ntests/test_generate_unique_id_function.py:568:                    \"title\": \"Body_bar_post_router\",\ntests/test_generate_unique_id_function.py:576:                \"Body_foo_post_root\": {\ntests/test_generate_unique_id_function.py:577:                    \"title\": \"Body_foo_post_root\",\ntests/test_generate_unique_id_function.py:675:                                    \"$ref\": \"#/components/schemas/Body_foo_post_root\"\ntests/test_generate_unique_id_function.py:729:                                    \"$ref\": \"#/components/schemas/Body_baz_post_router\"\ntests/test_generate_unique_id_function.py:783:                                    \"$ref\": \"#/components/schemas/Body_bar_post_subrouter\"\ntests/test_generate_unique_id_function.py:832:                \"Body_bar_post_subrouter\": {\ntests/test_generate_unique_id_function.py:833:                    \"title\": \"Body_bar_post_subrouter\",\ntests/test_generate_unique_id_function.py:841:                \"Body_baz_post_router\": {\ntests/test_generate_unique_id_function.py:842:                    \"title\": \"Body_baz_post_router\",\ntests/test_generate_unique_id_function.py:850:                \"Body_foo_post_root\": {\ntests/test_generate_unique_id_function.py:851:                    \"title\": \"Body_foo_post_root\",\ntests/test_generate_unique_id_function.py:942:                                    \"$ref\": \"#/components/schemas/Body_foo_post_root\"\ntests/test_generate_unique_id_function.py:996:                                    \"$ref\": \"#/components/schemas/Body_baz_post_router\"\ntests/test_generate_unique_id_function.py:1045:                \"Body_baz_post_router\": {\ntests/test_generate_unique_id_function.py:1046:                    \"title\": \"Body_baz_post_router\",\ntests/test_generate_unique_id_function.py:1054:                \"Body_foo_post_root\": {\ntests/test_generate_unique_id_function.py:1055:                    \"title\": \"Body_foo_post_root\",\ntests/test_generate_unique_id_function.py:1150:                                    \"$ref\": \"#/components/schemas/Body_baz_post_root\"\ntests/test_generate_unique_id_function.py:1204:                                    \"$ref\": \"#/components/schemas/Body_bar_post_router\"\ntests/test_generate_unique_id_function.py:1253:                \"Body_bar_post_router\": {\ntests/test_generate_unique_id_function.py:1254:                    \"title\": \"Body_bar_post_router\",\ntests/test_generate_unique_id_function.py:1262:                \"Body_baz_post_root\": {\ntests/test_generate_unique_id_function.py:1263:                    \"title\": \"Body_baz_post_root\",\ntests/test_generate_unique_id_function.py:1367:                                    \"$ref\": \"#/components/schemas/Body_baz_post_root\"\ntests/test_generate_unique_id_function.py:1421:                                                    \"$ref\": \"#/components/schemas/Body_baz_post_callback\"\ntests/test_generate_unique_id_function.py:1481:                                    \"$ref\": \"#/components/schemas/Body_foo_post_with_callback\"\ntests/test_generate_unique_id_function.py:1530:                \"Body_baz_post_callback\": {\ntests/test_generate_unique_id_function.py:1531:                    \"title\": \"Body_baz_post_callback\",\ntests/test_generate_unique_id_function.py:1539:                \"Body_baz_post_root\": {\ntests/test_generate_unique_id_function.py:1540:                    \"title\": \"Body_baz_post_root\",\ntests/test_generate_unique_id_function.py:1548:                \"Body_foo_post_with_callback\": {\ntests/test_generate_unique_id_function.py:1549:                    \"title\": \"Body_foo_post_with_callback\",\ntests/test_tutorial/test_security/test_tutorial003_py310.py:34:                                \"$ref\": \"#/components/schemas/Body_login_token_post\"\ntests/test_tutorial/test_security/test_tutorial003_py310.py:58:            \"Body_login_token_post\": {\ntests/test_tutorial/test_security/test_tutorial003_py310.py:59:                \"title\": \"Body_login_token_post\",\ntests/test_tutorial/test_security/test_tutorial005_py39.py:38:                                \"$ref\": \"#/components/schemas/Body_login_for_access_token_token_post\"\ntests/test_tutorial/test_security/test_tutorial005_py39.py:112:            \"Body_login_for_access_token_token_post\": {\ntests/test_tutorial/test_security/test_tutorial005_py39.py:113:                \"title\": \"Body_login_for_access_token_token_post\",\ntests/test_tutorial/test_security/test_tutorial003.py:35:                                \"$ref\": \"#/components/schemas/Body_login_token_post\"\ntests/test_tutorial/test_security/test_tutorial003.py:59:            \"Body_login_token_post\": {\ntests/test_tutorial/test_security/test_tutorial003.py:60:                \"title\": \"Body_login_token_post\",\ntests/test_tutorial/test_security/test_tutorial005.py:45:                                \"$ref\": \"#/components/schemas/Body_login_for_access_token_token_post\"\ntests/test_tutorial/test_security/test_tutorial005.py:119:            \"Body_login_for_access_token_token_post\": {\ntests/test_tutorial/test_security/test_tutorial005.py:120:                \"title\": \"Body_login_for_access_token_token_post\",\ntests/test_tutorial/test_security/test_tutorial005_py310.py:38:                                \"$ref\": \"#/components/schemas/Body_login_for_access_token_token_post\"\ntests/test_tutorial/test_security/test_tutorial005_py310.py:112:            \"Body_login_for_access_token_token_post\": {\ntests/test_tutorial/test_security/test_tutorial005_py310.py:113:                \"title\": \"Body_login_for_access_token_token_post\",\ntests/test_tutorial/test_body_multiple_params/test_tutorial003_py310.py:42:                                \"$ref\": \"#/components/schemas/Body_update_item_items__item_id__put\"\ntests/test_tutorial/test_body_multiple_params/test_tutorial003_py310.py:73:            \"Body_update_item_items__item_id__put\": {\ntests/test_tutorial/test_body_multiple_params/test_tutorial003_py310.py:74:                \"title\": \"Body_update_item_items__item_id__put\",\ntests/test_tutorial/test_body_multiple_params/test_tutorial003.py:44:                                \"$ref\": \"#/components/schemas/Body_update_item_items__item_id__put\"\ntests/test_tutorial/test_body_multiple_params/test_tutorial003.py:75:            \"Body_update_item_items__item_id__put\": {\ntests/test_tutorial/test_body_multiple_params/test_tutorial003.py:76:                \"title\": \"Body_update_item_items__item_id__put\",\ntests/test_tutorial/test_extra_data_types/test_tutorial001.py:48:                                \"$ref\": \"#/components/schemas/Body_read_items_items__item_id__put\"\ntests/test_tutorial/test_extra_data_types/test_tutorial001.py:58:            \"Body_read_items_items__item_id__put\": {\ntests/test_tutorial/test_extra_data_types/test_tutorial001.py:59:                \"title\": \"Body_read_items_items__item_id__put\",\ntests/test_tutorial/test_extra_data_types/test_tutorial001_py310.py:46:                                \"$ref\": \"#/components/schemas/Body_read_items_items__item_id__put\"\ntests/test_tutorial/test_extra_data_types/test_tutorial001_py310.py:56:            \"Body_read_items_items__item_id__put\": {\ntests/test_tutorial/test_extra_data_types/test_tutorial001_py310.py:57:                \"title\": \"Body_read_items_items__item_id__put\",\ntests/test_tutorial/test_request_forms/test_tutorial001.py:36:                                \"$ref\": \"#/components/schemas/Body_login_login__post\"\ntests/test_tutorial/test_request_forms/test_tutorial001.py:47:            \"Body_login_login__post\": {\ntests/test_tutorial/test_request_forms/test_tutorial001.py:48:                \"title\": \"Body_login_login__post\",\ntests/test_tutorial/test_body_fields/test_tutorial001.py:45:                                \"$ref\": \"#/components/schemas/Body_update_item_items__item_id__put\"\ntests/test_tutorial/test_body_fields/test_tutorial001.py:76:            \"Body_update_item_items__item_id__put\": {\ntests/test_tutorial/test_body_fields/test_tutorial001.py:77:                \"title\": \"Body_update_item_items__item_id__put\",\ntests/test_tutorial/test_body_fields/test_tutorial001_py310.py:42:                                \"$ref\": \"#/components/schemas/Body_update_item_items__item_id__put\"\ntests/test_tutorial/test_body_fields/test_tutorial001_py310.py:73:            \"Body_update_item_items__item_id__put\": {\ntests/test_tutorial/test_body_fields/test_tutorial001_py310.py:74:                \"title\": \"Body_update_item_items__item_id__put\",\ntests/test_tutorial/test_request_forms_and_files/test_tutorial001.py:35:                                \"$ref\": \"#/components/schemas/Body_create_file_files__post\"\ntests/test_tutorial/test_request_forms_and_files/test_tutorial001.py:46:            \"Body_create_file_files__post\": {\ntests/test_tutorial/test_request_forms_and_files/test_tutorial001.py:47:                \"title\": \"Body_create_file_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial001_03.py:19:                                \"$ref\": \"#/components/schemas/Body_create_file_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial001_03.py:51:                                \"$ref\": \"#/components/schemas/Body_create_upload_file_uploadfile__post\"\ntests/test_tutorial/test_request_files/test_tutorial001_03.py:78:            \"Body_create_file_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001_03.py:79:                \"title\": \"Body_create_file_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial001_03.py:91:            \"Body_create_upload_file_uploadfile__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001_03.py:92:                \"title\": \"Body_create_upload_file_uploadfile__post\",\ntests/test_tutorial/test_request_files/test_tutorial001_02.py:19:                                \"$ref\": \"#/components/schemas/Body_create_file_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial001_02.py:50:                                \"$ref\": \"#/components/schemas/Body_create_upload_file_uploadfile__post\"\ntests/test_tutorial/test_request_files/test_tutorial001_02.py:76:            \"Body_create_file_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001_02.py:77:                \"title\": \"Body_create_file_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial001_02.py:83:            \"Body_create_upload_file_uploadfile__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001_02.py:84:                \"title\": \"Body_create_upload_file_uploadfile__post\",\ntests/test_tutorial/test_request_files/test_tutorial001_02_py310.py:20:                                \"$ref\": \"#/components/schemas/Body_create_file_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial001_02_py310.py:51:                                \"$ref\": \"#/components/schemas/Body_create_upload_file_uploadfile__post\"\ntests/test_tutorial/test_request_files/test_tutorial001_02_py310.py:77:            \"Body_create_file_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001_02_py310.py:78:                \"title\": \"Body_create_file_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial001_02_py310.py:84:            \"Body_create_upload_file_uploadfile__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001_02_py310.py:85:                \"title\": \"Body_create_upload_file_uploadfile__post\",\ntests/test_tutorial/test_request_files/test_tutorial002_py39.py:35:                                \"$ref\": \"#/components/schemas/Body_create_files_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial002_py39.py:67:                                \"$ref\": \"#/components/schemas/Body_create_upload_files_uploadfiles__post\"\ntests/test_tutorial/test_request_files/test_tutorial002_py39.py:90:            \"Body_create_upload_files_uploadfiles__post\": {\ntests/test_tutorial/test_request_files/test_tutorial002_py39.py:91:                \"title\": \"Body_create_upload_files_uploadfiles__post\",\ntests/test_tutorial/test_request_files/test_tutorial002_py39.py:102:            \"Body_create_files_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial002_py39.py:103:                \"title\": \"Body_create_files_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial001.py:35:                                \"$ref\": \"#/components/schemas/Body_create_file_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial001.py:67:                                \"$ref\": \"#/components/schemas/Body_create_upload_file_uploadfile__post\"\ntests/test_tutorial/test_request_files/test_tutorial001.py:78:            \"Body_create_upload_file_uploadfile__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001.py:79:                \"title\": \"Body_create_upload_file_uploadfile__post\",\ntests/test_tutorial/test_request_files/test_tutorial001.py:86:            \"Body_create_file_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial001.py:87:                \"title\": \"Body_create_file_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial002.py:35:                                \"$ref\": \"#/components/schemas/Body_create_files_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial002.py:67:                                \"$ref\": \"#/components/schemas/Body_create_upload_files_uploadfiles__post\"\ntests/test_tutorial/test_request_files/test_tutorial002.py:90:            \"Body_create_upload_files_uploadfiles__post\": {\ntests/test_tutorial/test_request_files/test_tutorial002.py:91:                \"title\": \"Body_create_upload_files_uploadfiles__post\",\ntests/test_tutorial/test_request_files/test_tutorial002.py:102:            \"Body_create_files_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial002.py:103:                \"title\": \"Body_create_files_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial003_py39.py:19:                                \"$ref\": \"#/components/schemas/Body_create_files_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial003_py39.py:51:                                \"$ref\": \"#/components/schemas/Body_create_upload_files_uploadfiles__post\"\ntests/test_tutorial/test_request_files/test_tutorial003_py39.py:90:            \"Body_create_files_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial003_py39.py:91:                \"title\": \"Body_create_files_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial003_py39.py:103:            \"Body_create_upload_files_uploadfiles__post\": {\ntests/test_tutorial/test_request_files/test_tutorial003_py39.py:104:                \"title\": \"Body_create_upload_files_uploadfiles__post\",\ntests/test_tutorial/test_request_files/test_tutorial003.py:19:                                \"$ref\": \"#/components/schemas/Body_create_files_files__post\"\ntests/test_tutorial/test_request_files/test_tutorial003.py:51:                                \"$ref\": \"#/components/schemas/Body_create_upload_files_uploadfiles__post\"\ntests/test_tutorial/test_request_files/test_tutorial003.py:90:            \"Body_create_files_files__post\": {\ntests/test_tutorial/test_request_files/test_tutorial003.py:91:                \"title\": \"Body_create_files_files__post\",\ntests/test_tutorial/test_request_files/test_tutorial003.py:103:            \"Body_create_upload_files_uploadfiles__post\": {\ntests/test_tutorial/test_request_files/test_tutorial003.py:104:                \"title\": \"Body_create_upload_files_uploadfiles__post\",\ntests/test_security_oauth2_optional_description.py:76:                                \"$ref\": \"#/components/schemas/Body_login_login_post\"\ntests/test_security_oauth2_optional_description.py:100:            \"Body_login_login_post\": {\ntests/test_security_oauth2_optional_description.py:101:                \"title\": \"Body_login_login_post\",\ntests/test_tuples.py:117:                                \"$ref\": \"#/components/schemas/Body_hello_tuple_form__post\"\ntests/test_tuples.py:144:            \"Body_hello_tuple_form__post\": {\ntests/test_tuples.py:145:                \"title\": \"Body_hello_tuple_form__post\",\ntests/test_security_oauth2.py:71:                                \"$ref\": \"#/components/schemas/Body_login_login_post\"\ntests/test_security_oauth2.py:95:            \"Body_login_login_post\": {\ntests/test_security_oauth2.py:96:                \"title\": \"Body_login_login_post\",\ntests/test_modules_same_name_body/test_main.py:35:                                \"$ref\": \"#/components/schemas/Body_compute_a_compute_post\"\ntests/test_modules_same_name_body/test_main.py:67:                                \"$ref\": \"#/components/schemas/Body_compute_b_compute__post\"\ntests/test_modules_same_name_body/test_main.py:78:            \"Body_compute_b_compute__post\": {\ntests/test_modules_same_name_body/test_main.py:79:                \"title\": \"Body_compute_b_compute__post\",\ntests/test_modules_same_name_body/test_main.py:87:            \"Body_compute_a_compute_post\": {\ntests/test_modules_same_name_body/test_main.py:88:                \"title\": \"Body_compute_a_compute_post\","
+    },
+    {
+      "turn": 23,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ftLrApIAdDgyxASeMEkY6021",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"tests/test_tutorial/test_request_files/test_tutorial001_02.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 23,
+      "role": "tool",
+      "tool_call_id": "call_00_ftLrApIAdDgyxASeMEkY6021",
+      "name": "read_file",
+      "args": {
+        "path": "tests/test_tutorial/test_request_files/test_tutorial001_02.py"
+      },
+      "result": "from fastapi.testclient import TestClient\n\nfrom docs_src.request_files.tutorial001_02 import app\n\nclient = TestClient(app)\n\nopenapi_schema = {\n    \"openapi\": \"3.0.2\",\n    \"info\": {\"title\": \"FastAPI\", \"version\": \"0.1.0\"},\n    \"paths\": {\n        \"/files/\": {\n            \"post\": {\n                \"summary\": \"Create File\",\n                \"operationId\": \"create_file_files__post\",\n                \"requestBody\": {\n                    \"content\": {\n                        \"multipart/form-data\": {\n                            \"schema\": {\n                                \"$ref\": \"#/components/schemas/Body_create_file_files__post\"\n                            }\n                        }\n                    }\n                },\n                \"responses\": {\n                    \"200\": {\n                        \"description\": \"Successful Response\",\n                        \"content\": {\"application/json\": {\"schema\": {}}},\n                    },\n                    \"422\": {\n                        \"description\": \"Validation Error\",\n                        \"content\": {\n                            \"application/json\": {\n                                \"schema\": {\n                                    \"$ref\": \"#/components/schemas/HTTPValidationError\"\n                                }\n                            }\n                        },\n                    },\n                },\n            }\n        },\n        \"/uploadfile/\": {\n            \"post\": {\n                \"summary\": \"Create Upload File\",\n                \"operationId\": \"create_upload_file_uploadfile__post\",\n                \"requestBody\": {\n                    \"content\": {\n                        \"multipart/form-data\": {\n                            \"schema\": {\n                                \"$ref\": \"#/components/schemas/Body_create_upload_file_uploadfile__post\"\n                            }\n                        }\n                    }\n                },\n                \"responses\": {\n                    \"200\": {\n                        \"description\": \"Successful Response\",\n                        \"content\": {\"application/json\": {\"schema\": {}}},\n                    },\n                    \"422\": {\n                        \"description\": \"Validation Error\",\n                        \"content\": {\n                            \"application/json\": {\n                                \"schema\": {\n                                    \"$ref\": \"#/components/schemas/HTTPValidationError\"\n                                }\n                            }\n                        },\n                    },\n                },\n            }\n        },\n    },\n    \"components\": {\n        \"schemas\": {\n            \"Body_create_file_files__post\": {\n                \"title\": \"Body_create_file_files__post\",\n                \"type\": \"object\",\n                \"properties\": {\n                    \"file\": {\"title\": \"File\", \"type\": \"string\", \"format\": \"binary\"}\n                },\n            },\n            \"Body_create_upload_file_uploadfile__post\": {\n                \"title\": \"Body_create_upload_file_uploadfile__post\",\n                \"type\": \"object\",\n                \"properties\": {\n                    \"file\": {\"title\": \"File\", \"type\": \"string\", \"format\": \"binary\"}\n                },\n            },\n            \"HTTPValidationError\": {\n                \"title\": \"HTTPValidationError\",\n                \"type\": \"object\",\n                \"properties\": {\n                    \"detail\": {\n                        \"title\": \"Detail\",\n                        \"type\": \"array\",\n                        \"items\": {\"$ref\": \"#/components/schemas/ValidationError\"},\n                    }\n                },\n            },\n            \"ValidationError\": {\n                \"title\": \"ValidationError\",\n                \"required\": [\"loc\", \"msg\", \"type\"],\n                \"type\": \"object\",\n                \"properties\": {\n                    \"loc\": {\n                        \"title\": \"Location\",\n                        \"type\": \"array\",\n                        \"items\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"integer\"}]},\n                    },\n                    \"msg\": {\"title\": \"Message\", \"type\": \"string\"},\n                    \"type\": {\"title\": \"Error Type\", \"type\": \"string\"},\n                },\n            },\n        }\n    },\n}\n\n\ndef test_openapi_schema():\n    response = client.get(\"/openapi.json\")\n    assert response.status_code == 200, response.text\n    assert response.json() == openapi_schema\n\n\ndef test_post_form_no_body():\n    response = client.post(\"/files/\")\n    assert response.status_code == 200, response.text\n    assert response.json() == {\"message\": \"No file sent\"}\n\n\ndef test_post_uploadfile_no_body():\n    response = client.post(\"/uploadfile/\")\n    assert response.status_code == 200, response.text\n    assert response.json() == {\"message\": \"No upload file sent\"}\n\n\ndef test_post_file(tmp_path):\n    path = tmp_path / \"test.txt\"\n    path.write_bytes(b\"<file content>\")\n\n    client = TestClient(app)\n    with path.open(\"rb\") as file:\n        response = client.post(\"/files/\", files={\"file\": file})\n    assert response.status_code == 200, response.text\n    assert response.json() == {\"file_size\": 14}\n\n\ndef test_post_upload_file(tmp_path):\n    path = tmp_path / \"test.txt\"\n    path.write_bytes(b\"<file content>\")\n\n    client = TestClient(app)\n    with path.open(\"rb\") as file:\n        response = client.post(\"/uploadfile/\", files={\"file\": file})\n    assert response.status_code == 200, response.text\n    assert response.json() == {\"filename\": \"test.txt\"}\n"
+    },
+    {
+      "turn": 24,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_qMXJZgADjQEuCWLXvqfc9453",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"docs_src/request_files/tutorial001_02.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 24,
+      "role": "tool",
+      "tool_call_id": "call_00_qMXJZgADjQEuCWLXvqfc9453",
+      "name": "read_file",
+      "args": {
+        "path": "docs_src/request_files/tutorial001_02.py"
+      },
+      "result": "from typing import Union\n\nfrom fastapi import FastAPI, File, UploadFile\n\napp = FastAPI()\n\n\n@app.post(\"/files/\")\nasync def create_file(file: Union[bytes, None] = File(default=None)):\n    if not file:\n        return {\"message\": \"No file sent\"}\n    else:\n        return {\"file_size\": len(file)}\n\n\n@app.post(\"/uploadfile/\")\nasync def create_upload_file(file: Union[UploadFile, None] = None):\n    if not file:\n        return {\"message\": \"No upload file sent\"}\n    else:\n        return {\"filename\": file.filename}\n"
+    },
+    {
+      "turn": 25,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_6IRJtEIN9V18Md8Bi2x37931",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 25,
+      "role": "tool",
+      "tool_call_id": "call_00_6IRJtEIN9V18Md8Bi2x37931",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 26,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_xv2GFVuJUIBRfYOPMZA12531",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_model_name_map\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 26,
+      "role": "tool",
+      "tool_call_id": "call_00_xv2GFVuJUIBRfYOPMZA12531",
+      "name": "search",
+      "args": {
+        "pattern": "get_model_name_map"
+      },
+      "result": "fastapi/openapi/utils.py:27:    get_model_name_map,\nfastapi/openapi/utils.py:422:    model_name_map = get_model_name_map(flat_models)"
+    },
+    {
+      "turn": 27,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_TgJVqs4Ighkq7v4h9VBW7800",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \"/usr/local/lib\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 27,
+      "role": "tool",
+      "tool_call_id": "call_00_TgJVqs4Ighkq7v4h9VBW7800",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "/usr/local/lib"
+      },
+      "result": "Error executing search: path '/usr/local/lib' escapes the repository root"
+    },
+    {
+      "turn": 28,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_r5a4LIpkGpo6ntDg9x940935",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"offset\": 420, \"path\": \"fastapi/routing.py\", \"limit\": 40}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 28,
+      "role": "tool",
+      "tool_call_id": "call_00_r5a4LIpkGpo6ntDg9x940935",
+      "name": "read_file",
+      "args": {
+        "offset": 420,
+        "path": "fastapi/routing.py",
+        "limit": 40
+      },
+      "result": "[Lines 420\u2013459 of 1237]\n            model = response.get(\"model\")\n            if model:\n                assert is_body_allowed_for_status_code(\n                    additional_status_code\n                ), f\"Status code {additional_status_code} must not have a response body\"\n                response_name = f\"Response_{additional_status_code}_{self.unique_id}\"\n                response_field = create_response_field(name=response_name, type_=model)\n                response_fields[additional_status_code] = response_field\n        if response_fields:\n            self.response_fields: Dict[Union[int, str], ModelField] = response_fields\n        else:\n            self.response_fields = {}\n\n        assert callable(endpoint), \"An endpoint must be a callable\"\n        self.dependant = get_dependant(path=self.path_format, call=self.endpoint)\n        for depends in self.dependencies[::-1]:\n            self.dependant.dependencies.insert(\n                0,\n                get_parameterless_sub_dependant(depends=depends, path=self.path_format),\n            )\n        self.body_field = get_body_field(dependant=self.dependant, name=self.unique_id)\n        self.app = request_response(self.get_route_handler())\n\n    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:\n        return get_request_handler(\n            dependant=self.dependant,\n            body_field=self.body_field,\n            status_code=self.status_code,\n            response_class=self.response_class,\n            response_field=self.secure_cloned_response_field,\n            response_model_include=self.response_model_include,\n            response_model_exclude=self.response_model_exclude,\n            response_model_by_alias=self.response_model_by_alias,\n            response_model_exclude_unset=self.response_model_exclude_unset,\n            response_model_exclude_defaults=self.response_model_exclude_defaults,\n            response_model_exclude_none=self.response_model_exclude_none,\n            dependency_overrides_provider=self.dependency_overrides_provider,\n        )\n\n    def matches(self, scope: Scope) -> Tuple[Match, Scope]:\n"
+    },
+    {
+      "turn": 29,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Cqw2bwANDWt09EteTGQZ5904",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"unique_id\", \"path\": \"fastapi/routing.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 29,
+      "role": "tool",
+      "tool_call_id": "call_00_Cqw2bwANDWt09EteTGQZ5904",
+      "name": "search",
+      "args": {
+        "pattern": "unique_id",
+        "path": "fastapi/routing.py"
+      },
+      "result": "36:    generate_unique_id,\n347:        generate_unique_id_function: Union[\n349:        ] = Default(generate_unique_id),\n369:        self.generate_unique_id_function = generate_unique_id_function\n377:        if isinstance(generate_unique_id_function, DefaultPlaceholder):\n378:            current_generate_unique_id: Callable[\n380:            ] = generate_unique_id_function.value\n382:            current_generate_unique_id = generate_unique_id_function\n383:        self.unique_id = self.operation_id or current_generate_unique_id(self)\n392:            response_name = \"Response_\" + self.unique_id\n425:                response_name = f\"Response_{additional_status_code}_{self.unique_id}\"\n440:        self.body_field = get_body_field(dependant=self.dependant, name=self.unique_id)\n485:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n486:            generate_unique_id\n511:        self.generate_unique_id_function = generate_unique_id_function\n543:        generate_unique_id_function: Union[\n545:        ] = Default(generate_unique_id),\n562:        current_generate_unique_id = get_value_or_default(\n563:            generate_unique_id_function, self.generate_unique_id_function\n591:            generate_unique_id_function=current_generate_unique_id,\n621:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n622:            generate_unique_id\n651:                generate_unique_id_function=generate_unique_id_function,\n689:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n690:            generate_unique_id\n732:                current_generate_unique_id = get_value_or_default(\n733:                    route.generate_unique_id_function,\n734:                    router.generate_unique_id_function,\n735:                    generate_unique_id_function,\n736:                    self.generate_unique_id_function,\n766:                    generate_unique_id_function=current_generate_unique_id,\n815:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n816:            generate_unique_id\n843:            generate_unique_id_function=generate_unique_id_function,\n871:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n872:            generate_unique_id\n899:            generate_unique_id_function=generate_unique_id_function,\n927:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n928:            generate_unique_id\n955:            generate_unique_id_function=generate_unique_id_function,\n983:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n984:            generate_unique_id\n1011:            generate_unique_id_function=generate_unique_id_function,\n1039:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n1040:            generate_unique_id\n1067:            generate_unique_id_function=generate_unique_id_function,\n1095:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n1096:            generate_unique_id\n1123:            generate_unique_id_function=generate_unique_id_function,\n1151:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n1152:            generate_unique_id\n1179:            generate_unique_id_function=generate_unique_id_function,\n1207:        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n1208:            generate_unique_id\n1236:            generate_unique_id_function=generate_unique_id_function,"
+    },
+    {
+      "turn": "final",
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "submit_answer",
+          "arguments": "{\"files\": [\"fastapi/utils.py\", \"fastapi/openapi/utils.py\", \"fastapi/dependencies/utils.py\"]}"
+        }
+      ]
+    }
+  ]
+}
