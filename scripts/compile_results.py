@@ -45,6 +45,61 @@ ALLOWED_MODELS = {
 SEL_CSV = os.path.join(_ROOT, "data", "issue_selection_final.csv")
 DEFAULT_OUT = os.path.join(_ROOT, "data", "compiled_results.pkl")
 
+# The harness's own `total_cost` comes from litellm.completion_cost(), which
+# silently returns 0.0 for any model string it has no pricing entry for --
+# true for mistral/ministral-3b-latest and deepinfra/nvidia/NVIDIA-Nemotron-3-
+# Super-120B-A12B here (confirmed: 0.0 across all 540 trials each, vs. real
+# nonzero token counts). `actual_cost` below is recomputed independently from
+# models/model_costs.xlsx (USD per 1M tokens) for all 4 models, so the two
+# models litellm *does* get right (deepseek-v4-flash, gpt-oss-120b) double as
+# a validation check -- actual_cost matches litellm's total_cost on those to
+# within rounding (median relative difference 0.0000 as of 2026-07-15).
+MODEL_COSTS_XLSX = os.path.join(_ROOT, "models", "model_costs.xlsx")
+MODEL_TO_PRICE_ROW = {
+    "mistral/ministral-3b-latest":                          "ministral-3b",
+    "deepseek/deepseek-v4-flash":                            "deepseek-v4-flash",
+    "fireworks_ai/accounts/fireworks/models/gpt-oss-120b":  "gpt-oss-120b",
+    "deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B":   "NVIDIA-Nemotron-3-Super-120B-A12B",
+}
+
+
+def load_price_lookup():
+    """{model_string: {"input": $/1M, "cached": $/1M, "output": $/1M}}.
+
+    Falls back to the input-token rate for a model's cached-token price when
+    the sheet has no entry (NaN) -- i.e. assumes no caching discount rather
+    than guessing one, for providers that report cache hits but don't
+    document a discounted rate for them (mistral-3b, gpt-oss-120b both have
+    nonzero total_cached_tokens despite a blank "Cached Tokens" cell)."""
+    prices = pd.read_excel(MODEL_COSTS_XLSX)
+    by_name = prices.set_index("Model")[["Input Tokens", "Cached Tokens", "Output Tokens"]].to_dict("index")
+    lookup = {}
+    for model_string, price_row_name in MODEL_TO_PRICE_ROW.items():
+        if price_row_name not in by_name:
+            raise KeyError(f"'{price_row_name}' (needed for {model_string}) not found in {MODEL_COSTS_XLSX}")
+        row = by_name[price_row_name]
+        input_price = row["Input Tokens"]
+        cached_price = row["Cached Tokens"]
+        lookup[model_string] = {
+            "input": input_price,
+            "cached": cached_price if pd.notna(cached_price) else input_price,
+            "output": row["Output Tokens"],
+        }
+    return lookup
+
+
+def compute_actual_cost(price_lookup, model, input_tokens, cached_tokens, output_tokens):
+    """USD cost recomputed from models/model_costs.xlsx, in $/1M tokens.
+    total_input_tokens (the raw usage.prompt_tokens count) includes any
+    cached tokens as a subset, not in addition to them -- see
+    harness/run_trial.py's _cached_tokens()/prompt_tokens usage -- so the
+    uncached portion is the difference, not the full input count."""
+    p = price_lookup[model]
+    cached = cached_tokens or 0
+    uncached_input = input_tokens - cached
+    cost = (uncached_input * p["input"] + cached * p["cached"] + output_tokens * p["output"]) / 1e6
+    return round(cost, 6)
+
 # A "complete" trial set for one (model, rep) is every (issue, map
 # condition) combination in the study design: 45 issues x 4 map
 # conditions.
@@ -151,6 +206,7 @@ def main():
         (row["repo"], int(row["issue_idx"])): (row["tier"], row["python_loc"])
         for _, row in sel.iterrows()
     }
+    price_lookup = load_price_lookup()
 
     rows = []
     flagged = []
@@ -221,7 +277,17 @@ def main():
             "total_input_tokens":      m["total_input_tokens"],
             "total_output_tokens":     m["total_output_tokens"],
             "total_cached_tokens":     m.get("total_cached_tokens"),
-            "total_cost":              m["total_cost"],
+            # "total_cost" is recomputed from models/model_costs.xlsx, not the
+            # harness's litellm.completion_cost() figure -- litellm silently
+            # returns 0.0 for models it has no pricing entry for (true for
+            # mistral-3b and deepinfra/nemotron-super here, across every
+            # trial). The original litellm number is kept alongside as
+            # total_cost_litellm_raw for audit purposes; see load_price_lookup()
+            # / compute_actual_cost() above and the compile-time summary below.
+            "total_cost":              compute_actual_cost(
+                                           price_lookup, rec["model"], m["total_input_tokens"],
+                                           m.get("total_cached_tokens") or 0, m["total_output_tokens"]),
+            "total_cost_litellm_raw":  m["total_cost"],
             "wall_time_seconds":       m["wall_time_seconds"],
         })
 
@@ -268,6 +334,16 @@ def main():
                if len(df_complete) else 0)
     print(f"\nFinal compiled dataset: {len(df_complete)} trials "
           f"from {n_pairs} complete (model, rep) sets")
+
+    if len(df_complete):
+        cost_cmp = df_complete.groupby("model").agg(
+            litellm_reported=("total_cost_litellm_raw", "sum"),
+            recomputed_actual=("total_cost", "sum"),
+        ).round(3)
+        print("\nCost check -- litellm-reported vs. recomputed from models/model_costs.xlsx:")
+        print(cost_cmp)
+        print(f"  TOTAL litellm-reported: ${df_complete['total_cost_litellm_raw'].sum():.2f}   "
+              f"recomputed actual: ${df_complete['total_cost'].sum():.2f}")
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     df_complete.to_pickle(args.out)
