@@ -1385,3 +1385,78 @@ pilot issues, then decide whether to regenerate for all 45. Tool/harness
 integration itself (how a model actually calls this at trial time) is
 not designed yet -- today's work is storage restructuring only.
 
+## 2026-07-14 (cont'd)
+## Consolidated Study 1 Results, First Compilation Pass
+
+### Merged results/ and the Live Study into study_1/results/
+Later the same day, with the multi-worker batch run settled, consolidated
+results from both locations that had been feeding Study 1 -- this repo's
+own `results/` (rep0 only, generated before the migration to the
+native-filesystem multi-worker setup) and the live study's
+`/home/afb225/study1/results/` (reps 1+, the actual multi-worker batch) --
+into a single `study_1/results/` directory, mirroring the `study_0/`
+archival pattern established on 2026-07-13. Root-level `results/` is now
+empty.
+
+### Wrote compile_results.py
+Added `scripts/compile_results.py` to flatten every trial JSON under
+`study_1/results/` into one table (`data/compiled_results.pkl`), with a
+companion `compiled_results_flagged.csv` listing anything excluded and
+why (unreadable JSON, missing required keys, duplicate
+model/repo/issue_idx/map_type/rep, unrecognised map_type). Scoped to the
+4 models confirmed in scope by the user that day: `mistral/ministral-3b-latest`,
+`deepseek/deepseek-v4-flash`, `fireworks_ai/.../gpt-oss-120b`,
+`deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B`. Per user
+instruction, a `(model, rep)` pair is only included if it has the full
+180 trials (45 issues x 4 map conditions) -- incomplete pairs are
+excluded outright rather than down-weighted.
+
+First run (~22:58) reported 0 flagged records and saved the compiled
+pickle. Also added `notebooks/results_analysis.ipynb`, which invokes
+`compile_results.py` itself as its Step 0 and runs the actual
+success-rate/token-cost analysis across map conditions on top of the
+result.
+
+At this point the completeness check was passing `deepseek-v4-flash`'s
+rep0 set (180/180) through as a legitimate rep, indistinguishable from
+the real reps 1-3 -- not yet noticed (see 2026-07-15).
+
+## 2026-07-15
+## Found and Split Out Pre-Migration Pilot Data; Cleared the Commit Backlog
+
+### rep0 Was Silently Contaminating the Compiled Dataset
+Revisiting the compiled dataset, `mistral-3b rep0` showed up as an
+incomplete pair (1/180) and was correctly excluded. Checking rep0 counts
+across *all* models turned up the real problem: `deepseek-v4-flash` had a
+full 180/180 rep0 set, so `compile_results.py`'s completeness check
+treated it as a valid `(model, rep)` pair and folded it into the compiled
+output alongside the genuine reps 1-3 -- even though both repos'
+rep0 files predate the native-filesystem multi-worker migration.
+
+Confirmed with the user: rep0 was a pilot run under slightly different
+conditions from the main multi-worker study and shouldn't be mixed into
+the analysis dataset, but also shouldn't just be deleted -- it's real
+pilot data, not garbage (initially considered deleting the 180-file
+deepseek set outright; correctly pushed back on as too destructive for
+what turned out to be a mislabelling problem, not a data-quality one).
+
+### Fix: study_1/pilot_results/
+Moved all 181 rep0 files (180 `deepseek-v4-flash`, 1 `mistral-3b`) out of
+`study_1/results/` into a new `study_1/pilot_results/`, preserving the
+`{model}/{repo}/{issue_idx}/{map_condition}/rep0.json` subpath.
+`compile_results.py`'s `RESULTS_DIRS` only points at `study_1/results/`,
+so the pilot data is now excluded from analysis without any script
+changes. Re-ran the compilation: 12 complete `(model, rep)` sets, 2160
+trials, 0 flagged (down from 13 sets / 2340 trials with the contaminated
+rep0 set included).
+
+### Cleared the Commit Backlog
+Committed the accumulated uncommitted work in four focused commits
+rather than one bundle: (1) the `study_1/results/` consolidation plus the
+pilot-data split, (2) the path-indexed full-map-storage pilot from
+2026-07-14 (`generate_ast_index.py` / `generate_freq_index.py` /
+`generate_cochange_index.py` plus the `core/20`, `pandas/26`,
+`scikit-learn/45` index JSON), (3) `compile_results.py` and
+`results_analysis.ipynb`, and (4) unrelated scratch cells appended to
+`explore_dataset.ipynb`.
+
