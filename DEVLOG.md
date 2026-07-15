@@ -1310,3 +1310,78 @@ fallback fix; the git-tracked copy in this repo does **not** yet -- needs
 mirroring back and committing. The yt-dlp re-run todo above is also still
 outstanding. Both pending once the live batches settle.
 
+## 2026-07-14
+## Study 1 Co-Change Pilot, Weak-Results Forecast, and Kicking Off Tool-Based Map Retrieval
+
+### Study 1 Batch Run Continuing
+The multi-worker run launched 2026-07-13 kept going through today.
+
+### Pilot: Do Models Actually Use the Co-Change Map?
+Before waiting on the full Study 1 batch to finish, ran a small set of
+pilot trials with claude-haiku, deepseek (pro tier), and mistral-medium
+specifically to sanity-check whether the co-change map's information is
+something these models pick up and act on at all, rather than just
+learning that after the fact from the full run's aggregate numbers.
+
+### Decision: Expecting Weak Study 1 Results — Pivoting to Tool-Based Retrieval
+Based on the pilot signal, expecting Study 1's wholesale-injection design
+(whole map dropped into context under a fixed token budget) to
+under-perform. The budget cap forces real information loss at generation
+time -- not just as a rendering step -- which may be starving the model of
+exactly the detail it would need to use a map well: docstrings truncated
+to their first line, co-change partner lists cut to the top 3, whole
+files dropped under aggressive pruning on the larger codebases (`core`,
+`pandas`, `scikit-learn`).
+
+Decided the next direction is a **tool-based alternative**: instead of
+receiving the whole map upfront, the model calls a tool with a file (or
+list of files) and gets back a detailed record for just that lookup.
+Since token cost is then paid only for what's actually queried, each
+per-file record can carry much richer information than anything the
+injection format could afford.
+
+### Goal 1: Restructured Map Storage for Full, Path-Indexed Access
+First step of the pivot -- storage only, no tool/harness wiring yet.
+Talked through the plan before touching anything (see this session's
+transcript). Two findings from re-reading the existing generators before
+changing anything:
+- `generate_ast_map.py`'s `first_docstring_line()` already truncates
+  every docstring to its first non-empty line, at raw AST-extraction
+  time -- not in `compact_map.py`'s rendering step as might be assumed.
+- `generate_cochange_map.py --top-n` (default 3) slices to the top-N
+  co-change partners inside the co-occurrence computation itself, so
+  partners beyond that are never even stored.
+
+Both cuts only make sense for a fixed-budget wholesale injection and
+don't apply to on-demand lookup, so "full" data requires touching
+generation, not just a downstream renderer.
+
+Wrote three new sibling scripts rather than modifying the live
+generators in place, since those still feed the actively-running Study 1
+batch: `generate_ast_index.py`, `generate_freq_index.py`,
+`generate_cochange_index.py`. Each imports the parsing/git-log helpers
+from the existing scripts unmodified (`build_signature`, `_parse_source`,
+`pkg_tree_path`, `_get_all_file_stats`, `_get_all_commits_and_files`) and
+writes path-indexed JSON (`{file_path: {...}}`) instead of the existing
+flat NDJSON/text formats, keeping full docstrings and full co-change
+partner lists.
+
+Chose **three separate path-keyed indices** (`ast_index_full.json`,
+`freq_index_full.json`, `cochange_index_full.json`) over one merged
+per-file record, written into the same `repo_maps/{repo}/{issue_idx}/`
+directory as the existing maps. The three generators are already fully
+independent with no cross-script coordination today; a merged structure
+would add a new read-merge-write step and a new way for one map type's
+regeneration to clobber another's data, for a combination that's a
+trivial 3-dict lookup at query time anyway.
+
+Piloting on 3 issues before regenerating all 45 -- `core/20`,
+`pandas/26`, `scikit-learn/45` -- chosen to span the size range already
+in the panel. Generation kicked off; not yet inspected.
+
+### Status / Next
+Pilot generation running. Next: check output size/structure on the 3
+pilot issues, then decide whether to regenerate for all 45. Tool/harness
+integration itself (how a model actually calls this at trial time) is
+not designed yet -- today's work is storage restructuring only.
+
