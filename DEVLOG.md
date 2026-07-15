@@ -1460,3 +1460,124 @@ pilot-data split, (2) the path-indexed full-map-storage pilot from
 `results_analysis.ipynb`, and (4) unrelated scratch cells appended to
 `explore_dataset.ipynb`.
 
+## 2026-07-15 (cont'd)
+## Notebook Bug Chain, an F1-Primary Sibling Notebook, and a Real Cost Bug
+
+### `compare_lr_test` Doesn't Exist on Discrete Models
+User hit `AttributeError: 'LogitResults' object has no attribute
+'compare_lr_test'` running `results_analysis.ipynb`'s Step 4. Checked the
+installed `statsmodels` source directly: `compare_lr_test` is only
+defined in `regression/linear_model.py` (OLS/WLS/GLS), never on
+`discrete_model.py`'s results classes -- so every LRT in Steps 4 and 7
+(`Logit`, `NegativeBinomial`) was calling a method that plain doesn't
+exist there. Fixed with a manual `lr_test(model_full, model_reduced)`
+helper built from `llf`/`df_model` (verified equivalent to
+`compare_lr_test`'s own formula on a synthetic OLS case), added to the
+notebook's setup cell and swapped into all four call sites.
+
+### Exploring Whether Binary `success` Loses Signal
+Before the F1 work: dug into what the `recall == 1.0` "success" binary
+throws away. Of 2160 compiled trials, 514 (24%) have partial recall
+strictly between 0 and 1 (237 alone at exactly 0.5) -- all collapsed
+identically to "failure" by the binary threshold. F1 additionally
+penalises false positives that recall-only ignores: predicted-set size
+creeps from 0.99 files/trial at `baseline` to 1.15 at
+`temporal_cochange`, and 77 trials get full recall credit while still
+having a false positive. Every alternative metric checked (any-hit,
+mean recall, mean F1, exact-match `f1==1.0`) preserves the same
+condition ranking as the existing binary metric, just with tighter
+spread -- concluded the binary threshold isn't wrong, but is throwing
+away real signal that a continuous outcome could use.
+
+### Added `results_analysis_f1.ipynb`
+Built as a block-for-block sibling of `results_analysis.ipynb`, with mean
+F1 (continuous) as the primary outcome instead of binary
+`success = recall==1.0`. A continuous [0,1] outcome needs different
+statistical tools throughout Step 4-6, chosen deliberately per cell
+rather than forcing the binary-outcome versions to fit:
+- Step 4 interpretive model: `GEE` (Binomial family), clustered once by
+  `issue_id` and once by `codebase`, replacing `BinomialBayesMixedGLM`
+  -- `statsmodels` has no mixed-effects model at all for a fractional
+  response, not even the variational-Bayes approximation available for
+  the binary case.
+- Step 4 frequentist LRT: marginal fractional logit (`GLM`, `Binomial`
+  family, quasi-MLE -- the standard Papke-Wooldridge approach) replacing
+  `smf.logit`, reusing the same `lr_test()` helper.
+- Step 6 matched-pairs tests: Wilcoxon signed-rank + Friedman test
+  replacing McNemar's test + Cochran's Q -- the continuous-outcome
+  analogues of the same matched-pairs design.
+- R escape-hatch recommendation updated from `lme4::glmer` (binomial-only)
+  to `glmmTMB`/`brms` with a beta family, since that's the actual R
+  equivalent of a bounded continuous outcome.
+
+Prototyped every new model choice against the real compiled data first
+(via ad hoc scripts, not inside the notebook) to confirm each one
+actually fits before writing it into a cell -- e.g. confirmed GLM/GEE
+accept a continuous [0,1] endog without error, confirmed `.qic()`'s
+return shape, confirmed `sns.regplot(lowess=True)` doesn't accept a `ci`
+kwarg the same way the logistic case does.
+
+### Found Three More Latent Bugs by Actually Executing the Notebooks
+Rather than trust that copy-pasted-and-adapted cells would run, executed
+both notebooks end-to-end via `jupyter nbconvert --execute` against the
+real compiled data. This surfaced three more bugs in code the sibling
+notebook inherited verbatim from `results_analysis.ipynb` -- meaning the
+original notebook would hit all three too, the moment it got far enough
+to reach them (it hadn't, since `compare_lr_test` died first):
+- A Step 3 plotting cell assigns a local variable named `stats`,
+  shadowing the `from scipy import stats` import `lr_test()` depends on
+  for every cell that runs after it. Renamed to `turn_stats`.
+- Step 5's `contrast_vs_baseline()` calls `design_info.transform(...)` --
+  not a real `patsy` method (`DesignInfo` has no `transform`). Needed
+  `patsy.build_design_matrices([design_info], point)` instead. Separately,
+  `float()` on `t_test()`'s `.effect`/`.sd` (1-D/2-D arrays, even when
+  size 1) now raises under numpy 2.x, which only accepts genuinely
+  0-dimensional arrays; `.conf_int()`/`.pvalue` happened to already
+  return 0-d values so were unaffected. Fixed with `.item()` for the
+  two affected attributes.
+- Step 7's `hit_turn_cap` is `bool`-typed; used directly as a formula
+  endog, `patsy` dummy-codes a bool column into 2 design-matrix columns
+  instead of numeric 0/1, which `smf.logit` rejects outright. Cast to
+  `int` alongside `success_int`. Separately, the full 3-way
+  `hit_turn_cap` model hits a singular Hessian: 5 of 16
+  `(model, map_condition)` cells have an exact 0% turn-cap rate
+  (`ministral-3b`, `gpt-oss-120b` rarely exhaust the budget at all) --
+  genuine quasi-separation, not a bug. Wrapped in try/except with a
+  diagnostic message, matching the existing `BinomialBayesMixedGLM`
+  separation-handling pattern; Step 8's plot degrades gracefully
+  (skips the turn-cap panel) if the fit fails.
+
+All four fixes applied to both notebooks, since the buggy cells were
+shared. Both now execute cleanly end-to-end.
+
+### Real Bug: Half the Study's Costs Were Silently $0
+Asked to work out actual per-trial costs from `models/model_costs.xlsx`
+(a $/1M-token price sheet the harness itself doesn't consult).
+Recomputing costs independently and comparing against the harness's
+existing `total_cost` (from `litellm.completion_cost()`) turned up a real
+bug: litellm silently returns `0.0` for any model string it has no
+pricing entry for -- true for `mistral/ministral-3b-latest` and
+`deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B`, across all 540
+trials each (half the compiled dataset). Validated the recomputation
+approach against the two models litellm *did* price correctly
+(`deepseek-v4-flash`, `gpt-oss-120b`): matches to within rounding (median
+relative difference 0.0000).
+
+Added `load_price_lookup()`/`compute_actual_cost()` to
+`compile_results.py`. `total_cost` in the compiled table now holds the
+corrected figure (falls back to the input-token rate for a model's
+cached-token price when the sheet has no discount documented for it,
+e.g. `mistral-3b`/`gpt-oss-120b` both report nonzero cache hits despite a
+blank "Cached Tokens" cell); the original litellm number is kept as
+`total_cost_litellm_raw` for audit. **Real total study cost is $41.58,
+not the $19.58 previously recorded.** Neither notebook needed code
+changes for this -- both read `total_cost` from the compiled pickle
+directly, so the fix propagates automatically; re-verified by re-running
+both end-to-end.
+
+### Status
+All of the above committed as three focused commits: the notebook bug
+fixes, the cost-recalculation fix, and the new `results_analysis_f1.ipynb`.
+`data/compiled_results.pkl` (gitignored, regenerate via
+`python3 scripts/compile_results.py`) now reflects the corrected costs.
+
