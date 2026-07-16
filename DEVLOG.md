@@ -1581,3 +1581,190 @@ fixes, the cost-recalculation fix, and the new `results_analysis_f1.ipynb`.
 `data/compiled_results.pkl` (gitignored, regenerate via
 `python3 scripts/compile_results.py`) now reflects the corrected costs.
 
+## 2026-07-15 (cont'd)
+## Full-Index Regeneration for All 45 Issues, and a Size/Spread Report
+
+### Regenerated the Full Indexes Beyond the 3-Issue Pilot
+Next step after the pilot (per 2026-07-14's Status/Next): mechanical
+regeneration of `ast_index_full.json` / `freq_index_full.json` /
+`cochange_index_full.json` for the remaining 42 issues, deferring the
+harder tool/harness-interface design question for later (discussed and
+deliberately sequenced this way -- cheap to redo 3 pilot issues if the
+interface design changes the record shape, expensive to redo all 45
+twice).
+
+Wrote `scripts/generate_all_indexes.py`, mirroring
+`generate_all_maps.py`'s repo/commit/package-name/skip-dir resolution
+(`REPO_DIR_MAP`, `PACKAGE_MAP`, `data/repo_skip_config.yaml`) but calling
+the three `*_index.py` generators instead of the budget-capped ones, and
+reading `base_commit` straight from `data/issue_selection_final.csv`
+(already carries it per issue) rather than re-deriving it from the raw
+issue pickle. Ran for all 45 issues (~494s, dominated by `cochange`'s
+full git-history walk on larger repos): **45/45 succeeded, 0 failures**,
+verified independently after the fact (all 3 files present per issue,
+stats CSV has no null file counts).
+
+The 3 already-committed pilot issues' `cochange_index_full.json` came
+back byte-different on regeneration -- checked directly rather than
+assumed benign: normalizing both versions (sort each file's partner list)
+showed identical keys and identical content, so it's non-deterministic
+dict/list construction order in the generator, not data loss or a
+config drift. Left as a known cosmetic non-determinism rather than
+chasing a fix, since it doesn't affect correctness.
+
+### Size/Spread Statistics
+Built `scripts/index_size_stats.py` to characterize the full indexes now
+that all 45 exist, specifically to inform the still-undesigned tool
+interface. Token counts use `chars // 4`, matching the estimation
+convention already used by `generate_ast_map.py`/`compact_map.py`
+elsewhere in the project. Produces two CSVs: `index_size_stats.csv` (one
+row per map type -- whole-index totals, per-file/per-query percentile
+spread, worst-case issue/file, blow-up vs. the old budget-capped maps)
+and `index_size_stats_per_issue.csv` (135-row detail table for drilling
+into specific outliers).
+
+Headline finding, distinguishing "whole index size" (never loaded at
+trial time) from "per-file query response size" (what actually matters
+once a tool exists):
+- `freq` is trivial and flat -- every record is ~9-10 tokens regardless
+  of file, no design concern.
+- `ast` is heavily right-skewed -- median per-file response is 229
+  tokens, but the worst case (`pandas/core/generic.py`) is **54,385
+  tokens for one file**, nearly the entire old 55k-token map budget for
+  a single lookup. God-classes/files with hundreds of methods are the
+  driver.
+- `cochange` plateaus rather than blows up unboundedly -- p90 through
+  max are all within ~400 tokens of each other (13,090 to 13,472),
+  since a co-change partner list is bounded by "how many other files
+  exist in the repo." "Hub" files (`yt_dlp/extractor/common.py`,
+  `YoutubeDL.py`, `homeassistant/components/climate/__init__.py`) all
+  cap out near the same ceiling rather than growing without bound.
+- Whole-index blow-up vs. the old budget-capped maps averages 4.2x for
+  `ast` and 164x for `cochange` (up to 452x on the worst issue,
+  `yt-dlp/23`) -- expected, since the old maps capped co-change partners
+  at top-3 and pruned aggressively under the 55k budget.
+
+**Implication for the still-undesigned tool interface**: a naive
+"return the whole file record" lookup tool would occasionally hand back
+a 54k-token response from one `ast` call, or ~13.5k tokens from one
+`cochange` call on a hub file -- both large enough to eat most or all of
+a reasonable per-turn budget from a single lookup. `freq` needs no such
+handling. Likely needs truncation/pagination on `ast`'s per-file method
+list and/or a cap on `cochange`'s returned partner count, even though
+storage itself keeps everything -- a design decision for whenever the
+tool interface itself gets built, not resolved here.
+
+### Status
+`scripts/generate_all_indexes.py`, the regenerated indexes for all 45
+issues, `scripts/index_size_stats.py`, and the two size-stats CSVs are
+all uncommitted as of this entry. Tool/harness integration (how a model
+actually calls this at trial time) remains undesigned -- still the next
+real step, per 2026-07-14's original note.
+
+## 2026-07-16
+## Designing the Tool Schemas for On-Demand Map Retrieval
+
+### Study Design: 4 Conditions, Not 5, and a Separate Harness File
+Talked through the next step -- the actual `lookup_*` tool interface --
+before writing any code. Two scoping decisions landed first:
+- The condition set is `structural` / `temporal_frequency` /
+  `temporal_cochange` / `all_tools` (all three lookup tools available
+  together) -- no `none`/baseline condition this time, since Study 1's
+  `baseline` results are reused directly for the no-map comparison point
+  rather than re-run.
+- Implementation goes in a new `harness/run_trial_tools.py`, copied from
+  `run_trial.py` rather than branching it with conditionals -- same
+  reasoning as the index generators being separate scripts from the
+  live map generators: don't modify validated, working code in place
+  when a sibling copy is cheap. The tool-calling loop, tiered
+  `tool_choice` fallback, and turn/budget bookkeeping carry over
+  unchanged; only `TOOLS` construction, `execute_tool` dispatch, and the
+  `map_type` -> condition mapping actually need to differ.
+
+### `lookup_structure`: Plain Text Helps, But Not Enough to Skip Pagination
+First cap-sizing pass measured raw JSON serialization size
+(`len(json.dumps(record))`), which overstates true cost -- the actual
+tool response would be reformatted to plain text (matching
+`compact_map.py`'s per-file style: `class Foo(Base) L10` / indented
+`method(x, y) L15` / `"docstring"` lines) instead of returning the JSON
+directly, since that's the format every existing tool in this harness
+uses. Rebuilt the size analysis against an actual plain-text renderer to
+check how much that matters:
+
+- For **typical files**, JSON overhead is a big fraction of the total --
+  median per-file size drops from ~229 tokens (JSON) to ~25 tokens
+  (plain text), and files exceeding a 40k-char cap roughly halve (125 ->
+  62 of 10,653, JSON vs. text).
+- For the **worst-case files that actually threaten the budget**, it
+  barely matters -- `pandas/core/generic.py` is 217,543 chars as JSON
+  (~54,385 tok) and 192,345 chars as plain text (~48,086 tok), only a
+  12% cut. At that size the content itself (hundreds of method
+  signatures, long docstrings) dominates, not JSON punctuation, so
+  there's little scaffolding left to strip.
+
+Conclusion: reformatting to plain text is a real, free win for the
+common case, but doesn't rescue the long tail -- 62 of 10,653 files
+(0.6%) still exceed 40k chars even as plain text. Since a flat
+truncation would silently drop real content on those with no way to
+recover it, and the underlying data is a *list* (classes + functions),
+not a byte blob, went with **pagination over a flat cap**: a
+`lookup_structure(path, offset=1)` tool, no `limit` parameter (unlike
+`read_file`'s `offset`/`limit`, since member size varies too much for a
+model to usefully guess a count-based limit the way it can guess a
+line-count one). The harness auto-fills from `offset` up to a 40k-char
+cap per call and reports `[members N-M of TOTAL ...]` plus either "more,
+call again with offset=M+1" or "(end of file)" -- same pattern as
+`read_file`'s existing `[Lines X-Y of Z]` header. Worked through the
+full pagination trace for `pandas/core/generic.py` (266 members) as a
+concrete example: 5 calls of ~9,100-10,000 tokens each to see the whole
+file, vs. one ~48k-token call with no cap, with most trials never
+needing to pull past page 1.
+
+### `lookup_cochange`: Model-Chosen `top_k`, No Ceiling
+Partner-count distribution turned out far larger than expected -- mean
+358.7, median 156 partners per file across all 45 issues -- but almost
+entirely driven by three repos with unusually dense co-change graphs:
+`yt-dlp` (median 976 partners/file), `core` (242), `transformers` (220),
+vs. 11-88 for the rest. Checked whether the long tail past a small K is
+just noise (count==1 pairs) before picking a cutoff on that basis, and
+it isn't -- **even at rank 100, the median co-change count is still 2**,
+not 1, so there's no sharp elbow that makes any particular K the
+obviously-correct cutoff.
+
+Where `cochange` differs fundamentally from `ast`: token cost stayed
+cheap at every K tested (plain-text rendered, `"  file  (N
+co-changes)"` per line):
+
+```
+K=3:  mean  36 tok  p95  52  max  78      K=20: mean 228 tok  p95 342  max  502
+K=5:  mean  60 tok  p95  86  max 126      K=30: mean 331 tok  p95 510  max  722
+K=10: mean 118 tok  p95 172  max 254      K=50: mean 523 tok  p95 844  max 1,075
+```
+
+And critically, **uncapped** (every partner, no K at all) tops out at a
+known, bounded worst case -- mean 4,481 tok, p90 11,374, max 12,087
+(`homeassistant/components/climate/__init__.py`, 780 partners) --
+because partner count itself is naturally bounded (~1,000 max, limited
+by how many other files exist in these repos), unlike `ast` where file
+size has no such ceiling. Decided a hard ceiling on `top_k` wasn't
+protecting against anything real given that bound, so went with
+**`lookup_cochange(path, top_k=10)`, default 10, no maximum** -- a model
+that wants to know whether a file was *ever* co-changed with something
+specific can just ask for a large `top_k` and get the full list, worst
+case ~12k tokens, without the harness pre-deciding that's not allowed.
+This is a deliberate contrast with `lookup_structure`'s hard 40k-char
+cap + pagination: `ast` needed protection because its tail is
+open-ended; `cochange` doesn't, because its tail self-limits.
+
+### `lookup_frequency`: No Design Needed
+Every response is ~9-10 tokens regardless of file (`{"edits": N,
+"last_edit": "YYYY-MM-DD"}` rendered to one line) -- no cap, no
+pagination, no model-chosen parameter, just `lookup_frequency(path)`.
+
+### Status
+Schema shapes are settled in conversation for all three tools; none of
+this is written as actual tool-schema JSON or harness code yet. Next
+step is writing out the three `TOOLS` entries in the same style as
+`run_trial.py`'s existing ones, then scaffolding `run_trial_tools.py`
+from the `run_trial.py` copy.
+
