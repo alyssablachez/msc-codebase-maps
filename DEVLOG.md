@@ -1768,3 +1768,108 @@ step is writing out the three `TOOLS` entries in the same style as
 `run_trial.py`'s existing ones, then scaffolding `run_trial_tools.py`
 from the `run_trial.py` copy.
 
+## 2026-07-16 (cont'd)
+## Implemented the Lookup Tools, Built 4 Harness Copies, Live-Validated
+
+### Schemas and Execution Logic as Real Code
+`scripts/lookup_tool_schemas.py` -- the three tool JSON schemas from
+earlier today, each also exported individually
+(`LOOKUP_STRUCTURE_TOOL`/`LOOKUP_FREQUENCY_TOOL`/`LOOKUP_COCHANGE_TOOL`)
+alongside the combined `LOOKUP_TOOLS` list, so each condition-specific
+harness file can import only what it needs.
+
+`scripts/lookup_tools.py` -- the actual execution logic, shared across
+all harness copies rather than duplicated (same rationale as
+`repo_config.py`/`source_filter.py`): reads `*_index_full.json`,
+per-process-cached per `(maps_root, repo, issue_idx, kind)` since a
+trial may look up many files from the same issue's index. Reused the
+plain-text renderer and pagination logic prototyped earlier today when
+computing size stats, now wired into `execute_lookup_structure()` (member-
+index pagination, 40k-char cap, "[members N-M of TOTAL...]" header
+matching `read_file`'s convention), `execute_lookup_frequency()`
+(trivial), and `execute_lookup_cochange()` (`top_k`, default 10, no
+ceiling). Validated by reproducing the exact `pandas/core/generic.py`
+5-page pagination trace from the design conversation byte-for-byte.
+
+### 4 Condition-Specific Harness Copies, Not One Shared File
+Per user instruction: `harness/run_trial_structural.py` /
+`run_trial_temporal_frequency.py` / `run_trial_temporal_cochange.py` /
+`run_trial_all_tools.py`, each a full copy of `run_trial.py` with a
+fixed `CONDITION` constant rather than a `--map`-style branch. Generated
+programmatically from `run_trial.py`'s source via a one-off script
+(exact-match string replacements, not a diff/patch) so all 4 apply an
+identical edit recipe -- removes `--map`, `MAP_FILES`,
+`load_map_content()`, `MAP_DESCRIPTIONS`, `MAP_SYSTEM_ADDON` entirely
+(no wholesale map injection in these conditions at all); adds the
+relevant `LOOKUP_*_TOOL` schema(s) to `TOOLS`; extends
+`execute_tool()`'s signature to also take `repo_name`/`issue_idx`/
+`maps_root` and dispatch to `lookup_tools.py`; extends `BASE_SYSTEM`'s
+tool list and "you have access to N tools" count. The tool-calling loop,
+tiered `tool_choice` fallback, and turn/budget bookkeeping are untouched
+copies.
+
+Caught two generator bugs before they shipped: a leftover-reference
+self-check used substring matching (`"args.map" not in text`), which
+false-negatived on `args.maps_base` containing "args.map" as a prefix --
+switched to a `\bargs\.map\b` regex; and the first pass removed the
+`load_map_content()` call site but not its function definition, leaving
+a dangling reference to the now-deleted `MAP_FILES`. Both caught by the
+generator's own assertions, not silently shipped.
+
+Verified each of the 4 files: valid syntax, `--help` confirms `--map` is
+gone, `TOOLS` resolves to the right tool set per file (checked by
+importing each module directly, not just grepping -- a literal-string
+name search initially looked wrong because the lookup tool dicts are
+imported by reference, not inlined), `execute_tool()` dispatches
+correctly including still-working `list_files`/unknown-tool-error
+paths, and a full diff against `run_trial.py` confirmed only the
+intended sections changed.
+
+### Live Validation: 8 Real Trials, 2 Models, 2 Issues
+Ran all 4 conditions against `requests/7` (the same issue used for the
+original harness validation, 2026-07-12) with both `mistral/ministral-
+3b-latest` and `deepseek/deepseek-v4-flash`, then against `flask/18`
+(2 ground-truth files, `src/flask/logging.py` + `src/flask/app.py`) with
+`deepseek/deepseek-v4-flash`. All 8 runs completed without crashing and
+scored correctly; `flask/18`'s `temporal_frequency` and `all_tools` runs
+also reproduced the documented DeepSeek "Thinking mode does not support
+this tool_choice" failure (2026-07-13) and correctly recovered via the
+existing tiered fallback -- confirming that fix carried over intact into
+the new copies.
+
+**Tool uptake is inconsistent and looks model-dependent, echoing the
+`claude-haiku`/`transformers-27` finding from earlier today**:
+- `lookup_cochange` was never called once, by either model, on either
+  issue, across all 6 opportunities it had (`temporal_cochange` +
+  `all_tools`, both models/issues where available). Both models solved
+  those conditions via brute-force `search`/`read_file` instead, every
+  time.
+- `mistral-3b` used a lookup tool in only 1 of 4 `requests/7` runs
+  (`lookup_structure`, `structural` condition) -- notably its `all_tools`
+  run used *none* of the three despite all being available, took 17
+  turns and 75,878 input tokens (vs. 7-10 turns / 16-29k tokens in the
+  other three), and got there by reading `requests/models.py` whole
+  (25,372 chars) instead of using `lookup_structure` to see its shape
+  first.
+- `deepseek-flash` used `lookup_structure`/`lookup_frequency` more
+  often (4 of 8 runs total) but still inconsistently -- e.g. used
+  `lookup_structure` right away on `flask/18`'s `structural` condition
+  yet still only got half the ground truth (F1=0.667, missed `app.py`),
+  while two runs that used *no* lookup tool at all on the same issue
+  reached F1=1.0 via brute force. Small sample, but a reminder not to
+  equate "used the tool" with "used it well."
+- `flask/18` (the harder, 2-ground-truth issue) pushed `deepseek-flash`
+  to burn the full 20-turn budget in 2 of 4 conditions, up to 306,311
+  input tokens in one run (`all_tools`) -- still landed correct answers
+  both times via the forced-then-unforced `submit_answer` fallback.
+
+### Status
+Harness code (`lookup_tool_schemas.py`, `lookup_tools.py`, the 4
+`run_trial_*.py` copies) and the 8 validation result/log files are all
+uncommitted. Decision pending: keep the 8 validation runs as baseline
+records (precedent: the original `requests/7` mistral-3b validation
+trial from 2026-07-12 was kept, not deleted) or clean up before
+committing the harness code itself. Next real step beyond validation:
+run this at actual study scale (multiple issues x models x reps) rather
+than one-off spot checks.
+
