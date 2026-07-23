@@ -87,6 +87,31 @@ SUBMIT_REJECTION_MESSAGE = (
     "before calling submit_answer. Call it on a file you suspect is relevant, "
     "then submit again."
 )
+# Same gate, triggered when the model stops (no tool calls, finish_reason
+# "stop") without ever having called submit_answer at all -- otherwise this
+# exit path bypassed the gate entirely. Shares submit_rejections/
+# MAX_SUBMIT_REJECTIONS with the submit_answer gate above.
+NO_TOOL_CALL_REJECTION_MESSAGE = (
+    "You stopped without calling lookup_structure or submit_answer. "
+    "You must call lookup_structure before this trial can end — call it on "
+    "a file you suspect is relevant, then call submit_answer once you're "
+    "confident."
+)
+# Appended to TURN_WARNING_PROMPT (same threshold/turn) when the gate is
+# still unsatisfied at that point, so the model gets a chance to comply
+# before running low enough on turns that a rejection can't be recovered
+# from -- see DEVLOG for the real trial (ministral/requests-7) where a
+# rejection on the literal last turn left no turns to retry.
+GATE_REMINDER_CLAUSE = (
+    " Also: submit_answer will be rejected until you've called "
+    "lookup_structure at least once — if you haven't yet, call it now so "
+    "you don't waste a turn on a rejected submission."
+)
+# One-time extension granted only if max_turns is reached with the gate
+# still unsatisfied, so a model that ignored the reminder above still gets
+# a real shot at complying rather than falling straight into the (ungated)
+# forced free-form final-answer elicitation.
+BACKSTOP_TURNS = 2
 
 # ── tool schemas ──────────────────────────────────────────────────────────────
 
@@ -357,6 +382,27 @@ def _parse_submit_args(tc_args):
     return []
 
 
+KNOWN_TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
+
+
+def _normalize_tool_call(name, arguments):
+    """Recover (name, arguments) from a mangled tc.function.name -- seen from
+    Mistral in two shapes: trailing junk after a real name (e.g.
+    'list_files""'), or the arguments JSON concatenated onto the name with
+    tc.function.arguments coming back empty (e.g.
+    'lookup_structure{"path": "x.py"}'). Falls through unchanged if name
+    already matches exactly or doesn't start with any known tool name, so
+    the existing "unknown tool" error path still catches genuine unknown
+    calls."""
+    if name in KNOWN_TOOL_NAMES:
+        return name, arguments
+    for known in KNOWN_TOOL_NAMES:
+        if name.startswith(known) and name != known:
+            rest = name[len(known):]
+            return known, (rest if rest.startswith("{") else arguments)
+    return name, arguments
+
+
 # ── scoring ───────────────────────────────────────────────────────────────────
 
 def compute_scores(predicted, ground_truth, repo, issue_idx, maps_root):
@@ -483,15 +529,34 @@ def main():
     warned_turn_budget   = False
     lookup_calls_made   = set()   # names of REQUIRED_LOOKUP_TOOLS called so far
     submit_rejections   = 0
+    effective_max_turns = args.max_turns
+    backstop_used        = False
 
     try:
         # ── tool-calling loop ─────────────────────────────────────────────────
-        for turn in range(args.max_turns):
-            remaining = args.max_turns - turn
+        turn = 0
+        while True:
+            if turn >= effective_max_turns:
+                gate_satisfied_at_cap = (
+                    bool(lookup_calls_made & REQUIRED_LOOKUP_TOOLS)
+                    or submit_rejections >= MAX_SUBMIT_REJECTIONS
+                )
+                if not gate_satisfied_at_cap and not backstop_used:
+                    backstop_used = True
+                    effective_max_turns += BACKSTOP_TURNS
+                    print(f"  [max turns reached, gate unsatisfied → granting "
+                          f"{BACKSTOP_TURNS} backstop turns]")
+                else:
+                    break
+
+            remaining = effective_max_turns - turn
             if not warned_turn_budget and remaining <= TURN_WARNING_THRESHOLD:
+                warning_text = TURN_WARNING_PROMPT.format(remaining=remaining)
+                if not (lookup_calls_made & REQUIRED_LOOKUP_TOOLS):
+                    warning_text += GATE_REMINDER_CLAUSE
                 messages.append({
                     "role": "user",
-                    "content": TURN_WARNING_PROMPT.format(remaining=remaining),
+                    "content": warning_text,
                 })
                 warned_turn_budget = True
                 print(f"  [turn budget warning injected, {remaining} turns left]")
@@ -550,14 +615,35 @@ def main():
                   f"in={response.usage.prompt_tokens} out={response.usage.completion_tokens}")
 
             if finish_reason == "stop" or not tc_list:
+                gate_satisfied = (
+                    bool(lookup_calls_made & REQUIRED_LOOKUP_TOOLS)
+                    or submit_rejections >= MAX_SUBMIT_REJECTIONS
+                )
+                if not gate_satisfied:
+                    submit_rejections += 1
+                    print(f"    end_turn without required tool call → REJECTED "
+                          f"({submit_rejections}/{MAX_SUBMIT_REJECTIONS})")
+                    messages.append({
+                        "role":    "user",
+                        "content": NO_TOOL_CALL_REJECTION_MESSAGE,
+                    })
+                    transcript.append({
+                        "turn":     turn,
+                        "role":     "user",
+                        "content":  NO_TOOL_CALL_REJECTION_MESSAGE,
+                        "rejected": True,
+                    })
+                    turn += 1
+                    continue
                 stop_reason = "end_turn"
                 break
 
             # Execute each tool call and append results
             for tc in tc_list:
-                name = tc.function.name
+                orig_name = tc.function.name
+                name, raw_arguments = _normalize_tool_call(orig_name, tc.function.arguments)
                 try:
-                    tc_args = json.loads(tc.function.arguments)
+                    tc_args = json.loads(raw_arguments)
                 except json.JSONDecodeError:
                     tc_args = {}
 
@@ -584,6 +670,7 @@ def main():
                             "args":         tc_args,
                             "result":       tool_result,
                             "rejected":     True,
+                            **({"name_repaired_from": orig_name} if name != orig_name else {}),
                         })
                         continue
 
@@ -603,6 +690,7 @@ def main():
                         "name":         name,
                         "args":         tc_args,
                         "result":       tool_result,
+                        **({"name_repaired_from": orig_name} if name != orig_name else {}),
                     })
                     submitted = True
                     break
@@ -625,10 +713,12 @@ def main():
                     "name":         name,
                     "args":         tc_args,
                     "result":       result,
+                    **({"name_repaired_from": orig_name} if name != orig_name else {}),
                 })
 
             if submitted:
                 break
+            turn += 1
 
         if not submitted:
             # ── elicit final answer ───────────────────────────────────────────
@@ -751,6 +841,8 @@ def main():
             "wall_time_seconds":   round(wall_time, 2),
             "stop_reason":         stop_reason,
             "hit_turn_cap":        stop_reason == "max_turns",
+            "backstop_turns_granted": backstop_used,
+            "effective_max_turns":    effective_max_turns,
             "submission_type":     (
                 "submit_answer" if stop_reason == "submitted" else
                 "end_turn"      if stop_reason == "end_turn"  else

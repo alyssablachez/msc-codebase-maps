@@ -1874,7 +1874,7 @@ run this at actual study scale (multiple issues x models x reps) rather
 than one-off spot checks.
 
 ## 2026-07-22 / 2026-07-23
-## Deployed Study 2, Launched the Free-Choice Batch, Built a Submit-Gated Variant
+## Deployed and Launched Study 2 (Free-Choice); Designed Study 3 (Required)
 
 ### Matched BASE_SYSTEM Language, Re-Validated, Committed
 Closed out the prompt-parity gap from 2026-07-16: the `lookup_*` tool
@@ -1979,7 +1979,11 @@ model/worker/rep mapping above. This is Study 2's actual scale run,
 covering all 4 voluntary conditions (`structural`/`temporal_frequency`/
 `temporal_cochange`/`all_tools`) x 45 issues per worker.
 
-### Designed and Built a Submit-Gated "Required" Variant
+### Designed and Built Study 3: a Submit-Gated "Required" Variant
+Named as its own study, not a variant of Study 2 -- distinct enough
+(gated submission, different research question) to warrant its own
+number rather than living as a sub-mode of the free-choice study.
+
 While the free-choice batch ran, worked through making tool use
 mandatory rather than nudged. Key design decision: **gate
 `submit_answer`, don't force the first turn**. Forcing `tool_choice` on
@@ -2035,8 +2039,277 @@ the actual enforced requirement was fake) was deleted immediately after,
 along with the debug harness file itself.
 
 ### Status
-The 4 `run_trial_*_required.py` files are validated and uncommitted. The
-free-choice batch launched 2026-07-22 is presumably still running or
-newly finished as of this entry -- not yet checked for completion or
-compiled.
+Study 2 (free-choice): batch launched 2026-07-22 is presumably still
+running or newly finished as of this entry -- not yet checked for
+completion or compiled.
+
+Study 3 (required): the 4 `run_trial_*_required.py` files are validated
+and uncommitted. Not yet launched at batch scale.
+
+## 2026-07-23 (cont'd)
+## Study 3 Batches Complete for Three Models; Voluntary-vs-Required Comparison
+
+Study 3 (required) batches finished for `mistral/ministral-3b-latest`,
+`fireworks_ai/accounts/fireworks/models/gpt-oss-120b`, and
+`deepseek/deepseek-v4-flash` (1 rep each, 45 issues x 4 conditions).
+Ran `scripts/compare_tool_usage.py` against all three (output saved to
+`data/tool_usage_comparison_{ministral,gpt-oss-120b,deepseek-v4-flash}.csv`),
+plus ad hoc turn-position analysis (not yet a permanent script) to see
+*when*, not just *whether*, `lookup_*` tools get called. Confirmed with
+the user first: `all_tools_required`'s gate only requires *one* of the
+three lookup tools, not all three -- same `bool(lookup_calls_made &
+REQUIRED_LOOKUP_TOOLS)` check as the single-tool conditions, just with
+a three-name set.
+
+Baseline (Study 1, no maps/tools) mean F1: ministral-3b **0.5465**,
+gpt-oss-120b **0.590**, deepseek-v4-flash **0.5935** (135 trials each).
+
+### ministral-3b-latest
+
+| Condition | Voluntary F1 | Required F1 | First-use turn (median) | Fraction through | Mean calls (used) |
+|---|---|---|---|---|---|
+| structural | 0.535 | 0.529 | 3 / 2 | 36% / 34% | 1.84 / 2.26 |
+| temporal_frequency | 0.584 | 0.582 | 6 / 8 | 69% / 85% | 1.45 / 1.30 |
+| temporal_cochange | 0.560 | **0.606** | 9 / 9 | 75% / 81% | 1.14 / 1.13 |
+| all_tools | 0.494 | 0.488 | 3 / 2 | 34% / 30% | 2.33 / 3.40 |
+
+Clear split by *when* the tool gets called: `temporal_frequency` and
+`temporal_cochange` are both called late (69-85% through the trial) and
+almost always exactly once -- consistent with the system prompt's
+"confirm a candidate" framing for those tools -- and both sit at or
+above baseline. `structural` and `all_tools` are called early (30-36%
+through) and repeatedly (1.8-3.4 calls), and both sit at or below
+baseline, `all_tools` worst of all. `structural` alone (called early
+but only one tool type) is only mildly below baseline, whereas
+`all_tools` (early *and* three tool types available) is well below --
+suggestive that scattered/repeated calling across multiple tool types,
+not earliness per se, tracks with the F1 drop, though this hasn't been
+substantiated with a tool-type breakdown or per-issue check yet (queued,
+see Next below).
+
+### gpt-oss-120b
+
+| Condition | Voluntary F1 | Required F1 | First-use turn (median) | Fraction through | Mean calls (used) |
+|---|---|---|---|---|---|
+| structural | 0.623 | 0.568 | 2 / 3 | 34% / 48% | 1.48 / 1.51 |
+| temporal_frequency | 0.591 | 0.617 | -- / 6 | -- / 71% | -- / 1.40 |
+| temporal_cochange | 0.564 | **0.630** | -- / 9 | -- / 75% | -- / 1.13 |
+| all_tools | 0.581 | 0.597 | 2 / 3 | 32% / 46% | 1.53 / 2.17 |
+
+`temporal_cochange_required` is the best condition for this model too
+(0.630), matching ministral's pattern -- late single confirmatory call
+generalizes. But the rest doesn't: `all_tools` does *not* drop below
+baseline here (both voluntary and required roughly flat/above), and
+`structural` shows a new pattern -- voluntary `structural` is this
+model's *best* voluntary condition (0.623, clearly above baseline), but
+gating it drops F1 to 0.568, *below* baseline. Forcing the call seems
+to strip away whatever made the model's voluntary structural usage
+effective.
+
+Also checked this model specifically against `FIXES_TODO.md` item 1
+(submit-gate not covering the `finish_reason == "stop"` exit path),
+since it's the model that originally surfaced that bug. Real scale:
+**4-6 trials per required condition (9-13%)** exit via
+`stop_reason=end_turn` having never called any lookup tool, with zero
+rejections logged (`required_pct_had_rejection` only counts explicit
+`submit_answer` rejections, so this exit path is invisible to that
+column). A real, non-trivial slice of "required" is actually ungated
+for this model.
+
+### deepseek-v4-flash
+
+| Condition | Voluntary F1 | Required F1 | First-use turn (median) | Fraction through | Mean calls (used) |
+|---|---|---|---|---|---|
+| structural | 0.634 | 0.612 | 3 / 2 | 33% / 27% | 1.82 / 1.93 |
+| temporal_frequency | 0.608 | 0.481 | 10 / 9 | 63% / 68% | 1.91 / 1.82 |
+| temporal_cochange | 0.567 | 0.570 | 8 / 8 | 62% / 62% | 1.36 / 1.53 |
+| all_tools | 0.578 | 0.618 | 3 / 3 | 32% / 34% | 2.51 / 4.16 |
+
+`temporal_frequency_required`'s 0.481 looked like a real regression at
+first but isn't a "forcing backfires" story: of the 12/45 trials
+(26.7%) that never called any lookup tool, **every one** hit
+`stop_reason=max_turns` with `f1=0.0` -- the model looped for the full
+30-turn budget without ever calling the tool or even attempting
+`submit_answer` (no rejections logged either, a distinct failure mode
+from the gpt-oss stop-path bug above). Dropping those 12 zero-trials,
+the remaining 33 average **0.656** -- above the voluntary condition's
+0.608. Checked whether this is gate-induced: it isn't -- the same
+issues (`pandas/44, 35, 26, 38` among others) hit `max_turns`/`f1=0.0`
+in the *voluntary* conditions too, so these are just hard/long-running
+issues for this model generally. `temporal_cochange_required` shows the
+identical pattern (9/45 trials, all `max_turns`/`f1=0.0`), just with
+less effect on the mean since its voluntary baseline was already lower.
+
+**Caveat surfaced by this**: required batches are 1 rep (45 trials) vs.
+voluntary's 3 reps (135 trials), so there's no within-issue averaging
+to smooth out a single bad draw on a hard issue. This is a sampling-
+variance artifact of the study design, not a finding about forced tool
+use -- worth reporting median alongside mean for required conditions,
+or adding more reps, before trusting any single required-condition mean
+at face value.
+
+### Tool-Call Percentages (Voluntary vs Required)
+
+`voluntary_pct_used_tool` / `required_pct_used_tool` from
+`scripts/compare_tool_usage.py`, i.e. the fraction of trials that
+called the relevant lookup tool(s) at least once:
+
+**gpt-oss-120b**
+
+| Condition | Voluntary | Required |
+|---|---|---|
+| structural | 57.0% | 91.1% |
+| temporal_frequency | 0.0% | 88.9% |
+| temporal_cochange | 0.7% | 86.7% |
+| all_tools | 39.3% | 88.9% |
+
+**deepseek-v4-flash**
+
+| Condition | Voluntary | Required |
+|---|---|---|
+| structural | 74.8% | 100.0% |
+| temporal_frequency | 34.8% | 73.3% |
+| temporal_cochange | 39.3% | 80.0% |
+| all_tools | 76.3% | 97.8% |
+
+Gate does what it's supposed to for the low-voluntary-baseline
+conditions -- gpt-oss essentially never called `temporal_frequency`/
+`temporal_cochange` on its own (0.0%/0.7%) but complies ~87-89% of the
+time once required. deepseek's voluntary rates were already much higher
+across the board (35-77%) than either ministral or gpt-oss, so the
+required uplift is smaller in relative terms, though `temporal_frequency`
+still tops out at only 73.3% required -- consistent with the max_turns
+pathology found above eating into a chunk of that condition's trials
+before they ever reach a tool call.
+
+### Archived as Study 3 Pilot Data
+
+Copied all three models' `_required` results and logs (540 result
+files + 540 matching logs; results under `_required/rep*.json`, logs
+under `_required/rep*.jsonl`) from the native filesystem into the main
+repo at `study_3/pilot_results/` and `study_3/pilot_logs/`, preserving
+the full `<model>/<repo>/<issue>/<condition>/repN.*` structure,
+checksum-verified (540/540 hash matches on both trees). Labeled
+"pilot" rather than final data because these were generated against the
+harness with the two known bugs in `FIXES_TODO.md` still unfixed (the
+`stop`-path gate bypass and the malformed-tool-call-name undercount) --
+once those are fixed and the full-scale batches are re-run, the native
+filesystem's `results`/`logs` trees will be overwritten with corrected
+data. This pilot copy preserves the pre-fix numbers analyzed above
+(including the gpt-oss stop-path bypass counts and the deepseek
+max_turns cluster) so the before/after comparison isn't lost once the
+harness changes.
+
+### Next
+Queued, not yet run: (1) tool-type breakdown within `all_tools`'
+261/146-call totals for ministral, to see whether `lookup_cochange`-
+style late calls survive being one option among three or get diluted;
+(2) filtering `all_tools` trials down to the subset that happened to
+call `lookup_cochange`, to test directly whether cochange's benefit is
+tool-specific or combination-diluted; (3) per-issue F1 breakdown across
+all three models to separate genuine condition effects from the kind of
+hard-issue clustering just found in deepseek's data; (4) fix the two
+`FIXES_TODO.md` items and re-run all three models' required batches at
+full scale, then diff against this pilot data.
+
+## 2026-07-23 (cont'd)
+## Fixed Both FIXES_TODO Items; Added a Proactive Gate-Reminder and a Turn Backstop
+
+Before re-running Study 3 at scale, did the two deferred fixes plus a
+third design change motivated by digging into the call-count
+irregularities above.
+
+### Fixed: submit-gate stop-path bypass
+Applied the fix `FIXES_TODO.md` already scoped: the
+`finish_reason == "stop"` / empty-`tc_list` exit point now runs the same
+`gate_satisfied` check as the `submit_answer` branch, sharing
+`submit_rejections`/`MAX_SUBMIT_REJECTIONS`. Since there's no
+`tool_call_id` to attach a `role: tool` rejection message to on this
+path (the model didn't call anything), the rejection is injected as a
+`role: user` message instead (`NO_TOOL_CALL_REJECTION_MESSAGE`) and
+recorded in the transcript with `"rejected": True` the same as the
+existing path, so downstream analysis (`compare_tool_usage.py`) still
+picks it up.
+
+### Fixed: malformed tool-call names
+Added `_normalize_tool_call(name, arguments)` -- checks the raw
+`tc.function.name` against `KNOWN_TOOL_NAMES` (derived from `TOOLS`),
+and if it's not an exact match but starts with a known tool name,
+recovers the real name and (if the arguments got concatenated onto the
+name, e.g. `lookup_structure{"path": "x.py"}`) the real arguments too.
+Falls through unchanged for genuinely unknown names, so the existing
+"unknown tool" error still catches real garbage. Transcript entries
+record `name_repaired_from` when a repair happened, so it's still
+visible after the fact which calls were originally mangled.
+
+Validated both fixes against real data before considering them done:
+the name-repair logic was run against all 1,125 malformed-name
+instances found across the *entire* results tree (not just required
+conditions) and correctly recovered every shape seen (`list_files""`,
+`search({"pattern": ...})`, `lookup_structure{"path": ...}`). Scoped the
+fix to the four `_required` harnesses only, per what was actually
+needed right now -- the voluntary harnesses have the same bug, tracked
+as a new deferred item in `FIXES_TODO.md` rather than fixed inline.
+
+### New: proactive gate-reminder + one-time turn backstop
+Investigating the call-count irregularities (previous entry) surfaced a
+concrete failure case worth designing around: ministral's
+`requests/7`/`structural_required` trial got its only rejection on
+turn 29 -- the literal last turn of a 30-turn budget -- leaving zero
+turns to recover. Pulled the rejection→successful-resubmit gap across
+all 18 real rejected trials to size the fix: median 2 turns, mean 2.9,
+worst observed 6.
+
+Landed on a two-part design, refining an initial "just extend the
+budget after every rejection" idea into something more targeted:
+
+1. **Proactive reminder, same threshold as the existing turn-budget
+   warning.** When the existing `TURN_WARNING_PROMPT` fires (`remaining
+   <= TURN_WARNING_THRESHOLD`, i.e. 5), if the gate isn't satisfied yet
+   it appends `GATE_REMINDER_CLAUSE` naming the required tool(s) and
+   warning that an unprepared `submit_answer` will be rejected. Reuses
+   the existing `warned_turn_budget` flag rather than adding a second,
+   earlier threshold -- simpler, and the existing threshold already
+   comfortably covers the median 2-3-turn recovery gap.
+2. **One-time 2-turn backstop as a last resort**, for when the model
+   ignores the reminder. If the (possibly already-extended) turn cap is
+   reached with the gate still unsatisfied and the backstop hasn't
+   already been used, grant `BACKSTOP_TURNS = 2` more real turns (full
+   tool access, not the separate ungated forced-final-answer
+   elicitation) before falling through to that existing ungated path.
+   2 turns covers a `lookup_*` call plus a resubmit -- the modal
+   recovery pattern in the real data -- without being large enough to
+   meaningfully help a model in the max-turns pathological-loop cluster
+   (deepseek, previous entry) that never engages the gate at all.
+
+Implementation required restructuring the main loop from `for turn in
+range(args.max_turns)` to a `while True` with a mutable
+`effective_max_turns`, since a `for`/`range` loop can't be extended
+mid-iteration -- the cap-check-and-extend logic sits at the top of each
+iteration. Added `backstop_turns_granted`/`effective_max_turns` to the
+saved result's `metrics` so a trial that used the backstop is
+identifiable later (`num_turns` can now legitimately exceed the
+nominal `--max-turns` by up to `BACKSTOP_TURNS`).
+
+**Validated with an isolated simulation** (not a live trial, since the
+real harness's repo checkout/restore machinery isn't easily mocked) --
+extracted the exact loop-control logic into a standalone script against
+scripted fake model responses, covering: a pathological loop that never
+engages the gate (backstop grants once, still ends at
+`stop_reason=max_turns`, matching the real deepseek failure pattern); a
+model that complies during the backstop window (succeeds); a model that
+complies well before the cap (backstop never triggers); the
+reminder firing at exactly `remaining=5`; and the already-fixed
+stop-path-rejection-cap-through case (confirmed it resolves via
+`MAX_SUBMIT_REJECTIONS` before ever reaching the turn cap, so it
+doesn't spuriously trigger the backstop). All five scenarios passed.
+
+Applied identically across all four `_required` harnesses. All four
+still `py_compile` clean.
+
+### Status
+Not yet committed. Not yet re-run at batch scale -- the pilot data in
+`study_3/pilot_results/`/`study_3/pilot_logs/` still reflects the
+pre-fix harness, which is exactly why it was archived separately before
+these changes (see previous entry).
 
