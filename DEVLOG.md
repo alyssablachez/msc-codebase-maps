@@ -1873,3 +1873,170 @@ committing the harness code itself. Next real step beyond validation:
 run this at actual study scale (multiple issues x models x reps) rather
 than one-off spot checks.
 
+## 2026-07-22 / 2026-07-23
+## Deployed Study 2, Launched the Free-Choice Batch, Built a Submit-Gated Variant
+
+### Matched BASE_SYSTEM Language, Re-Validated, Committed
+Closed out the prompt-parity gap from 2026-07-16: the `lookup_*` tool
+bullets in all 4 harness files' `BASE_SYSTEM` were purely mechanical
+(name + params, no framing/caveat/sequencing), unlike the original
+`MAP_DESCRIPTIONS`, which have all three. Rewrote all three bullets to
+mirror that structure (framing -> reliability caveat -> sequencing
+instruction), dropping only the "some files may be omitted" caveat since
+it's no longer true (full index now, not a pruned map). One live
+confirmation trial after the change (`deepseek-flash`/`all_tools`/
+`requests/7`) ran clean, F1=1.0, `lookup_structure` still invoked
+correctly. Committed as 4 focused commits: the tool schemas/execution
+logic/harness copies, the 13 validation result files (kept as baseline
+records, same precedent as the original 2026-07-12 trial), the
+`scripts/run_batch_tools.py` batch runner (adapted from `run_batch.py`,
+validated via the same symlinked-worker-directory + stubbed-trials
+technique used to validate `run_batch.py` originally), and a DEVLOG
+entry. Pushed.
+
+### Deployed to the Native-Filesystem Worker Setup
+Checked what was actually on `/home/afb225/study1/` before copying
+anything, rather than assuming -- found none of the new code or full
+indexes there yet (harness/ only had the original `run_trial.py`,
+`repo_maps/` had 0 of the 135 `*_index_full.json` files). Copied the 4
+harness files, the 3 shared scripts, and all 135 index files (293MB
+total, 931GB free on that filesystem -- plenty of room). Verified with
+matching total byte counts and `md5sum` on both the largest file
+(`yt-dlp/23/cochange_index_full.json`, 58.65MB) and a small one --
+byte-identical both ways.
+
+**Smoke test surfaced real flakiness, investigated rather than
+dismissed**: `mistral-3b`/`requests/7`/`structural` on the native
+filesystem hit a malformed tool-call name from the API itself
+(`"list_files\"\""`, repeated 20 times, F1=0.0 -- the harness correctly
+rejected it as an unknown tool every time, exactly as designed, but the
+model never self-corrected) on the first attempt, then an 8+-minute hang
+on a stalled network poll (killed manually -- confirmed via
+`/proc/<pid>/status`/`wchan` that it was blocked in `do_sys_poll`, not a
+CPU deadlock) on a retry. A third attempt succeeded cleanly, using
+`lookup_structure` twice. Ruled out an environment-specific bug: both
+filesystems resolve to the identical `/home/afb225/.local/...` site-packages
+(same machine, litellm 1.89.1 both sides), and the third attempt's clean
+success on the same model/issue/condition is inconsistent with a
+deterministic bug. Concluded this is real Mistral API-side flakiness in
+this session, and noted (not fixed) that `run_trial_*.py` has no
+per-call timeout on `litellm.completion()` -- the only protection against
+a hang like this is one layer up, `run_batch_tools.py`'s
+`subprocess.run(..., timeout=900)`, which the standalone debug
+invocation bypassed entirely.
+
+### Found and Fixed a Real .gitignore Gap
+Bringing 18 more exploratory-pilot results into the repo (see below)
+turned up a real bug: `study_1/exploratory_results/` had no whitelist
+exception against the blanket `*.json` rule, so brand-new files there
+were silently invisible to `git status`/`git add` -- the earlier 22-file
+move (2026-07-16) never hit this because `git mv` preserves tracked
+status regardless of what `.gitignore` says about the destination.
+`study_1/results/` had the identical latent gap, masked the same way
+(everything there arrived via `git mv` too, never a fresh add). Added
+`!study_1/results/**/*.json` and `!study_1/exploratory_results/**/*.json`
+to `.gitignore`, verified with a throwaway probe file on each path.
+
+### Found 18 More Exploratory-Pilot Results Never Backed Up
+Asked whether "all Study 1 results" were really already copied over
+before considering wiping the native filesystem (they weren't going to
+be wiped in the end -- Study 2's just-deployed code and the `worker_1-5`
+repo clones it depends on live in that same location, still needed).
+Diffed native-filesystem result paths against the repo's
+`study_1/results/` + `study_1/exploratory_results/`: 2,200 vs. 2,182,
+an 18-file gap. All 18 were `transformers/27`, across **8 models never
+seen in the repo at all** -- `claude-sonnet-4-6`, `gpt-5`, `gpt-5-mini`,
+`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.5`, `mistral_devstral-latest`,
+`mistral_ministral-14b-latest` -- a second, later round of pilot trials
+beyond the `claude-haiku`/`deepseek-v4-pro`/`mistral-medium` batch
+already archived. Copied both the 18 results and their 18 matching logs
+into `study_1/exploratory_results/` / `study_1/exploratory_logs/`,
+checksum-verified.
+
+### Cleared Stray Data Before Launch
+Worked out the real launch plan -- 5 workers, one model each except
+nemotron split across two (worker 1: `deepseek-flash` rep1, worker 2:
+`ministral-3b` rep1, worker 3: `gpt-oss-120b` rep1, worker 4/5:
+`nemotron-super` rep1/rep2) -- and gave the launch commands, initially
+missing `--turn-limit 30` (the runner's own default is 20; Study 1's
+actual launch convention was 30). Caught before the batch got far:
+worker 1/2 had already produced a handful of `rep1` results/logs at the
+wrong turn limit, deleted them (1 deepseek result + 2 logs, 7 ministral
+results + 8 logs). Separately caught a second, subtler leftover: the
+2026-07-16 smoke-test files for `ministral-3b`/`requests/7`/`structural`
+(`rep0`, the malformed-tool-call run, and `rep2`, a clean success) would
+never be touched by the real batch at all, since the launch plan only
+ever writes `rep1` for that worker/model -- they'd have sat permanently
+mixed into real data, unreachable by any future re-run. Deleted both.
+Confirmed a fully clean slate (zero tool-condition results anywhere on
+the native filesystem) before the real launch.
+
+### Launched the Free-Choice (Voluntary-Tool) Batch — 2026-07-22
+5 workers running in parallel with `scripts/run_batch_tools.py
+--turn-limit 30`, each piped through `tee` to a `live_workerN.log` file
+for real-time observation from a separate terminal/window, per the
+model/worker/rep mapping above. This is Study 2's actual scale run,
+covering all 4 voluntary conditions (`structural`/`temporal_frequency`/
+`temporal_cochange`/`all_tools`) x 45 issues per worker.
+
+### Designed and Built a Submit-Gated "Required" Variant
+While the free-choice batch ran, worked through making tool use
+mandatory rather than nudged. Key design decision: **gate
+`submit_answer`, don't force the first turn**. Forcing `tool_choice` on
+turn 1 (the obvious first idea) doesn't actually work well here, unlike
+forcing exposure to the old wholesale maps -- these tools take a `path`
+argument, and on turn 1 the model has explored nothing yet, so a forced
+first call can only be a blind guess at a filename. Gating `submit_answer`
+instead (reject the call if no required `lookup_*` tool has been called
+yet, with an informative message, and let the trial continue) means any
+forced call happens after real exploration, when the model has an actual
+candidate file in mind.
+
+Second decision: **treat "required" as an additional condition set,
+not a replacement** for the voluntary ones -- forcing usage answers a
+different, narrower question ("does exposure change the outcome") than
+the voluntary conditions ("does the model choose to use this well"),
+and both are worth keeping as distinct, comparable data. Third: for
+`all_tools_required`, "required" means *at least one* of the three
+lookup tools, not all three (confirmed with the user rather than
+assumed).
+
+Built `harness/run_trial_{structural,temporal_frequency,temporal_cochange,
+all_tools}_required.py`, generated from the already-built voluntary
+versions (not from `run_trial.py` directly) so everything already
+validated there carries over untouched -- only the gate is new:
+`REQUIRED_LOOKUP_TOOLS` (the tool name(s) that satisfy the gate),
+`MAX_SUBMIT_REJECTIONS = 2` (so a non-complying model can't burn its
+whole turn budget on repeated rejected submissions -- after the cap, the
+submission is let through regardless), and a rewritten `submit_answer`
+handling block that checks `lookup_calls_made & REQUIRED_LOOKUP_TOOLS`
+before accepting. `BASE_SYSTEM` also states the requirement explicitly
+up front, so a model can comply proactively rather than discover the
+rule only via a rejection.
+
+**Validation, in three layers**: an isolated check of the exact gate
+boolean against 5 hand-picked cases (including the important negative
+one -- calling a *different* lookup tool than the one required does not
+satisfy the gate); 4 live trials with the real shipped code, 3 of which
+happened to be the exact model/issue/condition combos that used *zero*
+lookup tools in the earlier voluntary tests (`deepseek-flash`/
+`temporal_frequency`/`flask-18`, `mistral-3b`/`all_tools`/`requests-7`)
+-- all 4 complied proactively before ever attempting to submit, no
+rejection triggered, which is a genuinely positive result for the design
+but left the reject-then-continue code path itself unexercised; and one
+deliberately forced trial via a temporary debug copy
+(`REQUIRED_LOOKUP_TOOLS` pointed at a nonexistent tool name, so
+compliance was impossible) that produced two real rejections
+(`REJECTED (1/2)`, `REJECTED (2/2)`) followed by a cap-triggered
+pass-through on the third attempt -- confirming the full reject ->
+continue -> retry -> cap cycle end to end. The debug copy's contaminated
+result/log (mislabeled as a genuine `structural_required` trial when
+the actual enforced requirement was fake) was deleted immediately after,
+along with the debug harness file itself.
+
+### Status
+The 4 `run_trial_*_required.py` files are validated and uncommitted. The
+free-choice batch launched 2026-07-22 is presumably still running or
+newly finished as of this entry -- not yet checked for completion or
+compiled.
+
