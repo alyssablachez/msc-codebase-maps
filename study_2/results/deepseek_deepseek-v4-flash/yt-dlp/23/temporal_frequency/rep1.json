@@ -1,0 +1,526 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "yt-dlp",
+  "issue_idx": 23,
+  "tier": "large",
+  "role": "flexible",
+  "map_type": "temporal_frequency",
+  "rep": 1,
+  "worker_id": 1,
+  "issue_title": "Can't extract from sportdeutschland.tv",
+  "base_commit": "f14c2333481c63c24017a41ded7d8f36726504b7",
+  "metrics": {
+    "total_input_tokens": 170462,
+    "total_output_tokens": 9316,
+    "total_cached_tokens": 160384,
+    "total_cost": 0.004468,
+    "num_turns": 18,
+    "wall_time_seconds": 84.54,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "0ffa64f4"
+  },
+  "final_files_predicted": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "final_files_predicted_scorable": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "ground_truth": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "ground_truth_scorable": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_dZVSFxAzJGElZnbT8cUq7875",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_dZVSFxAzJGElZnbT8cUq7875",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "from .common import InfoExtractor\nfrom ..utils import (\n    clean_html,\n    float_or_none,\n    int_or_none,\n    parse_iso8601,\n    parse_qs,\n    strip_or_none,\n    try_get,\n)\n\n\nclass SportDeutschlandIE(InfoExtractor):\n    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\n    _TESTS = [{\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': '5318cac0275701382770543d7edaf0a0',\n            'ext': 'mp4',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals - Teil 1',\n            'duration': 16106.36,\n        },\n        'params': {\n            'noplaylist': True,\n            # m3u8 download\n            'skip_download': True,\n        },\n    }, {\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': 'c6e2fdd01f63013854c47054d2ab776f',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals',\n            'description': 'md5:5263ff4c31c04bb780c9f91130b48530',\n            'duration': 31397,\n        },\n        'playlist_count': 2,\n    }, {\n        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\n        'only_matching': True,\n    }]\n\n    def _real_extract(self, url):\n        display_id = self._match_id(url)\n        data = self._download_json(\n            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\n            display_id, query={'access_token': 'true'})\n        asset = data['asset']\n        title = (asset.get('title') or asset['label']).strip()\n        asset_id = asset.get('id') or asset.get('uuid')\n        info = {\n            'id': asset_id,\n            'title': title,\n            'description': clean_html(asset.get('body') or asset.get('description')) or asset.get('teaser'),\n            'duration': int_or_none(asset.get('seconds')),\n        }\n        videos = asset.get('videos') or []\n        if len(videos) > 1:\n            playlist_id = parse_qs(url).get('playlistId', [None])[0]\n            if not self._yes_playlist(playlist_id, asset_id):\n                videos = [videos[int(playlist_id)]]\n\n            def entries():\n                for i, video in enumerate(videos, 1):\n                    video_id = video.get('uuid')\n                    video_url = video.get('url')\n                    if not (video_id and video_url):\n                        continue\n                    formats = self._extract_m3u8_formats(\n                        video_url.replace('.smil', '.m3u8'), video_id, 'mp4', fatal=False)\n                    if not formats and not self.get_param('ignore_no_formats'):\n                        continue\n                    yield {\n                        'id': video_id,\n                        'formats': formats,\n                        'title': title + ' - ' + (video.get('label') or 'Teil %d' % i),\n                        'duration': float_or_none(video.get('duration')),\n                    }\n            info.update({\n                '_type': 'multi_video',\n                'entries': entries(),\n            })\n        else:\n            formats = self._extract_m3u8_formats(\n                videos[0]['url'].replace('.smil', '.m3u8'), asset_id, 'mp4')\n            section_title = strip_or_none(try_get(data, lambda x: x['section']['title']))\n            info.update({\n                'formats': formats,\n                'display_id': asset.get('permalink'),\n                'thumbnail': try_get(asset, lambda x: x['images'][0]),\n                'categories': [section_title] if section_title else None,\n                'view_count': int_or_none(asset.get('views')),\n                'is_live': asset.get('is_live') is True,\n                'timestamp': parse_iso8601(asset.get('date') or asset.get('published_at')),\n            })\n        return info\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_51Rn7SJ2l1je5m59dUjg0982",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_51Rn7SJ2l1je5m59dUjg0982",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:14:    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\nyt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Po1hqVuMwt6ZDDiMjNaM5940",
+          "type": "function",
+          "function": {
+            "name": "lookup_frequency",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_Po1hqVuMwt6ZDDiMjNaM5940",
+      "name": "lookup_frequency",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py: 7 historical edits, last edited 2022-04-12"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "Let me check if there are any recent changes to this file and also look at the broader context:",
+      "tool_calls": [
+        {
+          "id": "call_00_SMmC5DsDABTv8d1Oco5w2478",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"backend.sportdeutschland\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_SMmC5DsDABTv8d1Oco5w2478",
+      "name": "search",
+      "args": {
+        "pattern": "backend.sportdeutschland",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_AO61Uq3sugFQbY7Hun2c8426",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\\\\.tv\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_AO61Uq3sugFQbY7Hun2c8426",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland\\.tv",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_WNZWhkDSqCTbcTVTMmaL5859",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"api\", \"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_WNZWhkDSqCTbcTVTMmaL5859",
+      "name": "search",
+      "args": {
+        "pattern": "api",
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "Let me look at the git log for this file to see recent changes:",
+      "tool_calls": [
+        {
+          "id": "call_00_PMUmHCQ67gE1NTL2AWHD9998",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_PMUmHCQ67gE1NTL2AWHD9998",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "from .common import InfoExtractor\nfrom ..utils import (\n    clean_html,\n    float_or_none,\n    int_or_none,\n    parse_iso8601,\n    parse_qs,\n    strip_or_none,\n    try_get,\n)\n\n\nclass SportDeutschlandIE(InfoExtractor):\n    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\n    _TESTS = [{\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': '5318cac0275701382770543d7edaf0a0',\n            'ext': 'mp4',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals - Teil 1',\n            'duration': 16106.36,\n        },\n        'params': {\n            'noplaylist': True,\n            # m3u8 download\n            'skip_download': True,\n        },\n    }, {\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': 'c6e2fdd01f63013854c47054d2ab776f',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals',\n            'description': 'md5:5263ff4c31c04bb780c9f91130b48530',\n            'duration': 31397,\n        },\n        'playlist_count': 2,\n    }, {\n        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\n        'only_matching': True,\n    }]\n\n    def _real_extract(self, url):\n        display_id = self._match_id(url)\n        data = self._download_json(\n            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\n            display_id, query={'access_token': 'true'})\n        asset = data['asset']\n        title = (asset.get('title') or asset['label']).strip()\n        asset_id = asset.get('id') or asset.get('uuid')\n        info = {\n            'id': asset_id,\n            'title': title,\n            'description': clean_html(asset.get('body') or asset.get('description')) or asset.get('teaser'),\n            'duration': int_or_none(asset.get('seconds')),\n        }\n        videos = asset.get('videos') or []\n        if len(videos) > 1:\n            playlist_id = parse_qs(url).get('playlistId', [None])[0]\n            if not self._yes_playlist(playlist_id, asset_id):\n                videos = [videos[int(playlist_id)]]\n\n            def entries():\n                for i, video in enumerate(videos, 1):\n                    video_id = video.get('uuid')\n                    video_url = video.get('url')\n                    if not (video_id and video_url):\n                        continue\n                    formats = self._extract_m3u8_formats(\n                        video_url.replace('.smil', '.m3u8'), video_id, 'mp4', fatal=False)\n                    if not formats and not self.get_param('ignore_no_formats'):\n                        continue\n                    yield {\n                        'id': video_id,\n                        'formats': formats,\n                        'title': title + ' - ' + (video.get('label') or 'Teil %d' % i),\n                        'duration': float_or_none(video.get('duration')),\n                    }\n            info.update({\n                '_type': 'multi_video',\n                'entries': entries(),\n            })\n        else:\n            formats = self._extract_m3u8_formats(\n                videos[0]['url'].replace('.smil', '.m3u8'), asset_id, 'mp4')\n            section_title = strip_or_none(try_get(data, lambda x: x['section']['title']))\n            info.update({\n                'formats': formats,\n                'display_id': asset.get('permalink'),\n                'thumbnail': try_get(asset, lambda x: x['images'][0]),\n                'categories': [section_title] if section_title else None,\n                'view_count': int_or_none(asset.get('views')),\n                'is_live': asset.get('is_live') is True,\n                'timestamp': parse_iso8601(asset.get('date') or asset.get('published_at')),\n            })\n        return info\n"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "Let me check the git log for this file and look for any other related changes.",
+      "tool_calls": [
+        {
+          "id": "call_00_C5lQnFg6KgEKJ7g4Z7yF4287",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"SportDeutschland\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_00_C5lQnFg6KgEKJ7g4Z7yF4287",
+      "name": "search",
+      "args": {
+        "pattern": "SportDeutschland",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:13:class SportDeutschlandIE(InfoExtractor):\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_65k92iUgk6oXGTFHJmUC4225",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"permalinks\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_00_65k92iUgk6oXGTFHJmUC4225",
+      "name": "search",
+      "args": {
+        "pattern": "permalinks",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": "Let me check the overall structure of the extractor directory and look for any patterns related to how other extractors handle similar sites:",
+      "tool_calls": [
+        {
+          "id": "call_00_OmYcjPusO1g7U5EazU7o6593",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"access_token\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_00_OmYcjPusO1g7U5EazU7o6593",
+      "name": "search",
+      "args": {
+        "pattern": "access_token",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/fox.py:57:    _access_token = None\nyt_dlp/extractor/fox.py:64:        if self._access_token:\nyt_dlp/extractor/fox.py:65:            headers['Authorization'] = 'Bearer ' + self._access_token\nyt_dlp/extractor/fox.py:84:        if not self._access_token:\nyt_dlp/extractor/fox.py:87:                self._access_token = (self._parse_json(compat_urllib_parse_unquote(\nyt_dlp/extractor/fox.py:89:            if not self._access_token:\nyt_dlp/extractor/fox.py:90:                self._access_token = self._call_api(\nyt_dlp/extractor/fox.py:98:        self._access_token = self._call_api(\nyt_dlp/extractor/sportdeutschland.py:46:            display_id, query={'access_token': 'true'})\nyt_dlp/extractor/nebula.py:18:    _zype_access_token = None\nyt_dlp/extractor/nebula.py:98:    def _fetch_zype_access_token(self):\nyt_dlp/extractor/nebula.py:105:        access_token = try_get(user_object, lambda x: x['zype_auth_info']['access_token'], str)\nyt_dlp/extractor/nebula.py:106:        if not access_token:\nyt_dlp/extractor/nebula.py:115:        return access_token\nyt_dlp/extractor/nebula.py:119:        zype_video_url = f'https://player.zype.com/embed/{zype_id}.html?access_token={self._zype_access_token}'\nyt_dlp/extractor/nebula.py:149:        self._zype_access_token = self._fetch_zype_access_token()\nyt_dlp/extractor/rokfin.py:94:        metadata = self._download_json_using_access_token(f'{_API_BASE_URL}{video_id}', video_id)\nyt_dlp/extractor/rokfin.py:212:        return try_get(self._access_mgmt_tokens, lambda x: ' '.join([x['token_type'], x['access_token']]))\nyt_dlp/extractor/rokfin.py:214:    def _download_json_using_access_token(self, url_or_request, video_id, headers={}, query={}):\nyt_dlp/extractor/openrec.py:46:                    'access-token': try_get(cookies, lambda x: x.get('access_token').value),\nyt_dlp/extractor/adn.py:132:            access_token = (self._download_json(\nyt_dlp/extractor/adn.py:141:            if access_token:\nyt_dlp/extractor/adn.py:142:                self._HEADERS = {'authorization': 'Bearer ' + access_token}\nyt_dlp/extractor/dailymotion.py:50:            token = self._get_cookie_value(cookies, 'access_token') or self._get_cookie_value(cookies, 'client_token')\nyt_dlp/extractor/dailymotion.py:69:                        data=urlencode_postdata(data))['access_token']\nyt_dlp/extractor/dailymotion.py:75:                self._set_dailymotion_cookie('access_token' if username else 'client_token', token)\nyt_dlp/extractor/prosiebensat1.py:28:                'access_token': self._TOKEN,\nyt_dlp/extractor/prosiebensat1.py:85:                    'access_token': self._TOKEN,\nyt_dlp/extractor/prosiebensat1.py:103:                        'access_token': self._TOKEN,\nyt_dlp/extractor/linuxacademy.py:139:        access_token = self._search_regex(\nyt_dlp/extractor/linuxacademy.py:140:            r'access_token=([^=&]+)', urlh.geturl(),\nyt_dlp/extractor/linuxacademy.py:142:        if not access_token:\nyt_dlp/extractor/linuxacademy.py:143:            access_token = self._parse_json(\nyt_dlp/extractor/linuxacademy.py:147:                transform_source=js_to_json)['response']['access_token']\nyt_dlp/extractor/linuxacademy.py:151:            % access_token, None, 'Downloading token validation page')\nyt_dlp/extractor/cbc.py:264:        access_token = resp['access_token']\nyt_dlp/extractor/cbc.py:267:            'access_token': access_token,\nyt_dlp/extractor/cbc.py:279:        cbc_access_token = resp['accessToken']\nyt_dlp/extractor/cbc.py:281:        headers = {'content-type': 'application/json', 'ott-device-type': 'web', 'ott-access-token': cbc_access_token}\nyt_dlp/extractor/microsoftstream.py:60:        access_token = self._html_search_regex(r'\"AccessToken\":\"(.+?)\"', webpage, 'access token')\nyt_dlp/extractor/microsoftstream.py:63:        headers = {'Authorization': f'Bearer {access_token}'}\nyt_dlp/extractor/crunchyroll.py:33:                'access_token': 'giKq5eY27ny3cqz',\nyt_dlp/extractor/crunchyroll.py:78:                    'Authorization': auth_response['token_type'] + ' ' + auth_response['access_token']\nyt_dlp/extractor/daftsex.py:100:                'token': video_params['video']['access_token'],\nyt_dlp/extractor/toutv.py:42:            self._access_token = self._download_json(\nyt_dlp/extractor/toutv.py:53:                })['access_token']\nyt_dlp/extractor/biqle.py:70:                'token': glob_params['video']['access_token'],\nyt_dlp/extractor/cda.py:156:            'token': token_res['access_token'],\nyt_dlp/extractor/cda.py:159:        self._API_HEADERS['Authorization'] = f'Bearer {token_res[\"access_token\"]}'\nyt_dlp/extractor/radiocanada.py:56:    _access_token = None\nyt_dlp/extractor/radiocanada.py:71:        if self._access_token:\nyt_dlp/extractor/radiocanada.py:72:            query['access_token'] = self._access_token\nyt_dlp/extractor/roosterteeth.py:24:        if self._get_cookies(self._API_BASE_URL).get('rt_access_token'):\nyt_dlp/extractor/spotify.py:31:            'https://open.spotify.com/get_access_token', None)['accessToken']\nyt_dlp/extractor/iprima.py:20:    access_token = None\nyt_dlp/extractor/iprima.py:66:        if self.access_token:\nyt_dlp/extractor/iprima.py:99:        self.access_token = token_data.get('access_token')\nyt_dlp/extractor/iprima.py:100:        if self.access_token is None:\nyt_dlp/extractor/iprima.py:104:        if not self.access_token:\nyt_dlp/extractor/iprima.py:130:            headers={'X-OTT-Access-Token': self.access_token},\nyt_dlp/extractor/zee5.py:128:        access_token_request = self._download_json(\nyt_dlp/extractor/zee5.py:132:            'x-access-token': access_token_request['token']\nyt_dlp/extractor/zee5.py:230:        access_token_request = self._download_json(\nyt_dlp/extractor/zee5.py:234:            'X-Access-Token': access_token_request['token'],\nyt_dlp/extractor/wimtv.py:94:        token = json.get('access_token')\nyt_dlp/extractor/udemy.py:152:            elif cookie.name == 'access_token':\nyt_dlp/extractor/rcti.py:20:            None, 'Fetching authorization key')['data']['access_token']\nyt_dlp/extractor/novaplay.py:42:    _access_token = None\nyt_dlp/extractor/novaplay.py:47:        self._access_token = self._access_token or self._download_json(\nyt_dlp/extractor/novaplay.py:55:                'Authorization': f'Bearer {self._access_token}'\nyt_dlp/extractor/zype.py:16:    _COMMON_RE = r'//player\\.zype\\.com/embed/%s\\.(?:js|json|html)\\?.*?(?:access_token|(?:ap[ip]|player)_key)='\nyt_dlp/extractor/anvato.py:249:        auth_token = f'{token_type} {reroute[\"access_token\"]}'\nyt_dlp/extractor/twitch.py:160:    def _download_access_token(self, video_id, token_kind, param_name):\nyt_dlp/extractor/twitch.py:518:        access_token = self._download_access_token(vod_id, 'video', 'id')\nyt_dlp/extractor/twitch.py:529:                    'nauth': access_token['value'],\nyt_dlp/extractor/twitch.py:530:                    'nauthsig': access_token['signature'],\nyt_dlp/extractor/twitch.py:985:        access_token = self._download_access_token(\nyt_dlp/extractor/twitch.py:987:        token = access_token['value']\nyt_dlp/extractor/twitch.py:998:            'sig': access_token['signature'].encode('utf-8'),\nyt_dlp/extractor/espn.py:359:                })['access_token']\nyt_dlp/extractor/espn.py:373:                })['access_token']\nyt_dlp/extractor/box.py:34:        access_token = self._download_json(\nyt_dlp/extractor/box.py:46:                'Authorization': 'Bearer ' + access_token,\nyt_dlp/extractor/box.py:55:            'access_token': access_token,\nyt_dlp/extractor/discovery.py:64:        access_token = None\nyt_dlp/extractor/discovery.py:73:            access_token = auth_storage.get('a') or auth_storage.get('access_token')\nyt_dlp/extractor/discovery.py:75:        if not access_token:\nyt_dlp/extractor/discovery.py:76:            access_token = self._download_json(\nyt_dlp/extractor/discovery.py:83:                })['access_token']\nyt_dlp/extractor/discovery.py:86:        headers['Authorization'] = 'Bearer ' + access_token\nyt_dlp/extractor/tennistv.py:43:    access_token, refresh_token = None, None\nyt_dlp/extractor/tennistv.py:100:        self.access_token = res.get('access_token') or self.access_token\nyt_dlp/extractor/tennistv.py:104:        if self.access_token and self.refresh_token:\nyt_dlp/extractor/tennistv.py:108:        if not cookies.get('access_token') or not cookies.get('refresh_token'):\nyt_dlp/extractor/tennistv.py:110:        self.access_token, self.refresh_token = cookies['access_token'].value, cookies['refresh_token'].value\nyt_dlp/extractor/tennistv.py:114:            f'https://atppayments.streamamg.com/api/v1/session/ksession/?lang=en&apijwttoken={self.access_token}&entryId={entryid}',\nyt_dlp/extractor/digitalconcerthall.py:58:        self._ACCESS_TOKEN = token_response['access_token']\nyt_dlp/extractor/soundcloud.py:60:    _access_token = None\nyt_dlp/extractor/soundcloud.py:123:        self._access_token = password\nyt_dlp/extractor/soundcloud.py:125:        payload = {'session': {'access_token': self._access_token}}\nyt_dlp/extractor/soundcloud.py:129:            self._HEADERS = {'Authorization': 'OAuth ' + self._access_token}\nyt_dlp/extractor/soundcloud.py:156:        self._access_token = response.get('session').get('access_token')\nyt_dlp/extractor/soundcloud.py:157:        if not self._access_token:\nyt_dlp/extractor/soundcloud.py:160:            self._HEADERS = {'Authorization': 'OAuth ' + self._access_token}\nyt_dlp/extractor/mlb.py:290:    _access_token = None\nyt_dlp/extractor/mlb.py:293:        if not self._access_token:\nyt_dlp/extractor/mlb.py:299:        access_token = self._download_json(\nyt_dlp/extractor/mlb.py:304:            }, data=data.encode())['access_token']\nyt_dlp/extractor/mlb.py:310:                'Authorization': f'Bearer {access_token}'\nyt_dlp/extractor/mlb.py:314:        self._access_token = self._download_json(\nyt_dlp/extractor/mlb.py:320:            }, data=data.encode())['access_token']\nyt_dlp/extractor/mlb.py:333:                    'Authorization': self._access_token,\nyt_dlp/extractor/mlb.py:347:            'http_headers': {'Authorization': f'Bearer {self._access_token}'},"
+    },
+    {
+      "turn": 10,
+      "role": "assistant",
+      "content": "Let me look at the issue more carefully. The URL has a multi-level path. Let me check if there's an alternative API that the site might be using now.",
+      "tool_calls": [
+        {
+          "id": "call_00_K8a7FdwxpqDAjBD5i7LH2549",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 10,
+      "role": "tool",
+      "tool_call_id": "call_00_K8a7FdwxpqDAjBD5i7LH2549",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:14:    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\nyt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 11,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_M7JWYQErLCmlWBLwJuBs1464",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"_VALID_URL\", \"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 11,
+      "role": "tool",
+      "tool_call_id": "call_00_M7JWYQErLCmlWBLwJuBs1464",
+      "name": "search",
+      "args": {
+        "pattern": "_VALID_URL",
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "14:    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'"
+    },
+    {
+      "turn": 12,
+      "role": "assistant",
+      "content": "Let me look for the pattern where the API might need the display_id to be URL-encoded differently, or if the API endpoint has changed.",
+      "tool_calls": [
+        {
+          "id": "call_00_kCMSB4AOgpnG5qaeVXB03623",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"backend\\\\.sportdeutschland\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 12,
+      "role": "tool",
+      "tool_call_id": "call_00_kCMSB4AOgpnG5qaeVXB03623",
+      "name": "search",
+      "args": {
+        "pattern": "backend\\.sportdeutschland",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 13,
+      "role": "assistant",
+      "content": "Let me check if there's any video data embedded in the webpage that could be used instead of the API. Let me look at what the page source might contain by checking the pattern of the extractor.",
+      "tool_calls": [
+        {
+          "id": "call_00_9fI4TunxXAnbXdB1MM2V9008",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 13,
+      "role": "tool",
+      "tool_call_id": "call_00_9fI4TunxXAnbXdB1MM2V9008",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "from .common import InfoExtractor\nfrom ..utils import (\n    clean_html,\n    float_or_none,\n    int_or_none,\n    parse_iso8601,\n    parse_qs,\n    strip_or_none,\n    try_get,\n)\n\n\nclass SportDeutschlandIE(InfoExtractor):\n    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\n    _TESTS = [{\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': '5318cac0275701382770543d7edaf0a0',\n            'ext': 'mp4',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals - Teil 1',\n            'duration': 16106.36,\n        },\n        'params': {\n            'noplaylist': True,\n            # m3u8 download\n            'skip_download': True,\n        },\n    }, {\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': 'c6e2fdd01f63013854c47054d2ab776f',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals',\n            'description': 'md5:5263ff4c31c04bb780c9f91130b48530',\n            'duration': 31397,\n        },\n        'playlist_count': 2,\n    }, {\n        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\n        'only_matching': True,\n    }]\n\n    def _real_extract(self, url):\n        display_id = self._match_id(url)\n        data = self._download_json(\n            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\n            display_id, query={'access_token': 'true'})\n        asset = data['asset']\n        title = (asset.get('title') or asset['label']).strip()\n        asset_id = asset.get('id') or asset.get('uuid')\n        info = {\n            'id': asset_id,\n            'title': title,\n            'description': clean_html(asset.get('body') or asset.get('description')) or asset.get('teaser'),\n            'duration': int_or_none(asset.get('seconds')),\n        }\n        videos = asset.get('videos') or []\n        if len(videos) > 1:\n            playlist_id = parse_qs(url).get('playlistId', [None])[0]\n            if not self._yes_playlist(playlist_id, asset_id):\n                videos = [videos[int(playlist_id)]]\n\n            def entries():\n                for i, video in enumerate(videos, 1):\n                    video_id = video.get('uuid')\n                    video_url = video.get('url')\n                    if not (video_id and video_url):\n                        continue\n                    formats = self._extract_m3u8_formats(\n                        video_url.replace('.smil', '.m3u8'), video_id, 'mp4', fatal=False)\n                    if not formats and not self.get_param('ignore_no_formats'):\n                        continue\n                    yield {\n                        'id': video_id,\n                        'formats': formats,\n                        'title': title + ' - ' + (video.get('label') or 'Teil %d' % i),\n                        'duration': float_or_none(video.get('duration')),\n                    }\n            info.update({\n                '_type': 'multi_video',\n                'entries': entries(),\n            })\n        else:\n            formats = self._extract_m3u8_formats(\n                videos[0]['url'].replace('.smil', '.m3u8'), asset_id, 'mp4')\n            section_title = strip_or_none(try_get(data, lambda x: x['section']['title']))\n            info.update({\n                'formats': formats,\n                'display_id': asset.get('permalink'),\n                'thumbnail': try_get(asset, lambda x: x['images'][0]),\n                'categories': [section_title] if section_title else None,\n                'view_count': int_or_none(asset.get('views')),\n                'is_live': asset.get('is_live') is True,\n                'timestamp': parse_iso8601(asset.get('date') or asset.get('published_at')),\n            })\n        return info\n"
+    },
+    {
+      "turn": 14,
+      "role": "assistant",
+      "content": "Let me check what changed in the repo around the time this issue was reported and after.",
+      "tool_calls": [
+        {
+          "id": "call_00_0W4Vp6QqSntkqaCTq2fl4190",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\", \"path\": \"docs\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 14,
+      "role": "tool",
+      "tool_call_id": "call_00_0W4Vp6QqSntkqaCTq2fl4190",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland",
+        "path": "docs"
+      },
+      "result": "Error: path 'docs' does not exist"
+    },
+    {
+      "turn": 15,
+      "role": "assistant",
+      "content": "Let me check if there are any test files related to this extractor.",
+      "tool_calls": [
+        {
+          "id": "call_00_kwFkYBI6Yo5WZSwOmDeN9412",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\", \"path\": \"test\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 15,
+      "role": "tool",
+      "tool_call_id": "call_00_kwFkYBI6Yo5WZSwOmDeN9412",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland",
+        "path": "test"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 16,
+      "role": "assistant",
+      "content": "Let me look more deeply at the structure of the issue. The URL has the format `sportdeutschland.tv/{user}/{video-slug}`. Let me check if there's been any changes to the API pattern by looking at how `display_id` is used.",
+      "tool_calls": [
+        {
+          "id": "call_00_9qigX5zQNL50oKD2gsIV0719",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"permalinks\", \"path\": \"yt_dlp\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 16,
+      "role": "tool",
+      "tool_call_id": "call_00_9qigX5zQNL50oKD2gsIV0719",
+      "name": "search",
+      "args": {
+        "pattern": "permalinks",
+        "path": "yt_dlp"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 17,
+      "role": "assistant",
+      "content": "Based on my analysis of the issue, the extractor file for sportdeutschland.tv needs to be modified. The 404 error indicates that the API endpoint `https://backend.sportdeutschland.tv/api/permalinks/` is no longer working correctly for the given URL format, likely because the backend API has changed.\n\nThe file that needs modification is:",
+      "tool_calls": [
+        {
+          "id": "call_00_7QRcB5g3bQDbZSkdNOnW6942",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"yt_dlp/extractor/sportdeutschland.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 17,
+      "role": "tool",
+      "tool_call_id": "call_00_7QRcB5g3bQDbZSkdNOnW6942",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "yt_dlp/extractor/sportdeutschland.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

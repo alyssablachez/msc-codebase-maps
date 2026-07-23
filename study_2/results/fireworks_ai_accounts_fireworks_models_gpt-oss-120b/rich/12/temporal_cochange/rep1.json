@@ -1,0 +1,286 @@
+{
+  "model": "fireworks_ai/accounts/fireworks/models/gpt-oss-120b",
+  "repo": "rich",
+  "issue_idx": 12,
+  "tier": "medium",
+  "role": "multi",
+  "map_type": "temporal_cochange",
+  "rep": 1,
+  "worker_id": 3,
+  "issue_title": "[BUG] Plain code blocks do not render correctly on a light background",
+  "base_commit": "a972ca05522577de2f98eb7c957deead9c87b38f",
+  "metrics": {
+    "total_input_tokens": 39090,
+    "total_output_tokens": 2284,
+    "total_cached_tokens": 22477,
+    "total_cost": 0.007234,
+    "num_turns": 9,
+    "wall_time_seconds": 18.04,
+    "stop_reason": "end_turn",
+    "hit_turn_cap": false,
+    "submission_type": "end_turn",
+    "trial_token": "50f703de"
+  },
+  "final_files_predicted": [
+    "rich/default_styles.py"
+  ],
+  "final_files_predicted_scorable": [
+    "rich/default_styles.py"
+  ],
+  "ground_truth": [
+    "rich/text.py",
+    "rich/syntax.py",
+    "rich/console.py",
+    "rich/markdown.py"
+  ],
+  "ground_truth_scorable": [
+    "rich/text.py",
+    "rich/syntax.py",
+    "rich/console.py",
+    "rich/markdown.py"
+  ],
+  "scores": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_M6CJd8ZPCSaPjRrmJIcB6EqN",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\n\"pattern\": \"code.block\",\n\"path\": \"\"\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_M6CJd8ZPCSaPjRrmJIcB6EqN",
+      "name": "search",
+      "args": {
+        "pattern": "code.block",
+        "path": ""
+      },
+      "result": "rich/markdown.py:170:    \"\"\"A code block with syntax highlighting.\"\"\"\nrich/markdown.py:172:    style_name = \"markdown.code_block\"\nrich/markdown.py:524:        code_theme (str, optional): Pygments theme for code blocks. Defaults to \"monokai\".\nrich/markdown.py:538:        \"code_block\": CodeBlock,\nrich/markdown.py:646:                and node_type != \"code_block\"\nrich/default_styles.py:145:    \"markdown.code_block\": Style(color=\"cyan\", bgcolor=\"black\"),"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_M81ojqiAGM9ZqmWvQ1ua3LjP",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\n\"path\": \"rich/markdown.py\",\n\"offset\": 150,\n\"limit\": 120\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_M81ojqiAGM9ZqmWvQ1ua3LjP",
+      "name": "read_file",
+      "args": {
+        "path": "rich/markdown.py",
+        "offset": 150,
+        "limit": 120
+      },
+      "result": "[Lines 150\u2013269 of 800]\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        text = self.text\n        text.justify = \"center\"\n        if self.tag == \"h1\":\n            # Draw a border around h1s\n            yield Panel(\n                text,\n                box=box.HEAVY,\n                style=\"markdown.h1.border\",\n            )\n        else:\n            # Styled text for h2 and beyond\n            if self.tag == \"h2\":\n                yield Text(\"\")\n            yield text\n\n\nclass CodeBlock(TextElement):\n    \"\"\"A code block with syntax highlighting.\"\"\"\n\n    style_name = \"markdown.code_block\"\n\n    @classmethod\n    def create(cls, markdown: \"Markdown\", token: Token) -> \"CodeBlock\":\n        node_info = token.info or \"\"\n        lexer_name = node_info.partition(\" \")[0]\n        return cls(lexer_name or \"default\", markdown.code_theme)\n\n    def __init__(self, lexer_name: str, theme: str) -> None:\n        self.lexer_name = lexer_name\n        self.theme = theme\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        code = str(self.text).rstrip()\n        syntax = Syntax(\n            code, self.lexer_name, theme=self.theme, word_wrap=True, padding=1\n        )\n        yield syntax\n\n\nclass BlockQuote(TextElement):\n    \"\"\"A block quote.\"\"\"\n\n    style_name = \"markdown.block_quote\"\n\n    def __init__(self) -> None:\n        self.elements: Renderables = Renderables()\n\n    def on_child_close(\n        self, context: \"MarkdownContext\", child: \"MarkdownElement\"\n    ) -> bool:\n        self.elements.append(child)\n        return False\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        render_options = options.update(width=options.max_width - 4)\n        lines = console.render_lines(self.elements, render_options, style=self.style)\n        style = self.style\n        new_line = Segment(\"\\n\")\n        padding = Segment(\"\u258c \", style)\n        for line in lines:\n            yield padding\n            yield from line\n            yield new_line\n\n\nclass HorizontalRule(MarkdownElement):\n    \"\"\"A horizontal rule to divide sections.\"\"\"\n\n    new_line = False\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        style = console.get_style(\"markdown.hr\", default=\"none\")\n        yield Rule(style=style)\n\n\nclass TableElement(MarkdownElement):\n    \"\"\"MarkdownElement corresponding to `table_open`.\"\"\"\n\n    def __init__(self) -> None:\n        self.header: TableHeaderElement | None = None\n        self.body: TableBodyElement | None = None\n\n    def on_child_close(\n        self, context: \"MarkdownContext\", child: \"MarkdownElement\"\n    ) -> bool:\n        if isinstance(child, TableHeaderElement):\n            self.header = child\n        elif isinstance(child, TableBodyElement):\n            self.body = child\n        else:\n            raise RuntimeError(\"Couldn't process markdown table.\")\n        return False\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        table = Table(box=box.SIMPLE_HEAVY)\n\n        if self.header is not None and self.header.row is not None:\n            for column in self.header.row.cells:\n                table.add_column(column.content)\n\n        if self.body is not None:\n            for row in self.body.rows:\n                row_content = [element.content for element in row.cells]\n                table.add_row(*row_content)\n\n        yield table\n\n\nclass TableHeaderElement(MarkdownElement):\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_tdftQRqlN8IYpExNrH13IuOU",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\n\"pattern\": \"markdown.code_block\",\n\"path\": \"\"\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_tdftQRqlN8IYpExNrH13IuOU",
+      "name": "search",
+      "args": {
+        "pattern": "markdown.code_block",
+        "path": ""
+      },
+      "result": "rich/markdown.py:172:    style_name = \"markdown.code_block\"\nrich/default_styles.py:145:    \"markdown.code_block\": Style(color=\"cyan\", bgcolor=\"black\"),"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_zS06f4JeYiLGMUjgFq5PNuwQ",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\n\"pattern\": \"class TextElement\",\n\"path\": \"rich\"\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_zS06f4JeYiLGMUjgFq5PNuwQ",
+      "name": "search",
+      "args": {
+        "pattern": "class TextElement",
+        "path": "rich"
+      },
+      "result": "rich/markdown.py:98:class TextElement(MarkdownElement):"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_N2LVDWSiCpIs2ImPwyERv1LC",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\n\"path\": \"rich/default_styles.py\",\n\"offset\": 120,\n\"limit\": 80\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_N2LVDWSiCpIs2ImPwyERv1LC",
+      "name": "read_file",
+      "args": {
+        "path": "rich/default_styles.py",
+        "offset": 120,
+        "limit": 80
+      },
+      "result": "[Lines 120\u2013190 of 190]\n    \"traceback.exc_type\": Style(color=\"bright_red\", bold=True),\n    \"traceback.exc_value\": Style.null(),\n    \"traceback.offset\": Style(color=\"bright_red\", bold=True),\n    \"bar.back\": Style(color=\"grey23\"),\n    \"bar.complete\": Style(color=\"rgb(249,38,114)\"),\n    \"bar.finished\": Style(color=\"rgb(114,156,31)\"),\n    \"bar.pulse\": Style(color=\"rgb(249,38,114)\"),\n    \"progress.description\": Style.null(),\n    \"progress.filesize\": Style(color=\"green\"),\n    \"progress.filesize.total\": Style(color=\"green\"),\n    \"progress.download\": Style(color=\"green\"),\n    \"progress.elapsed\": Style(color=\"yellow\"),\n    \"progress.percentage\": Style(color=\"magenta\"),\n    \"progress.remaining\": Style(color=\"cyan\"),\n    \"progress.data.speed\": Style(color=\"red\"),\n    \"progress.spinner\": Style(color=\"green\"),\n    \"status.spinner\": Style(color=\"green\"),\n    \"tree\": Style(),\n    \"tree.line\": Style(),\n    \"markdown.paragraph\": Style(),\n    \"markdown.text\": Style(),\n    \"markdown.em\": Style(italic=True),\n    \"markdown.emph\": Style(italic=True),  # For commonmark backwards compatibility\n    \"markdown.strong\": Style(bold=True),\n    \"markdown.code\": Style(bold=True, color=\"cyan\", bgcolor=\"black\"),\n    \"markdown.code_block\": Style(color=\"cyan\", bgcolor=\"black\"),\n    \"markdown.block_quote\": Style(color=\"magenta\"),\n    \"markdown.list\": Style(color=\"cyan\"),\n    \"markdown.item\": Style(),\n    \"markdown.item.bullet\": Style(color=\"yellow\", bold=True),\n    \"markdown.item.number\": Style(color=\"yellow\", bold=True),\n    \"markdown.hr\": Style(color=\"yellow\"),\n    \"markdown.h1.border\": Style(),\n    \"markdown.h1\": Style(bold=True),\n    \"markdown.h2\": Style(bold=True, underline=True),\n    \"markdown.h3\": Style(bold=True),\n    \"markdown.h4\": Style(bold=True, dim=True),\n    \"markdown.h5\": Style(underline=True),\n    \"markdown.h6\": Style(italic=True),\n    \"markdown.h7\": Style(italic=True, dim=True),\n    \"markdown.link\": Style(color=\"bright_blue\"),\n    \"markdown.link_url\": Style(color=\"blue\", underline=True),\n    \"markdown.s\": Style(strike=True),\n    \"iso8601.date\": Style(color=\"blue\"),\n    \"iso8601.time\": Style(color=\"magenta\"),\n    \"iso8601.timezone\": Style(color=\"yellow\"),\n}\n\n\nif __name__ == \"__main__\":  # pragma: no cover\n    import argparse\n    import io\n\n    from rich.console import Console\n    from rich.table import Table\n    from rich.text import Text\n\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--html\", action=\"store_true\", help=\"Export as HTML table\")\n    args = parser.parse_args()\n    html: bool = args.html\n    console = Console(record=True, width=70, file=io.StringIO()) if html else Console()\n\n    table = Table(\"Name\", \"Styling\")\n\n    for style_name, style in DEFAULT_STYLES.items():\n        table.add_row(Text(style_name, style=style), str(style))\n\n    console.print(table)\n    if html:\n        print(console.export_html(inline_styles=True))\n"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_OyCBy8P7MJwvgdv9ylC8pFUV",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\n\"pattern\": \"code_theme\",\n\"path\": \"rich\"\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_OyCBy8P7MJwvgdv9ylC8pFUV",
+      "name": "search",
+      "args": {
+        "pattern": "code_theme",
+        "path": "rich"
+      },
+      "result": "rich/markdown.py:178:        return cls(lexer_name or \"default\", markdown.code_theme)\nrich/markdown.py:480:        inline_code_theme: str = \"monokai\",\nrich/markdown.py:489:            self._syntax = Syntax(\"\", inline_code_lexer, theme=inline_code_theme)\nrich/markdown.py:524:        code_theme (str, optional): Pygments theme for code blocks. Defaults to \"monokai\".\nrich/markdown.py:530:        inline_code_theme: (Optional[str], optional): Pygments theme for inline code\nrich/markdown.py:558:        code_theme: str = \"monokai\",\nrich/markdown.py:563:        inline_code_theme: Optional[str] = None,\nrich/markdown.py:568:        self.code_theme = code_theme\nrich/markdown.py:573:        self.inline_code_theme = inline_code_theme or code_theme\nrich/markdown.py:596:            inline_code_theme=self.inline_code_theme,\nrich/markdown.py:728:        dest=\"code_theme\",\nrich/markdown.py:781:        code_theme=args.code_theme,"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_7p60GlaSri9olp9iVrRlioBm",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\n\"path\": \"rich/markdown.py\",\n\"offset\": 430,\n\"limit\": 150\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_7p60GlaSri9olp9iVrRlioBm",
+      "name": "read_file",
+      "args": {
+        "path": "rich/markdown.py",
+        "offset": 430,
+        "limit": 150
+      },
+      "result": "[Lines 430\u2013579 of 800]\n\nclass ImageItem(TextElement):\n    \"\"\"Renders a placeholder for an image.\"\"\"\n\n    new_line = False\n\n    @classmethod\n    def create(cls, markdown: \"Markdown\", token: Token) -> \"MarkdownElement\":\n        \"\"\"Factory to create markdown element,\n\n        Args:\n            markdown (Markdown): The parent Markdown object.\n            token (Any): A token from markdown-it.\n\n        Returns:\n            MarkdownElement: A new markdown element\n        \"\"\"\n        return cls(str(token.attrs.get(\"src\", \"\")), markdown.hyperlinks)\n\n    def __init__(self, destination: str, hyperlinks: bool) -> None:\n        self.destination = destination\n        self.hyperlinks = hyperlinks\n        self.link: Optional[str] = None\n        super().__init__()\n\n    def on_enter(self, context: \"MarkdownContext\") -> None:\n        self.link = context.current_style.link\n        self.text = Text(justify=\"left\")\n        super().on_enter(context)\n\n    def __rich_console__(\n        self, console: Console, options: ConsoleOptions\n    ) -> RenderResult:\n        link_style = Style(link=self.link or self.destination or None)\n        title = self.text or Text(self.destination.strip(\"/\").rsplit(\"/\", 1)[-1])\n        if self.hyperlinks:\n            title.stylize(link_style)\n        text = Text.assemble(\"\ud83c\udf06 \", title, \" \", end=\"\")\n        yield text\n\n\nclass MarkdownContext:\n    \"\"\"Manages the console render state.\"\"\"\n\n    def __init__(\n        self,\n        console: Console,\n        options: ConsoleOptions,\n        style: Style,\n        inline_code_lexer: Optional[str] = None,\n        inline_code_theme: str = \"monokai\",\n    ) -> None:\n        self.console = console\n        self.options = options\n        self.style_stack: StyleStack = StyleStack(style)\n        self.stack: Stack[MarkdownElement] = Stack()\n\n        self._syntax: Optional[Syntax] = None\n        if inline_code_lexer is not None:\n            self._syntax = Syntax(\"\", inline_code_lexer, theme=inline_code_theme)\n\n    @property\n    def current_style(self) -> Style:\n        \"\"\"Current style which is the product of all styles on the stack.\"\"\"\n        return self.style_stack.current\n\n    def on_text(self, text: str, node_type: str) -> None:\n        \"\"\"Called when the parser visits text.\"\"\"\n        if node_type in {\"fence\", \"code_inline\"} and self._syntax is not None:\n            highlight_text = self._syntax.highlight(text)\n            highlight_text.rstrip()\n            self.stack.top.on_text(\n                self, Text.assemble(highlight_text, style=self.style_stack.current)\n            )\n        else:\n            self.stack.top.on_text(self, text)\n\n    def enter_style(self, style_name: Union[str, Style]) -> Style:\n        \"\"\"Enter a style context.\"\"\"\n        style = self.console.get_style(style_name, default=\"none\")\n        self.style_stack.push(style)\n        return self.current_style\n\n    def leave_style(self) -> Style:\n        \"\"\"Leave a style context.\"\"\"\n        style = self.style_stack.pop()\n        return style\n\n\nclass Markdown(JupyterMixin):\n    \"\"\"A Markdown renderable.\n\n    Args:\n        markup (str): A string containing markdown.\n        code_theme (str, optional): Pygments theme for code blocks. Defaults to \"monokai\".\n        justify (JustifyMethod, optional): Justify value for paragraphs. Defaults to None.\n        style (Union[str, Style], optional): Optional style to apply to markdown.\n        hyperlinks (bool, optional): Enable hyperlinks. Defaults to ``True``.\n        inline_code_lexer: (str, optional): Lexer to use if inline code highlighting is\n            enabled. Defaults to None.\n        inline_code_theme: (Optional[str], optional): Pygments theme for inline code\n            highlighting, or None for no highlighting. Defaults to None.\n    \"\"\"\n\n    elements: ClassVar[Dict[str, Type[MarkdownElement]]] = {\n        \"paragraph_open\": Paragraph,\n        \"heading_open\": Heading,\n        \"fence\": CodeBlock,\n        \"code_block\": CodeBlock,\n        \"blockquote_open\": BlockQuote,\n        \"hr\": HorizontalRule,\n        \"bullet_list_open\": ListElement,\n        \"ordered_list_open\": ListElement,\n        \"list_item_open\": ListItem,\n        \"image\": ImageItem,\n        \"table_open\": TableElement,\n        \"tbody_open\": TableBodyElement,\n        \"thead_open\": TableHeaderElement,\n        \"tr_open\": TableRowElement,\n        \"td_open\": TableDataElement,\n        \"th_open\": TableDataElement,\n    }\n\n    inlines = {\"em\", \"strong\", \"code\", \"s\"}\n\n    def __init__(\n        self,\n        markup: str,\n        code_theme: str = \"monokai\",\n        justify: Optional[JustifyMethod] = None,\n        style: Union[str, Style] = \"none\",\n        hyperlinks: bool = True,\n        inline_code_lexer: Optional[str] = None,\n        inline_code_theme: Optional[str] = None,\n    ) -> None:\n        parser = MarkdownIt().enable(\"strikethrough\").enable(\"table\")\n        self.markup = markup\n        self.parsed = parser.parse(markup)\n        self.code_theme = code_theme\n        self.justify: Optional[JustifyMethod] = justify\n        self.style = style\n        self.hyperlinks = hyperlinks\n        self.inline_code_lexer = inline_code_lexer\n        self.inline_code_theme = inline_code_theme or code_theme\n\n    def _flatten_tokens(self, tokens: Iterable[Token]) -> Iterable[Token]:\n        \"\"\"Flattens the token stream.\"\"\"\n        for token in tokens:\n            is_fence = token.type == \"fence\"\n            is_image = token.tag == \"img\"\n"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_RdPcRadJ8sIl5u7NwlHvgWpD",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\n\"pattern\": \"class MarkdownElement\",\n\"path\": \"rich\"\n}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_RdPcRadJ8sIl5u7NwlHvgWpD",
+      "name": "search",
+      "args": {
+        "pattern": "class MarkdownElement",
+        "path": "rich"
+      },
+      "result": "rich/markdown.py:30:class MarkdownElement:"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "[\"rich/default_styles.py\"]",
+      "tool_calls": [],
+      "finish_reason": "stop"
+    },
+    {
+      "turn": "final",
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "submit_answer",
+          "arguments": "{\n\"files\": [\n\"rich/default_styles.py\"\n]\n}"
+        }
+      ]
+    }
+  ]
+}

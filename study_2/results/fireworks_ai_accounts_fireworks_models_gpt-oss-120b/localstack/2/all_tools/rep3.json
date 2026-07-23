@@ -1,0 +1,497 @@
+{
+  "model": "fireworks_ai/accounts/fireworks/models/gpt-oss-120b",
+  "repo": "localstack",
+  "issue_idx": 2,
+  "tier": "medium",
+  "role": "single",
+  "map_type": "all_tools",
+  "rep": 3,
+  "worker_id": 3,
+  "issue_title": "bug: The Content-MD5 you specified did not match what we received",
+  "base_commit": "2fe8440b619329891db150e45910e8aaad97b7ce",
+  "metrics": {
+    "total_input_tokens": 173581,
+    "total_output_tokens": 3204,
+    "total_cached_tokens": 140848,
+    "total_cost": 0.02796,
+    "num_turns": 17,
+    "wall_time_seconds": 47.45,
+    "stop_reason": "end_turn",
+    "hit_turn_cap": false,
+    "submission_type": "end_turn",
+    "trial_token": "93c01b93"
+  },
+  "final_files_predicted": [
+    "localstack/services/s3/s3_listener.py"
+  ],
+  "final_files_predicted_scorable": [
+    "localstack/services/s3/s3_listener.py"
+  ],
+  "ground_truth": [
+    "localstack/services/s3/s3_listener.py"
+  ],
+  "ground_truth_scorable": [
+    "localstack/services/s3/s3_listener.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_vR1YCXCxAMstJcOohAGI4JsH",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"Content-MD5\",\"path\":\"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_vR1YCXCxAMstJcOohAGI4JsH",
+      "name": "search",
+      "args": {
+        "pattern": "Content-MD5",
+        "path": ""
+      },
+      "result": "localstack/services/s3/s3_listener.py:887:        md5_header = headers[\"Content-MD5\"]\nlocalstack/services/s3/s3_listener.py:889:            raise Exception('Content-MD5 header is not in Base64 format: \"%s\"' % md5_header)\nlocalstack/services/s3/s3_listener.py:893:            \"The Content-MD5 you specified is not valid.\",\nlocalstack/services/s3/s3_listener.py:899:            \"The Content-MD5 you specified did not match what we received.\",\nlocalstack/services/s3/s3_listener.py:1224:            \"Content-MD5\" in headers\nlocalstack/aws/protocol/serializer.py:276:    \"\"\"Add a Content-MD5 header if not yet there. Adapted from botocore.utils\"\"\"\nlocalstack/aws/protocol/serializer.py:279:    if body is not None and \"Content-MD5\" not in headers:\nlocalstack/aws/protocol/serializer.py:281:        headers[\"Content-MD5\"] = md5_digest\ntests/integration/test_s3.py:1099:        # Create copy object to try to match s3a setting Content-MD5"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_7YEtqEKTFiyUHyCID9MDDiAM",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"localstack/services/s3/s3_listener.py\",\"offset\":850,\"limit\":200}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_7YEtqEKTFiyUHyCID9MDDiAM",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/services/s3/s3_listener.py",
+        "offset": 850,
+        "limit": 200
+      },
+      "result": "[Lines 850\u20131049 of 1601]\n\n\ndef is_bucket_available(bucket_name):\n    body = {\"Code\": \"200\"}\n    exists, code = bucket_exists(bucket_name)\n    if not exists:\n        body = {\n            \"Error\": {\n                \"Code\": code,\n                \"Message\": \"The bucket does not exist\",\n                \"BucketName\": bucket_name,\n            }\n        }\n        return exists, code, body\n\n    return True, 200, body\n\n\ndef bucket_exists(bucket_name):\n    \"\"\"Tests for the existence of the specified bucket. Returns the error code\n    if the bucket does not exist (200 if the bucket does exist).\n    \"\"\"\n    bucket_name = normalize_bucket_name(bucket_name)\n\n    s3_client = aws_stack.connect_to_service(\"s3\")\n    try:\n        s3_client.head_bucket(Bucket=bucket_name)\n    except ClientError as err:\n        error_code = err.response.get(\"Error\").get(\"Code\")\n        return False, error_code\n\n    return True, 200\n\n\ndef check_content_md5(data, headers):\n    actual = md5(data)\n    try:\n        md5_header = headers[\"Content-MD5\"]\n        if not is_base64(md5_header):\n            raise Exception('Content-MD5 header is not in Base64 format: \"%s\"' % md5_header)\n        expected = to_str(codecs.encode(base64.b64decode(md5_header), \"hex\"))\n    except Exception:\n        return error_response(\n            \"The Content-MD5 you specified is not valid.\",\n            \"InvalidDigest\",\n            status_code=400,\n        )\n    if actual != expected:\n        return error_response(\n            \"The Content-MD5 you specified did not match what we received.\",\n            \"BadDigest\",\n            status_code=400,\n        )\n\n\ndef error_response(message, code, status_code=400):\n    result = {\"Error\": {\"Code\": code, \"Message\": message}}\n    content = xmltodict.unparse(result)\n    return xml_response(content, status_code=status_code)\n\n\ndef xml_response(content, status_code=200):\n    headers = {\"Content-Type\": \"application/xml\"}\n    return requests_response(content, status_code=status_code, headers=headers)\n\n\ndef no_such_key_error(resource, requestId=None, status_code=400):\n    result = {\n        \"Error\": {\n            \"Code\": \"NoSuchKey\",\n            \"Message\": \"The resource you requested does not exist\",\n            \"Resource\": resource,\n            \"RequestId\": requestId,\n        }\n    }\n    content = xmltodict.unparse(result)\n    return xml_response(content, status_code=status_code)\n\n\ndef no_such_bucket(bucket_name, requestId=None, status_code=404):\n    # TODO: fix the response to match AWS bucket response when the webconfig is not set and bucket not exists\n    result = {\n        \"Error\": {\n            \"Code\": \"NoSuchBucket\",\n            \"Message\": \"The specified bucket does not exist\",\n            \"BucketName\": bucket_name,\n            \"RequestId\": requestId,\n            \"HostId\": short_uid(),\n        }\n    }\n    content = xmltodict.unparse(result)\n    return xml_response(content, status_code=status_code)\n\n\ndef token_expired_error(resource, requestId=None, status_code=400):\n    result = {\n        \"Error\": {\n            \"Code\": \"ExpiredToken\",\n            \"Message\": \"The provided token has expired.\",\n            \"Resource\": resource,\n            \"RequestId\": requestId,\n        }\n    }\n    content = xmltodict.unparse(result)\n    return xml_response(content, status_code=status_code)\n\n\ndef expand_redirect_url(starting_url, key, bucket):\n    \"\"\"Add key and bucket parameters to starting URL query string.\"\"\"\n    parsed = urlparse.urlparse(starting_url)\n    query = collections.OrderedDict(urlparse.parse_qsl(parsed.query))\n    query.update([(\"key\", key), (\"bucket\", bucket)])\n\n    redirect_url = urlparse.urlunparse(\n        (\n            parsed.scheme,\n            parsed.netloc,\n            parsed.path,\n            parsed.params,\n            urlparse.urlencode(query),\n            None,\n        )\n    )\n\n    return redirect_url\n\n\ndef is_bucket_specified_in_domain_name(path, headers):\n    host = headers.get(\"host\", \"\")\n    return re.match(r\".*s3(\\-website)?\\.([^\\.]+\\.)?amazonaws.com\", host)\n\n\ndef is_object_specific_request(path, headers):\n    \"\"\"Return whether the given request is specific to a certain S3 object.\n    Note: the bucket name is usually specified as a path parameter,\n    but may also be part of the domain name!\"\"\"\n    bucket_in_domain = is_bucket_specified_in_domain_name(path, headers)\n    parts = len(path.split(\"/\"))\n    return parts > (1 if bucket_in_domain else 2)\n\n\ndef empty_response():\n    response = Response()\n    response.status_code = 200\n    response._content = \"\"\n    return response\n\n\ndef handle_notification_request(bucket, method, data):\n    if method == \"GET\":\n        return handle_get_bucket_notification(bucket)\n    if method == \"PUT\":\n        return handle_put_bucket_notification(bucket, data)\n\n    return empty_response()\n\n\ndef handle_get_bucket_notification(bucket):\n    response = Response()\n    response.status_code = 200\n    response._content = \"\"\n\n    # TODO check if bucket exists\n    result = '<NotificationConfiguration xmlns=\"%s\">' % XMLNS_S3\n    if bucket in S3_NOTIFICATIONS:\n        notifs = S3_NOTIFICATIONS[bucket]\n        for notif in notifs:\n            for dest in NOTIFICATION_DESTINATION_TYPES:\n                if dest in notif:\n                    dest_dict = {\n                        \"%sConfiguration\"\n                        % dest: {\n                            \"Id\": notif[\"Id\"],\n                            dest: notif[dest],\n                            \"Event\": notif[\"Event\"],\n                            \"Filter\": notif[\"Filter\"],\n                        }\n                    }\n                    result += xmltodict.unparse(dest_dict, full_document=False)\n    result += \"</NotificationConfiguration>\"\n    response._content = result\n    return response\n\n\ndef _validate_filter_rules(filter_doc):\n    rules = filter_doc.get(\"FilterRule\")\n    if not rules:\n        return\n\n    for rule in rules:\n        name = rule.get(\"Name\", \"\")\n        if name.lower() not in [\"suffix\", \"prefix\"]:\n            raise InvalidFilterRuleName(name)\n\n        # TODO: check what other rules there are\n\n\ndef _sanitize_notification_filter_rules(filter_doc):\n    rules = filter_doc.get(\"FilterRule\")\n    if not rules:\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_i8sWGFQW3se1yNspEwvxnfWa",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"check_content_md5\",\"path\":\"localstack/services/s3\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_i8sWGFQW3se1yNspEwvxnfWa",
+      "name": "search",
+      "args": {
+        "pattern": "check_content_md5",
+        "path": "localstack/services/s3"
+      },
+      "result": "localstack/services/s3/s3_listener.py:884:def check_content_md5(data, headers):\nlocalstack/services/s3/s3_listener.py:1228:            response = check_content_md5(data, headers)"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_vsOMjowAHqtBz0jW1AsGPJUy",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"STREAMING-AWS4-HMAC\",\"path\":\"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_vsOMjowAHqtBz0jW1AsGPJUy",
+      "name": "search",
+      "args": {
+        "pattern": "STREAMING-AWS4-HMAC",
+        "path": ""
+      },
+      "result": "localstack/services/s3/s3_listener.py:62:STREAMING_HMAC_PAYLOAD = \"STREAMING-AWS4-HMAC-SHA256-PAYLOAD\"\ntests/integration/test_s3.py:724:            X-Amz-Content-Sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_hyKzqGCHSggunBaAVFWqaQDX",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"check_content_md5(\",\"path\":\"localstack/services/s3\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_hyKzqGCHSggunBaAVFWqaQDX",
+      "name": "search",
+      "args": {
+        "pattern": "check_content_md5(",
+        "path": "localstack/services/s3"
+      },
+      "result": "localstack/services/s3/s3_listener.py:884:def check_content_md5(data, headers):\nlocalstack/services/s3/s3_listener.py:1228:            response = check_content_md5(data, headers)"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_laii4Wau7DGvZR01kUlTgYSK",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"STREAMING\",\"path\":\"localstack/services/s3\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_laii4Wau7DGvZR01kUlTgYSK",
+      "name": "search",
+      "args": {
+        "pattern": "STREAMING",
+        "path": "localstack/services/s3"
+      },
+      "result": "localstack/services/s3/s3_listener.py:62:STREAMING_HMAC_PAYLOAD = \"STREAMING-AWS4-HMAC-SHA256-PAYLOAD\""
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_wNTdRF2NuWQ9hlCitdYwljfN",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"STREAMING_HMAC_PAYLOAD\",\"path\":\"localstack\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_wNTdRF2NuWQ9hlCitdYwljfN",
+      "name": "search",
+      "args": {
+        "pattern": "STREAMING_HMAC_PAYLOAD",
+        "path": "localstack"
+      },
+      "result": "localstack/services/s3/s3_listener.py:62:STREAMING_HMAC_PAYLOAD = \"STREAMING-AWS4-HMAC-SHA256-PAYLOAD\""
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_8ISsUl63WBdTUOQ2WsHd4sTG",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"localstack/services/s3/s3_listener.py\",\"offset\":1,\"limit\":120}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_8ISsUl63WBdTUOQ2WsHd4sTG",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/services/s3/s3_listener.py",
+        "offset": 1,
+        "limit": 120
+      },
+      "result": "[Lines 1\u2013120 of 1601]\nimport base64\nimport codecs\nimport collections\nimport datetime\nimport json\nimport logging\nimport random\nimport re\nimport urllib.parse\nimport uuid\nfrom urllib.parse import parse_qs\n\nimport botocore.config\nimport dateutil.parser\nimport six\nimport xmltodict\nfrom botocore.client import ClientError\nfrom moto.s3.exceptions import InvalidFilterRuleName\nfrom moto.s3.models import s3_backend\nfrom pytz import timezone\nfrom requests.models import Request, Response\nfrom six.moves.urllib import parse as urlparse\n\nfrom localstack import config, constants\nfrom localstack.services.s3 import multipart_content\nfrom localstack.services.s3.s3_utils import (\n    ALLOWED_HEADER_OVERRIDES,\n    SIGNATURE_V2_PARAMS,\n    SIGNATURE_V4_PARAMS,\n    authenticate_presign_url,\n    extract_bucket_name,\n    extract_key_name,\n    get_forwarded_for_host,\n    is_expired,\n    is_static_website,\n    normalize_bucket_name,\n    uses_host_addressing,\n    validate_bucket_name,\n)\nfrom localstack.utils.analytics import event_publisher\nfrom localstack.utils.aws import aws_stack\nfrom localstack.utils.aws.aws_responses import (\n    create_sqs_system_attributes,\n    is_invalid_html_response,\n    requests_response,\n)\nfrom localstack.utils.common import (\n    clone,\n    get_service_protocol,\n    is_base64,\n    md5,\n    not_none_or,\n    short_uid,\n    strip_xmlns,\n    timestamp_millis,\n    to_bytes,\n    to_str,\n)\nfrom localstack.utils.persistence import PersistingProxyListener\n\nCONTENT_SHA256_HEADER = \"x-amz-content-sha256\"\nSTREAMING_HMAC_PAYLOAD = \"STREAMING-AWS4-HMAC-SHA256-PAYLOAD\"\n\n# backend port (configured in s3_starter.py on startup)\nPORT_S3_BACKEND = None\n\n# mappings for S3 bucket notifications\nS3_NOTIFICATIONS = s3_backend.S3_NOTIFICATIONS = getattr(s3_backend, \"S3_NOTIFICATIONS\", {})\n\n# mappings for bucket CORS settings\nBUCKET_CORS = s3_backend.BUCKET_CORS = getattr(s3_backend, \"BUCKET_CORS\", {})\n\n# maps bucket name to lifecycle settings\nBUCKET_LIFECYCLE = s3_backend.BUCKET_LIFECYCLE = getattr(s3_backend, \"BUCKET_LIFECYCLE\", {})\n\n# maps bucket name to replication settings\nBUCKET_REPLICATIONS = s3_backend.BUCKET_REPLICATIONS = getattr(\n    s3_backend, \"BUCKET_REPLICATIONS\", {}\n)\n\n# map to store the s3 expiry dates\nOBJECT_EXPIRY = s3_backend.OBJECT_EXPIRY = getattr(s3_backend, \"OBJECT_EXPIRY\", {})\n\n# set up logger\nLOGGER = logging.getLogger(__name__)\n\n# XML namespace constants\nXMLNS_S3 = \"http://s3.amazonaws.com/doc/2006-03-01/\"\n\n# see https://stackoverflow.com/questions/50480924/regex-for-s3-bucket-name#50484916\nBUCKET_NAME_REGEX = (\n    r\"(?=^.{3,63}$)(?!^(\\d+\\.)+\\d+$)\"\n    + r\"(^(([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])$)\"\n)\n\n# list of destination types for bucket notifications\nNOTIFICATION_DESTINATION_TYPES = (\"Queue\", \"Topic\", \"CloudFunction\", \"LambdaFunction\")\n\n# prefix for object metadata keys in headers and query params\nOBJECT_METADATA_KEY_PREFIX = \"x-amz-meta-\"\n\n# STS policy expiration date format\nPOLICY_EXPIRATION_FORMAT1 = \"%Y-%m-%dT%H:%M:%SZ\"\nPOLICY_EXPIRATION_FORMAT2 = \"%Y-%m-%dT%H:%M:%S.%fZ\"\n\n# ignored_headers_lower conatins headers which don't get involved in signature calculations process\n# these headers are being sent by the localstack by default.\nIGNORED_HEADERS_LOWER = [\n    \"remote-addr\",\n    \"host\",\n    \"user-agent\",\n    \"accept-encoding\",\n    \"accept\",\n    \"connection\",\n    \"origin\",\n    \"x-forwarded-for\",\n    \"x-localstack-edge\",\n    \"authorization\",\n    \"date\",\n]\n"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_kmhLd66CBAUb5aXhoN1cC17X",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"check_content_md5(\", \"path\":\"localstack/services/s3\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_kmhLd66CBAUb5aXhoN1cC17X",
+      "name": "search",
+      "args": {
+        "pattern": "check_content_md5(",
+        "path": "localstack/services/s3"
+      },
+      "result": "localstack/services/s3/s3_listener.py:884:def check_content_md5(data, headers):\nlocalstack/services/s3/s3_listener.py:1228:            response = check_content_md5(data, headers)"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_zv2UZkbtwnVfTakc6ckzV2aX",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"localstack/services/s3/s3_listener.py\",\"offset\":1190,\"limit\":100}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_zv2UZkbtwnVfTakc6ckzV2aX",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/services/s3/s3_listener.py",
+        "offset": 1190,
+        "limit": 100
+      },
+      "result": "[Lines 1190\u20131289 of 1601]\n        bucket_name = extract_bucket_name(headers, parsed_path.path)\n\n        if method == \"PUT\" and bucket_name and not re.match(BUCKET_NAME_REGEX, bucket_name):\n            if len(parsed_path.path) <= 1:\n                return error_response(\n                    \"Unable to extract valid bucket name. Please ensure that your AWS SDK is \"\n                    + \"configured to use path style addressing, or send a valid \"\n                    + '<Bucket>.s3.localhost.localstack.cloud \"Host\" header',\n                    \"InvalidBucketName\",\n                    status_code=400,\n                )\n\n            return error_response(\n                \"The specified bucket is not valid.\",\n                \"InvalidBucketName\",\n                status_code=400,\n            )\n\n        # Detecting pre-sign url and checking signature\n        if any([p in query_params for p in SIGNATURE_V2_PARAMS]) or any(\n            [p in query_params for p in SIGNATURE_V4_PARAMS]\n        ):\n            response = authenticate_presign_url(\n                method=method, path=path, data=data, headers=headers\n            )\n            if response is not None:\n                return response\n\n        # handling s3 website hosting requests\n        if is_static_website(headers) and method == \"GET\":\n            return serve_static_website(headers=headers, path=path, bucket_name=bucket_name)\n\n        # check content md5 hash integrity if not a copy request or multipart initialization\n        if (\n            \"Content-MD5\" in headers\n            and not self.is_s3_copy_request(headers, path)\n            and not self.is_create_multipart_request(parsed_path.query)\n        ):\n            response = check_content_md5(data, headers)\n            if response is not None:\n                return response\n\n        modified_data = None\n\n        # TODO: For some reason, moto doesn't allow us to put a location constraint on us-east-1\n        to_find1 = to_bytes(\"<LocationConstraint>us-east-1</LocationConstraint>\")\n        to_find2 = to_bytes(\"<CreateBucketConfiguration\")\n        if data and data.startswith(to_bytes(\"<\")) and to_find1 in data and to_find2 in data:\n            # Note: with the latest version, <CreateBucketConfiguration> must either\n            # contain a valid <LocationConstraint>, or not be present at all in the body.\n            modified_data = b\"\"\n\n        # POST requests to S3 may include a \"${filename}\" placeholder in the\n        # key, which should be replaced with an actual file name before storing.\n        if method == \"POST\":\n            original_data = not_none_or(modified_data, data)\n            expanded_data = multipart_content.expand_multipart_filename(original_data, headers)\n            if expanded_data is not original_data:\n                modified_data = expanded_data\n\n        # If no content-type is provided, 'binary/octet-stream' should be used\n        # src: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUT.html\n        if method == \"PUT\" and not headers.get(\"content-type\"):\n            headers[\"content-type\"] = \"binary/octet-stream\"\n\n        # parse query params\n        query = parsed_path.query\n        path = parsed_path.path\n        query_map = urlparse.parse_qs(query, keep_blank_values=True)\n\n        # remap metadata query params (not supported in moto) to request headers\n        append_metadata_headers(method, query_map, headers)\n\n        # apply fixes\n        headers_changed = fix_metadata_key_underscores(request_headers=headers)\n\n        if query == \"notification\" or \"notification\" in query_map:\n            # handle and return response for ?notification request\n            response = handle_notification_request(bucket_name, method, data)\n            return response\n\n        # if the Expires key in the url is already expired then return error\n        if method == \"GET\" and \"Expires\" in query_map:\n            ts = datetime.datetime.fromtimestamp(\n                int(query_map.get(\"Expires\")[0]), tz=datetime.timezone.utc\n            )\n            if is_expired(ts):\n                return token_expired_error(path, headers.get(\"x-amz-request-id\"), 400)\n\n        # If multipart POST with policy in the params, return error if the policy has expired\n        if method == \"POST\":\n            policy_key, policy_value = multipart_content.find_multipart_key_value(\n                data, headers, \"policy\"\n            )\n            if policy_key and policy_value:\n                policy = json.loads(base64.b64decode(policy_value).decode(\"utf-8\"))\n                expiration_string = policy.get(\"expiration\", None)  # Example: 2020-06-05T13:37:12Z\n                if expiration_string:\n                    expiration_datetime = self.parse_policy_expiration_date(expiration_string)\n                    if is_expired(expiration_datetime):\n"
+    },
+    {
+      "turn": 10,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_pEN0P4bCNt4CqHFvyipmIT53",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"STREAMING_HMAC_PAYLOAD\",\"path\":\"localstack\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 10,
+      "role": "tool",
+      "tool_call_id": "call_pEN0P4bCNt4CqHFvyipmIT53",
+      "name": "search",
+      "args": {
+        "pattern": "STREAMING_HMAC_PAYLOAD",
+        "path": "localstack"
+      },
+      "result": "localstack/services/s3/s3_listener.py:62:STREAMING_HMAC_PAYLOAD = \"STREAMING-AWS4-HMAC-SHA256-PAYLOAD\""
+    },
+    {
+      "turn": 11,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_KTupiYRBJmVLF4ZcvnkVPt5B",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"localstack/services/s3/s3_listener.py\",\"offset\":1200,\"limit\":80}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 11,
+      "role": "tool",
+      "tool_call_id": "call_KTupiYRBJmVLF4ZcvnkVPt5B",
+      "name": "read_file",
+      "args": {
+        "path": "localstack/services/s3/s3_listener.py",
+        "offset": 1200,
+        "limit": 80
+      },
+      "result": "[Lines 1200\u20131279 of 1601]\n                )\n\n            return error_response(\n                \"The specified bucket is not valid.\",\n                \"InvalidBucketName\",\n                status_code=400,\n            )\n\n        # Detecting pre-sign url and checking signature\n        if any([p in query_params for p in SIGNATURE_V2_PARAMS]) or any(\n            [p in query_params for p in SIGNATURE_V4_PARAMS]\n        ):\n            response = authenticate_presign_url(\n                method=method, path=path, data=data, headers=headers\n            )\n            if response is not None:\n                return response\n\n        # handling s3 website hosting requests\n        if is_static_website(headers) and method == \"GET\":\n            return serve_static_website(headers=headers, path=path, bucket_name=bucket_name)\n\n        # check content md5 hash integrity if not a copy request or multipart initialization\n        if (\n            \"Content-MD5\" in headers\n            and not self.is_s3_copy_request(headers, path)\n            and not self.is_create_multipart_request(parsed_path.query)\n        ):\n            response = check_content_md5(data, headers)\n            if response is not None:\n                return response\n\n        modified_data = None\n\n        # TODO: For some reason, moto doesn't allow us to put a location constraint on us-east-1\n        to_find1 = to_bytes(\"<LocationConstraint>us-east-1</LocationConstraint>\")\n        to_find2 = to_bytes(\"<CreateBucketConfiguration\")\n        if data and data.startswith(to_bytes(\"<\")) and to_find1 in data and to_find2 in data:\n            # Note: with the latest version, <CreateBucketConfiguration> must either\n            # contain a valid <LocationConstraint>, or not be present at all in the body.\n            modified_data = b\"\"\n\n        # POST requests to S3 may include a \"${filename}\" placeholder in the\n        # key, which should be replaced with an actual file name before storing.\n        if method == \"POST\":\n            original_data = not_none_or(modified_data, data)\n            expanded_data = multipart_content.expand_multipart_filename(original_data, headers)\n            if expanded_data is not original_data:\n                modified_data = expanded_data\n\n        # If no content-type is provided, 'binary/octet-stream' should be used\n        # src: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUT.html\n        if method == \"PUT\" and not headers.get(\"content-type\"):\n            headers[\"content-type\"] = \"binary/octet-stream\"\n\n        # parse query params\n        query = parsed_path.query\n        path = parsed_path.path\n        query_map = urlparse.parse_qs(query, keep_blank_values=True)\n\n        # remap metadata query params (not supported in moto) to request headers\n        append_metadata_headers(method, query_map, headers)\n\n        # apply fixes\n        headers_changed = fix_metadata_key_underscores(request_headers=headers)\n\n        if query == \"notification\" or \"notification\" in query_map:\n            # handle and return response for ?notification request\n            response = handle_notification_request(bucket_name, method, data)\n            return response\n\n        # if the Expires key in the url is already expired then return error\n        if method == \"GET\" and \"Expires\" in query_map:\n            ts = datetime.datetime.fromtimestamp(\n                int(query_map.get(\"Expires\")[0]), tz=datetime.timezone.utc\n            )\n            if is_expired(ts):\n                return token_expired_error(path, headers.get(\"x-amz-request-id\"), 400)\n\n        # If multipart POST with policy in the params, return error if the policy has expired\n"
+    },
+    {
+      "turn": 12,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_8hPkbb2dgrxajDAVV9FapP8d",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"STREAMING_HMAC_PAYLOAD\",\"path\":\"localstack/services/s3/s3_listener.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 12,
+      "role": "tool",
+      "tool_call_id": "call_8hPkbb2dgrxajDAVV9FapP8d",
+      "name": "search",
+      "args": {
+        "pattern": "STREAMING_HMAC_PAYLOAD",
+        "path": "localstack/services/s3/s3_listener.py"
+      },
+      "result": "62:STREAMING_HMAC_PAYLOAD = \"STREAMING-AWS4-HMAC-SHA256-PAYLOAD\""
+    },
+    {
+      "turn": 13,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_jAjFRG1dLRQdK10rwwn1aTEs",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"X-Amz-Content-Sha256\",\"path\":\"localstack/services/s3\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 13,
+      "role": "tool",
+      "tool_call_id": "call_jAjFRG1dLRQdK10rwwn1aTEs",
+      "name": "search",
+      "args": {
+        "pattern": "X-Amz-Content-Sha256",
+        "path": "localstack/services/s3"
+      },
+      "result": "localstack/services/s3/s3_utils.py:73:    \"X-Amz-Content-Sha256\","
+    },
+    {
+      "turn": 14,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_nMm8rmALCwGfXZMP1dxrIEyc",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"X-Amz-Content-Sha256\",\"path\":\"localstack/services/s3\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 14,
+      "role": "tool",
+      "tool_call_id": "call_nMm8rmALCwGfXZMP1dxrIEyc",
+      "name": "search",
+      "args": {
+        "pattern": "X-Amz-Content-Sha256",
+        "path": "localstack/services/s3"
+      },
+      "result": "localstack/services/s3/s3_utils.py:73:    \"X-Amz-Content-Sha256\","
+    },
+    {
+      "turn": 15,
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_Zioz9JdqbPgkG8ZNS0x97Q2e",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\":\"STREAMING_HMAC_PAYLOAD\",\"path\":\"localstack/services\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 15,
+      "role": "tool",
+      "tool_call_id": "call_Zioz9JdqbPgkG8ZNS0x97Q2e",
+      "name": "search",
+      "args": {
+        "pattern": "STREAMING_HMAC_PAYLOAD",
+        "path": "localstack/services"
+      },
+      "result": "localstack/services/s3/s3_listener.py:62:STREAMING_HMAC_PAYLOAD = \"STREAMING-AWS4-HMAC-SHA256-PAYLOAD\""
+    },
+    {
+      "turn": 16,
+      "role": "assistant",
+      "content": "{\n  \"files\": [\n    \"localstack/services/s3/s3_listener.py\"\n  ]\n}",
+      "tool_calls": [],
+      "finish_reason": "stop"
+    },
+    {
+      "turn": "final",
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "submit_answer",
+          "arguments": "{\"files\":[\"localstack/services/s3/s3_listener.py\"]}"
+        }
+      ]
+    }
+  ]
+}

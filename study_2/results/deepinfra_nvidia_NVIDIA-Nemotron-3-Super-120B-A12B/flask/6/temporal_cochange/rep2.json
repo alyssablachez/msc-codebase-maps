@@ -1,0 +1,259 @@
+{
+  "model": "deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+  "repo": "flask",
+  "issue_idx": 6,
+  "tier": "small",
+  "role": "flexible",
+  "map_type": "temporal_cochange",
+  "rep": 2,
+  "worker_id": 5,
+  "issue_title": "Flask.auto_find_instance_path() can return wrong path for namespace packages installed in development mode",
+  "base_commit": "fb89745408cc02515815c792355c7e883b2d08a4",
+  "metrics": {
+    "total_input_tokens": 63628,
+    "total_output_tokens": 15516,
+    "total_cached_tokens": 0,
+    "total_cost": 0.0,
+    "num_turns": 8,
+    "wall_time_seconds": 306.96,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "6fd8f5d4"
+  },
+  "final_files_predicted": [
+    "src/flask/scaffold.py"
+  ],
+  "final_files_predicted_scorable": [
+    "src/flask/scaffold.py"
+  ],
+  "ground_truth": [
+    "src/flask/scaffold.py"
+  ],
+  "ground_truth_scorable": [
+    "src/flask/scaffold.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_adb33712d96c96f9",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"src/flask\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_adb33712d96c96f9",
+      "name": "list_files",
+      "args": {
+        "path": "src/flask"
+      },
+      "result": "__init__.py\n__main__.py\napp.py\nblueprints.py\ncli.py\nconfig.py\nctx.py\ndebughelpers.py\nglobals.py\nhelpers.py\njson\nlogging.py\npy.typed\nscaffold.py\nsessions.py\nsignals.py\ntemplating.py\ntesting.py\ntyping.py\nviews.py\nwrappers.py"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_c92915adbfedb21f",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"src/flask/scaffold.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_c92915adbfedb21f",
+      "name": "read_file",
+      "args": {
+        "path": "src/flask/scaffold.py"
+      },
+      "result": "import importlib.util\nimport os\nimport pkgutil\nimport sys\nimport typing as t\nfrom collections import defaultdict\nfrom functools import update_wrapper\nfrom json import JSONDecoder\nfrom json import JSONEncoder\n\nfrom jinja2 import FileSystemLoader\nfrom werkzeug.exceptions import default_exceptions\nfrom werkzeug.exceptions import HTTPException\n\nfrom . import typing as ft\nfrom .cli import AppGroup\nfrom .globals import current_app\nfrom .helpers import get_root_path\nfrom .helpers import locked_cached_property\nfrom .helpers import send_from_directory\nfrom .templating import _default_template_ctx_processor\n\nif t.TYPE_CHECKING:\n    from .wrappers import Response\n\n# a singleton sentinel value for parameter defaults\n_sentinel = object()\n\nF = t.TypeVar(\"F\", bound=t.Callable[..., t.Any])\n\n\ndef setupmethod(f: F) -> F:\n    \"\"\"Wraps a method so that it performs a check in debug mode if the\n    first request was already handled.\n    \"\"\"\n\n    def wrapper_func(self, *args: t.Any, **kwargs: t.Any) -> t.Any:\n        if self._is_setup_finished():\n            raise AssertionError(\n                \"A setup function was called after the first request \"\n                \"was handled. This usually indicates a bug in the\"\n                \" application where a module was not imported and\"\n                \" decorators or other functionality was called too\"\n                \" late.\\nTo fix this make sure to import all your view\"\n                \" modules, database models, and everything related at a\"\n                \" central place before the application starts serving\"\n                \" requests.\"\n            )\n        return f(self, *args, **kwargs)\n\n    return t.cast(F, update_wrapper(wrapper_func, f))\n\n\nclass Scaffold:\n    \"\"\"Common behavior shared between :class:`~flask.Flask` and\n    :class:`~flask.blueprints.Blueprint`.\n\n    :param import_name: The import name of the module where this object\n        is defined. Usually :attr:`__name__` should be used.\n    :param static_folder: Path to a folder of static files to serve.\n        If this is set, a static route will be added.\n    :param static_url_path: URL prefix for the static route.\n    :param template_folder: Path to a folder containing template files.\n        for rendering. If this is set, a Jinja loader will be added.\n    :param root_path: The path that static, template, and resource files\n        are relative to. Typically not set, it is discovered based on\n        the ``import_name``.\n\n    .. versionadded:: 2.0\n    \"\"\"\n\n    name: str\n    _static_folder: t.Optional[str] = None\n    _static_url_path: t.Optional[str] = None\n\n    #: JSON encoder class used by :func:`flask.json.dumps`. If a\n    #: blueprint sets this, it will be used instead of the app's value.\n    json_encoder: t.Optional[t.Type[JSONEncoder]] = None\n\n    #: JSON decoder class used by :func:`flask.json.loads`. If a\n    #: blueprint sets this, it will be used instead of the app's value.\n    json_decoder: t.Optional[t.Type[JSONDecoder]] = None\n\n    def __init__(\n        self,\n        import_name: str,\n        static_folder: t.Optional[t.Union[str, os.PathLike]] = None,\n        static_url_path: t.Optional[str] = None,\n        template_folder: t.Optional[str] = None,\n        root_path: t.Optional[str] = None,\n    ):\n        #: The name of the package or module that this object belongs\n        #: to. Do not change this once it is set by the constructor.\n        self.import_name = import_name\n\n        self.static_folder = static_folder  # type: ignore\n        self.static_url_path = static_url_path\n\n        #: The path to the templates folder, relative to\n        #: :attr:`root_path`, to add to the template loader. ``None`` if\n        #: templates should not be added.\n        self.template_folder = template_folder\n\n        if root_path is None:\n            root_path = get_root_path(self.import_name)\n\n        #: Absolute path to the package on the filesystem. Used to look\n        #: up resources contained in the package.\n        self.root_path = root_path\n\n        #: The Click command group for registering CLI commands for this\n        #: object. The commands are available from the ``flask`` command\n        #: once the application has been discovered and blueprints have\n        #: been registered.\n        self.cli = AppGroup()\n\n        #: A dictionary mapping endpoint names to view functions.\n        #:\n        #: To register a view function, use the :meth:`route` decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.view_functions: t.Dict[str, t.Callable] = {}\n\n        #: A data structure of registered error handlers, in the format\n        #: ``{scope: {code: {class: handler}}}``. The ``scope`` key is\n        #: the name of a blueprint the handlers are active for, or\n        #: ``None`` for all requests. The ``code`` key is the HTTP\n        #: status code for ``HTTPException``, or ``None`` for\n        #: other exceptions. The innermost dictionary maps exception\n        #: classes to handler functions.\n        #:\n        #: To register an error handler, use the :meth:`errorhandler`\n        #: decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.error_handler_spec: t.Dict[\n            ft.AppOrBlueprintKey,\n            t.Dict[t.Optional[int], t.Dict[t.Type[Exception], ft.ErrorHandlerCallable]],\n        ] = defaultdict(lambda: defaultdict(dict))\n\n        #: A data structure of functions to call at the beginning of\n        #: each request, in the format ``{scope: [functions]}``. The\n        #: ``scope`` key is the name of a blueprint the functions are\n        #: active for, or ``None`` for all requests.\n        #:\n        #: To register a function, use the :meth:`before_request`\n        #: decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.before_request_funcs: t.Dict[\n            ft.AppOrBlueprintKey, t.List[ft.BeforeRequestCallable]\n        ] = defaultdict(list)\n\n        #: A data structure of functions to call at the end of each\n        #: request, in the format ``{scope: [functions]}``. The\n        #: ``scope`` key is the name of a blueprint the functions are\n        #: active for, or ``None`` for all requests.\n        #:\n        #: To register a function, use the :meth:`after_request`\n        #: decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.after_request_funcs: t.Dict[\n            ft.AppOrBlueprintKey, t.List[ft.AfterRequestCallable]\n        ] = defaultdict(list)\n\n        #: A data structure of functions to call at the end of each\n        #: request even if an exception is raised, in the format\n        #: ``{scope: [functions]}``. The ``scope`` key is the name of a\n        #: blueprint the functions are active for, or ``None`` for all\n        #: requests.\n        #:\n        #: To register a function, use the :meth:`teardown_request`\n        #: decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.teardown_request_funcs: t.Dict[\n            ft.AppOrBlueprintKey, t.List[ft.TeardownCallable]\n        ] = defaultdict(list)\n\n        #: A data structure of functions to call to pass extra context\n        #: values when rendering templates, in the format\n        #: ``{scope: [functions]}``. The ``scope`` key is the name of a\n        #: blueprint the functions are active for, or ``None`` for all\n        #: requests.\n        #:\n        #: To register a function, use the :meth:`context_processor`\n        #: decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.template_context_processors: t.Dict[\n            ft.AppOrBlueprintKey, t.List[ft.TemplateContextProcessorCallable]\n        ] = defaultdict(list, {None: [_default_template_ctx_processor]})\n\n        #: A data structure of functions to call to modify the keyword\n        #: arguments passed to the view function, in the format\n        #: ``{scope: [functions]}``. The ``scope`` key is the name of a\n        #: blueprint the functions are active for, or ``None`` for all\n        #: requests.\n        #:\n        #: To register a function, use the\n        #: :meth:`url_value_preprocessor` decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.url_value_preprocessors: t.Dict[\n            ft.AppOrBlueprintKey,\n            t.List[ft.URLValuePreprocessorCallable],\n        ] = defaultdict(list)\n\n        #: A data structure of functions to call to modify the keyword\n        #: arguments when generating URLs, in the format\n        #: ``{scope: [functions]}``. The ``scope`` key is the name of a\n        #: blueprint the functions are active for, or ``None`` for all\n        #: requests.\n        #:\n        #: To register a function, use the :meth:`url_defaults`\n        #: decorator.\n        #:\n        #: This data structure is internal. It should not be modified\n        #: directly and its format may change at any time.\n        self.url_default_functions: t.Dict[\n            ft.AppOrBlueprintKey, t.List[ft.URLDefaultCallable]\n        ] = defaultdict(list)\n\n    def __repr__(self) -> str:\n        return f\"<{type(self).__name__} {self.name!r}>\"\n\n    def _is_setup_finished(self) -> bool:\n        raise NotImplementedError\n\n    @property\n    def static_folder(self) -> t.Optional[str]:\n        \"\"\"The absolute path to the configured static folder. ``None``\n        if no static folder is set.\n        \"\"\"\n        if self._static_folder is not None:\n            return os.path.join(self.root_path, self._static_folder)\n        else:\n            return None\n\n    @static_folder.setter\n    def static_folder(self, value: t.Optional[t.Union[str, os.PathLike]]) -> None:\n        if value is not None:\n            value = os.fspath(value).rstrip(r\"\\/\")\n\n        self._static_folder = value\n\n    @property\n    def has_static_folder(self) -> bool:\n        \"\"\"``True`` if :attr:`static_folder` is set.\n\n        .. versionadded:: 0.5\n        \"\"\"\n        return self.static_folder is not None\n\n    @property\n    def static_url_path(self) -> t.Optional[str]:\n        \"\"\"The URL prefix that the static route will be accessible from.\n\n        If it was not configured during init, it is derived from\n        :attr:`static_folder`.\n        \"\"\"\n        if self._static_url_path is not None:\n            return self._static_url_path\n\n        if self.static_folder is not None:\n            basename = os.path.basename(self.static_folder)\n            return f\"/{basename}\".rstrip(\"/\")\n\n        return None\n\n    @static_url_path.setter\n    def static_url_path(self, value: t.Optional[str]) -> None:\n        if value is not None:\n            value = value.rstrip(\"/\")\n\n        self._static_url_path = value\n\n    def get_send_file_max_age(self, filename: t.Optional[str]) -> t.Optional[int]:\n        \"\"\"Used by :func:`send_file` to determine the ``max_age`` cache\n        value for a given file path if it wasn't passed.\n\n        By default, this returns :data:`SEND_FILE_MAX_AGE_DEFAULT` from\n        the configuration of :data:`~flask.current_app`. This defaults\n        to ``None``, which tells the browser to use conditional requests\n        instead of a timed cache, which is usually preferable.\n\n        .. versionchanged:: 2.0\n            The default configuration is ``None`` instead of 12 hours.\n\n        .. versionadded:: 0.9\n        \"\"\"\n        value = current_app.send_file_max_age_default\n\n        if value is None:\n            return None\n\n        return int(value.total_seconds())\n\n    def send_static_file(self, filename: str) -> \"Response\":\n        \"\"\"The view function used to serve files from\n        :attr:`static_folder`. A route is automatically registered for\n        this view at :attr:`static_url_path` if :attr:`static_folder` is\n        set.\n\n        .. versionadded:: 0.5\n        \"\"\"\n        if not self.has_static_folder:\n            raise RuntimeError(\"'static_folder' must be set to serve static_files.\")\n\n        # send_file only knows to call get_send_file_max_age on the app,\n        # call it here so it works for blueprints too.\n        max_age = self.get_send_file_max_age(filename)\n        return send_from_directory(\n            t.cast(str, self.static_folder), filename, max_age=max_age\n        )\n\n    @locked_cached_property\n    def jinja_loader(self) -> t.Optional[FileSystemLoader]:\n        \"\"\"The Jinja loader for this object's templates. By default this\n        is a class :class:`jinja2.loaders.FileSystemLoader` to\n        :attr:`template_folder` if it is set.\n\n        .. versionadded:: 0.5\n        \"\"\"\n        if self.template_folder is not None:\n            return FileSystemLoader(os.path.join(self.root_path, self.template_folder))\n        else:\n            return None\n\n    def open_resource(self, resource: str, mode: str = \"rb\") -> t.IO[t.AnyStr]:\n        \"\"\"Open a resource file relative to :attr:`root_path` for\n        reading.\n\n        For example, if the file ``schema.sql`` is next to the file\n        ``app.py`` where the ``Flask`` app is defined, it can be opened\n        with:\n\n        .. code-block:: python\n\n            with app.open_resource(\"schema.sql\") as f:\n                conn.executescript(f.read())\n\n        :param resource: Path to the resource relative to\n            :attr:`root_path`.\n        :param mode: Open the file in this mode. Only reading is\n            supported, valid values are \"r\" (or \"rt\") and \"rb\".\n        \"\"\"\n        if mode not in {\"r\", \"rt\", \"rb\"}:\n            raise ValueError(\"Resources can only be opened for reading.\")\n\n        return open(os.path.join(self.root_path, resource), mode)\n\n    def _method_route(\n        self,\n        method: str,\n        rule: str,\n        options: dict,\n    ) -> t.Callable[[ft.RouteDecorator], ft.RouteDecorator]:\n        if \"methods\" in options:\n            raise TypeError(\"Use the 'route' decorator to use the 'methods' argument.\")\n\n        return self.route(rule, methods=[method], **options)\n\n    def get(\n        self, rule: str, **options: t.Any\n    ) -> t.Callable[[ft.RouteDecorator], ft.RouteDecorator]:\n        \"\"\"Shortcut for :meth:`route` with ``methods=[\"GET\"]``.\n\n        .. versionadded:: 2.0\n        \"\"\"\n        return self._method_route(\"GET\", rule, options)\n\n    def post(\n        self, rule: str, **options: t.Any\n    ) -> t.Callable[[ft.RouteDecorator], ft.RouteDecorator]:\n        \"\"\"Shortcut for :meth:`route` with ``methods=[\"POST\"]``.\n\n        .. versionadded:: 2.0\n        \"\"\"\n        return self._method_route(\"POST\", rule, options)\n\n    def put(\n        self, rule: str, **options: t.Any\n    ) -> t.Callable[[ft.RouteDecorator], ft.RouteDecorator]:\n        \"\"\"Shortcut for :meth:`route` with ``methods=[\"PUT\"]``.\n\n        .. versionadded:: 2.0\n        \"\"\"\n        return self._method_route(\"PUT\", rule, options)\n\n    def delete(\n        self, rule: str, **options: t.Any\n    ) -> t.Callable[[ft.RouteDecorator], ft.RouteDecorator]:\n        \"\"\"Shortcut for :meth:`route` with ``methods=[\"DELETE\"]``.\n\n        .. versionadded:: 2.0\n        \"\"\"\n        return self._method_route(\"DELETE\", rule, options)\n\n    def patch(\n        self, rule: str, **options: t.Any\n    ) -> t.Callable[[ft.RouteDecorator], ft.RouteDecorator]:\n        \"\"\"Shortcut for :meth:`route` with ``methods=[\"PATCH\"]``.\n\n        .. versionadded:: 2.0\n        \"\"\"\n        return self._method_route(\"PATCH\", rule, options)\n\n    def route(\n        self, rule: str, **options: t.Any\n    ) -> t.Callable[[ft.RouteDecorator], ft.RouteDecorator]:\n        \"\"\"Decorate a view function to register it with the given URL\n        rule and options. Calls :meth:`add_url_rule`, which has more\n        details about the implementation.\n\n        .. code-block:: python\n\n            @app.route(\"/\")\n            def index():\n                return \"Hello, World!\"\n\n        See :ref:`url-route-registrations`.\n\n        The endpoint name for the route defaults to the name of the view\n        function if the ``endpoint`` parameter isn't passed.\n\n        The ``methods`` parameter defaults to ``[\"GET\"]``. ``HEAD`` and\n        ``OPTIONS`` are added automatically.\n\n        :param rule: The URL rule string.\n        :param options: Extra options passed to the\n            :class:`~werkzeug.routing.Rule` object.\n        \"\"\"\n\n        def decorator(f: ft.RouteDecorator) -> ft.RouteDecorator:\n            endpoint = options.pop(\"endpoint\", None)\n            self.add_url_rule(rule, endpoint, f, **options)\n            return f\n\n        return decorator\n\n    @setupmethod\n    def add_url_rule(\n        self,\n        rule: str,\n        endpoint: t.Optional[str] = None,\n        view_func: t.Optional[ft.ViewCallable] = None,\n        provide_automatic_options: t.Optional[bool] = None,\n        **options: t.Any,\n    ) -> None:\n        \"\"\"Register a rule for routing incoming requests and building\n        URLs. The :meth:`route` decorator is a shortcut to call this\n        with the ``view_func`` argument. These are equivalent:\n\n        .. code-block:: python\n\n            @app.route(\"/\")\n            def index():\n                ...\n\n        .. code-block:: python\n\n            def index():\n                ...\n\n            app.add_url_rule(\"/\", view_func=index)\n\n        See :ref:`url-route-registrations`.\n\n        The endpoint name for the route defaults to the name of the view\n        function if the ``endpoint`` parameter isn't passed. An error\n        will be raised if a function has already been registered for the\n        endpoint.\n\n        The ``methods`` parameter defaults to ``[\"GET\"]``. ``HEAD`` is\n        always added automatically, and ``OPTIONS`` is added\n        automatically by default.\n\n        ``view_func`` does not necessarily need to be passed, but if the\n        rule should participate in routing an endpoint name must be\n        associated with a view function at some point with the\n        :meth:`endpoint` decorator.\n\n        .. code-block:: python\n\n            app.add_url_rule(\"/\", endpoint=\"index\")\n\n            @app.endpoint(\"index\")\n            def index():\n                ...\n\n        If ``view_func`` has a ``required_methods`` attribute, those\n        methods are added to the passed and automatic methods. If it\n        has a ``provide_automatic_methods`` attribute, it is used as the\n        default if the parameter is not passed.\n\n        :param rule: The URL rule string.\n        :param endpoint: The endpoint name to associate with the rule\n            and view function. Used when routing and building URLs.\n            Defaults to ``view_func.__name__``.\n        :param view_func: The view function to associate with the\n            endpoint name.\n        :param provide_automatic_options: Add the ``OPTIONS`` method and\n            respond to ``OPTIONS`` requests automatically.\n        :param options: Extra options passed to the\n            :class:`~werkzeug.routing.Rule` object.\n        \"\"\"\n        raise NotImplementedError\n\n    def endpoint(self, endpoint: str) -> t.Callable:\n        \"\"\"Decorate a view function to register it for the given\n        endpoint. Used if a rule is added without a ``view_func`` with\n        :meth:`add_url_rule`.\n\n        .. code-block:: python\n\n            app.add_url_rule(\"/ex\", endpoint=\"example\")\n\n            @app.endpoint(\"example\")\n            def example():\n                ...\n\n        :param endpoint: The endpoint name to associate with the view\n            function.\n        \"\"\"\n\n        def decorator(f):\n            self.view_functions[endpoint] = f\n            return f\n\n        return decorator\n\n    @setupmethod\n    def before_request(self, f: ft.BeforeRequestCallable) -> ft.BeforeRequestCallable:\n        \"\"\"Register a function to run before each request.\n\n        For example, this can be used to open a database connection, or\n        to load the logged in user from the session.\n\n        .. code-block:: python\n\n            @app.before_request\n            def load_user():\n                if \"user_id\" in session:\n                    g.user = db.session.get(session[\"user_id\"])\n\n        The function will be called without any arguments. If it returns\n        a non-``None`` value, the value is handled as if it was the\n        return value from the view, and further request handling is\n        stopped.\n        \"\"\"\n        self.before_request_funcs.setdefault(None, []).append(f)\n        return f\n\n    @setupmethod\n    def after_request(self, f: ft.AfterRequestCallable) -> ft.AfterRequestCallable:\n        \"\"\"Register a function to run after each request to this object.\n\n        The function is called with the response object, and must return\n        a response object. This allows the functions to modify or\n        replace the response before it is sent.\n\n        If a function raises an exception, any remaining\n        ``after_request`` functions will not be called. Therefore, this\n        should not be used for actions that must execute, such as to\n        close resources. Use :meth:`teardown_request` for that.\n        \"\"\"\n        self.after_request_funcs.setdefault(None, []).append(f)\n        return f\n\n    @setupmethod\n    def teardown_request(self, f: ft.TeardownCallable) -> ft.TeardownCallable:\n        \"\"\"Register a function to be run at the end of each request,\n        regardless of whether there was an exception or not.  These functions\n        are executed when the request context is popped, even if not an\n        actual request was performed.\n\n        Example::\n\n            ctx = app.test_request_context()\n            ctx.push()\n            ...\n            ctx.pop()\n\n        When ``ctx.pop()`` is executed in the above example, the teardown\n        functions are called just before the request context moves from the\n        stack of active contexts.  This becomes relevant if you are using\n        such constructs in tests.\n\n        Teardown functions must avoid raising exceptions. If\n        they execute code that might fail they\n        will have to surround the execution of that code with try/except\n        statements and log any errors.\n\n        When a teardown function was called because of an exception it will\n        be passed an error object.\n\n        The return values of teardown functions are ignored.\n\n        .. admonition:: Debug Note\n\n           In debug mode Flask will not tear down a request on an exception\n           immediately.  Instead it will keep it alive so that the interactive\n           debugger can still access it.  This behavior can be controlled\n           by the ``PRESERVE_CONTEXT_ON_EXCEPTION`` configuration variable.\n        \"\"\"\n        self.teardown_request_funcs.setdefault(None, []).append(f)\n        return f\n\n    @setupmethod\n    def context_processor(\n        self, f: ft.TemplateContextProcessorCallable\n    ) -> ft.TemplateContextProcessorCallable:\n        \"\"\"Registers a template context processor function.\"\"\"\n        self.template_context_processors[None].append(f)\n        return f\n\n    @setupmethod\n    def url_value_preprocessor(\n        self, f: ft.URLValuePreprocessorCallable\n    ) -> ft.URLValuePreprocessorCallable:\n        \"\"\"Register a URL value preprocessor function for all view\n        functions in the application. These functions will be called before the\n        :meth:`before_request` functions.\n\n        The function can modify the values captured from the matched url before\n        they are passed to the view. For example, this can be used to pop a\n        common language code value and place it in ``g`` rather than pass it to\n        every view.\n\n        The function is passed the endpoint name and values dict. The return\n        value is ignored.\n        \"\"\"\n        self.url_value_preprocessors[None].append(f)\n        return f\n\n    @setupmethod\n    def url_defaults(self, f: ft.URLDefaultCallable) -> ft.URLDefaultCallable:\n        \"\"\"Callback function for URL defaults for all view functions of the\n        application.  It's called with the endpoint and values and should\n        update the values passed in place.\n        \"\"\"\n        self.url_default_functions[None].append(f)\n        return f\n\n    @setupmethod\n    def errorhandler(\n        self, code_or_exception: t.Union[t.Type[Exception], int]\n    ) -> t.Callable[[ft.ErrorHandlerDecorator], ft.ErrorHandlerDecorator]:\n        \"\"\"Register a function to handle errors by code or exception class.\n\n        A decorator that is used to register a function given an\n        error code.  Example::\n\n            @app.errorhandler(404)\n            def page_not_found(error):\n                return 'This page does not exist', 404\n\n        You can also register handlers for arbitrary exceptions::\n\n            @app.errorhandler(DatabaseError)\n            def special_exception_handler(error):\n                return 'Database connection failed', 500\n\n        .. versionadded:: 0.7\n            Use :meth:`register_error_handler` instead of modifying\n            :attr:`error_handler_spec` directly, for application wide error\n            handlers.\n\n        .. versionadded:: 0.7\n           One can now additionally also register custom exception types\n           that do not necessarily have to be a subclass of the\n           :class:`~werkzeug.exceptions.HTTPException` class.\n\n        :param code_or_exception: the code as integer for the handler, or\n                                  an arbitrary exception\n        \"\"\"\n\n        def decorator(f: ft.ErrorHandlerDecorator) -> ft.ErrorHandlerDecorator:\n            self.register_error_handler(code_or_exception, f)\n            return f\n\n        return decorator\n\n    @setupmethod\n    def register_error_handler(\n        self,\n        code_or_exception: t.Union[t.Type[Exception], int],\n        f: ft.ErrorHandlerCallable,\n    ) -> None:\n        \"\"\"Alternative error attach function to the :meth:`errorhandler`\n        decorator that is more straightforward to use for non decorator\n        usage.\n\n        .. versionadded:: 0.7\n        \"\"\"\n        if isinstance(code_or_exception, HTTPException):  # old broken behavior\n            raise ValueError(\n                \"Tried to register a handler for an exception instance\"\n                f\" {code_or_exception!r}. Handlers can only be\"\n                \" registered for exception classes or HTTP error codes.\"\n            )\n\n        try:\n            exc_class, code = self._get_exc_class_and_code(code_or_exception)\n        except KeyError:\n            raise KeyError(\n                f\"'{code_or_exception}' is not a recognized HTTP error\"\n                \" code. Use a subclass of HTTPException with that code\"\n                \" instead.\"\n            ) from None\n\n        self.error_handler_spec[None][code][exc_class] = f\n\n    @staticmethod\n    def _get_exc_class_and_code(\n        exc_class_or_code: t.Union[t.Type[Exception], int]\n    ) -> t.Tuple[t.Type[Exception], t.Optional[int]]:\n        \"\"\"Get the exception class being handled. For HTTP status codes\n        or ``HTTPException`` subclasses, return both the exception and\n        status code.\n\n        :param exc_class_or_code: Any exception class, or an HTTP status\n            code as an integer.\n        \"\"\"\n        exc_class: t.Type[Exception]\n        if isinstance(exc_class_or_code, int):\n            exc_class = default_exceptions[exc_class_or_code]\n        else:\n            exc_class = exc_class_or_code\n\n        assert issubclass(\n            exc_class, Exception\n        ), \"Custom exceptions must be subclasses of Exception.\"\n\n        if issubclass(exc_class, HTTPException):\n            return exc_class, exc_class.code\n        else:\n            return exc_class, None\n\n\ndef _endpoint_from_view_func(view_func: t.Callable) -> str:\n    \"\"\"Internal helper that returns the default endpoint for a given\n    function.  This always is the function name.\n    \"\"\"\n    assert view_func is not None, \"expected view func if endpoint is not provided.\"\n    return view_func.__name__\n\n\ndef _matching_loader_thinks_module_is_package(loader, mod_name):\n    \"\"\"Attempt to figure out if the given name is a package or a module.\n\n    :param: loader: The loader that handled the name.\n    :param mod_name: The name of the package or module.\n    \"\"\"\n    # Use loader.is_package if it's available.\n    if hasattr(loader, \"is_package\"):\n        return loader.is_package(mod_name)\n\n    cls = type(loader)\n\n    # NamespaceLoader doesn't implement is_package, but all names it\n    # loads must be packages.\n    if cls.__module__ == \"_frozen_importlib\" and cls.__name__ == \"NamespaceLoader\":\n        return True\n\n    # Otherwise we need to fail with an error that explains what went\n    # wrong.\n    raise AttributeError(\n        f\"'{cls.__name__}.is_package()' must be implemented for PEP 302\"\n        f\" import hooks.\"\n    )\n\n\ndef _find_package_path(root_mod_name):\n    \"\"\"Find the path that contains the package or module.\"\"\"\n    try:\n        spec = importlib.util.find_spec(root_mod_name)\n\n        if spec is None:\n            raise ValueError(\"not found\")\n    # ImportError: the machinery told us it does not exist\n    # ValueError:\n    #    - the module name was invalid\n    #    - the module name is __main__\n    #    - *we* raised `ValueError` due to `spec` being `None`\n    except (ImportError, ValueError):\n        pass  # handled below\n    else:\n        # namespace package\n        if spec.origin in {\"namespace\", None}:\n            return os.path.dirname(next(iter(spec.submodule_search_locations)))\n        # a package (with __init__.py)\n        elif spec.submodule_search_locations:\n            return os.path.dirname(os.path.dirname(spec.origin))\n        # just a normal module\n        else:\n            return os.path.dirname(spec.origin)\n\n    # we were unable to find the `package_path` using PEP 451 loaders\n    loader = pkgutil.get_loader(root_mod_name)\n\n    if loader is None or root_mod_name == \"__main__\":\n        # import name is not found, or interactive/main module\n        return os.getcwd()\n\n    if hasattr(loader, \"get_filename\"):\n        filename = loader.get_filename(root_mod_name)\n    elif hasattr(loader, \"archive\"):\n        # zipimporter's loader.archive points to the .egg or .zip file.\n        filename = loader.archive\n    else:\n        # At least one loader is missing both get_filename and archive:\n        # Google App Engine's HardenedModulesHook, use __file__.\n        filename = importlib.import_module(root_mod_name).__file__\n\n    package_path = os.path.abspath(os.path.dirname(filename))\n\n    # If the imported name is a package, filename is currently pointing\n    # to the root of the package, need to get the current directory.\n    if _matching_loader_thinks_module_is_package(loader, root_mod_name):\n        package_path = os.path.dirname(package_path)\n\n    return package_path\n\n\ndef find_package(import_name: str):\n    \"\"\"Find the prefix that a package is installed under, and the path\n    that it would be imported from.\n\n    The prefix is the directory containing the standard directory\n    hierarchy (lib, bin, etc.). If the package is not installed to the\n    system (:attr:`sys.prefix`) or a virtualenv (``site-packages``),\n    ``None`` is returned.\n\n    The path is the entry in :attr:`sys.path` that contains the package\n    for import. If the package is not installed, it's assumed that the\n    package was imported from the current working directory.\n    \"\"\"\n    root_mod_name, _, _ = import_name.partition(\".\")\n    package_path = _find_package_path(root_mod_name)\n    py_prefix = os.path.abspath(sys.prefix)\n\n    # installed to the system\n    if package_path.startswith(py_prefix):\n        return py_prefix, package_path\n\n    site_parent, site_folder = os.path.split(package_path)\n\n    # installed to a virtualenv\n    if site_folder.lower() == \"site-packages\":\n        parent, folder = os.path.split(site_parent)\n\n        # Windows (prefix/lib/site-packages)\n        if folder.lower() == \"lib\":\n            return parent, package_path\n\n        # Unix (prefix/lib/pythonX.Y/site-packages)\n        if os.path.basename(parent).lower() == \"lib\":\n            return os.path.dirname(parent), package_path\n\n        # something else (prefix/site-packages)\n        return site_parent, package_path\n\n    # not installed\n    return None, package_path\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_0b265c347601bc62",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"_find_package_path\", \"path\": \"src/flask\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_0b265c347601bc62",
+      "name": "search",
+      "args": {
+        "pattern": "_find_package_path",
+        "path": "src/flask"
+      },
+      "result": "src/flask/scaffold.py:783:def _find_package_path(root_mod_name):\nsrc/flask/scaffold.py:849:    package_path = _find_package_path(root_mod_name)"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_3d7381ff5b0c6233",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"auto_find_instance_path\", \"path\": \"src/flask/scaffold.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_3d7381ff5b0c6233",
+      "name": "search",
+      "args": {
+        "pattern": "auto_find_instance_path",
+        "path": "src/flask/scaffold.py"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_0f7f1bc8891101a1",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"instance_path\", \"path\": \"src/flask\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_0f7f1bc8891101a1",
+      "name": "search",
+      "args": {
+        "pattern": "instance_path",
+        "path": "src/flask"
+      },
+      "result": "src/flask/app.py:144:       The `instance_path` and `instance_relative_config` parameters were\nsrc/flask/app.py:176:    :param instance_path: An alternative instance path for the application.\nsrc/flask/app.py:387:        instance_path: t.Optional[str] = None,\nsrc/flask/app.py:399:        if instance_path is None:\nsrc/flask/app.py:400:            instance_path = self.auto_find_instance_path()\nsrc/flask/app.py:401:        elif not os.path.isabs(instance_path):\nsrc/flask/app.py:410:        self.instance_path = instance_path\nsrc/flask/app.py:618:            root_path = self.instance_path\nsrc/flask/app.py:624:    def auto_find_instance_path(self) -> str:\nsrc/flask/app.py:639:        (:attr:`instance_path`).  Otherwise works like\nsrc/flask/app.py:647:        return open(os.path.join(self.instance_path, resource), mode)\nsrc/flask/cli.py:882:        f\"Instance: {app.instance_path}\""
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_e6f9b6e29a507437",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"src/flask/scaffold.py\", \"offset\": 790, \"limit\": 20}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_e6f9b6e29a507437",
+      "name": "read_file",
+      "args": {
+        "path": "src/flask/scaffold.py",
+        "offset": 790,
+        "limit": 20
+      },
+      "result": "[Lines 790\u2013809 of 874]\n    # ImportError: the machinery told us it does not exist\n    # ValueError:\n    #    - the module name was invalid\n    #    - the module name is __main__\n    #    - *we* raised `ValueError` due to `spec` being `None`\n    except (ImportError, ValueError):\n        pass  # handled below\n    else:\n        # namespace package\n        if spec.origin in {\"namespace\", None}:\n            return os.path.dirname(next(iter(spec.submodule_search_locations)))\n        # a package (with __init__.py)\n        elif spec.submodule_search_locations:\n            return os.path.dirname(os.path.dirname(spec.origin))\n        # just a normal module\n        else:\n            return os.path.dirname(spec.origin)\n\n    # we were unable to find the `package_path` using PEP 451 loaders\n    loader = pkgutil.get_loader(root_mod_name)\n"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_7077f199874cfedc",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_root_path\", \"path\": \"src/flask\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_7077f199874cfedc",
+      "name": "search",
+      "args": {
+        "pattern": "get_root_path",
+        "path": "src/flask"
+      },
+      "result": "src/flask/helpers.py:680:def get_root_path(import_name: str) -> str:\nsrc/flask/scaffold.py:18:from .helpers import get_root_path\nsrc/flask/scaffold.py:105:            root_path = get_root_path(self.import_name)"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "\n\n",
+      "tool_calls": [
+        {
+          "id": "call_952f08f6ab4a9eac",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"src/flask/scaffold.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_952f08f6ab4a9eac",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "src/flask/scaffold.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}
