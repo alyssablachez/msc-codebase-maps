@@ -1,0 +1,910 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "yt-dlp",
+  "issue_idx": 23,
+  "tier": "large",
+  "role": "flexible",
+  "map_type": "all_tools_required",
+  "rep": 1,
+  "worker_id": 4,
+  "issue_title": "Can't extract from sportdeutschland.tv",
+  "base_commit": "f14c2333481c63c24017a41ded7d8f36726504b7",
+  "metrics": {
+    "total_input_tokens": 469557,
+    "total_output_tokens": 12570,
+    "total_cached_tokens": 431104,
+    "total_cost": 0.01011,
+    "num_turns": 30,
+    "wall_time_seconds": 158.0,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "af8dfef5"
+  },
+  "final_files_predicted": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "final_files_predicted_scorable": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "ground_truth": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "ground_truth_scorable": [
+    "yt_dlp/extractor/sportdeutschland.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_qQ9iaP27PcJ3h66lKauW3313",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_qQ9iaP27PcJ3h66lKauW3313",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "from .common import InfoExtractor\nfrom ..utils import (\n    clean_html,\n    float_or_none,\n    int_or_none,\n    parse_iso8601,\n    parse_qs,\n    strip_or_none,\n    try_get,\n)\n\n\nclass SportDeutschlandIE(InfoExtractor):\n    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\n    _TESTS = [{\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': '5318cac0275701382770543d7edaf0a0',\n            'ext': 'mp4',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals - Teil 1',\n            'duration': 16106.36,\n        },\n        'params': {\n            'noplaylist': True,\n            # m3u8 download\n            'skip_download': True,\n        },\n    }, {\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': 'c6e2fdd01f63013854c47054d2ab776f',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals',\n            'description': 'md5:5263ff4c31c04bb780c9f91130b48530',\n            'duration': 31397,\n        },\n        'playlist_count': 2,\n    }, {\n        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\n        'only_matching': True,\n    }]\n\n    def _real_extract(self, url):\n        display_id = self._match_id(url)\n        data = self._download_json(\n            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\n            display_id, query={'access_token': 'true'})\n        asset = data['asset']\n        title = (asset.get('title') or asset['label']).strip()\n        asset_id = asset.get('id') or asset.get('uuid')\n        info = {\n            'id': asset_id,\n            'title': title,\n            'description': clean_html(asset.get('body') or asset.get('description')) or asset.get('teaser'),\n            'duration': int_or_none(asset.get('seconds')),\n        }\n        videos = asset.get('videos') or []\n        if len(videos) > 1:\n            playlist_id = parse_qs(url).get('playlistId', [None])[0]\n            if not self._yes_playlist(playlist_id, asset_id):\n                videos = [videos[int(playlist_id)]]\n\n            def entries():\n                for i, video in enumerate(videos, 1):\n                    video_id = video.get('uuid')\n                    video_url = video.get('url')\n                    if not (video_id and video_url):\n                        continue\n                    formats = self._extract_m3u8_formats(\n                        video_url.replace('.smil', '.m3u8'), video_id, 'mp4', fatal=False)\n                    if not formats and not self.get_param('ignore_no_formats'):\n                        continue\n                    yield {\n                        'id': video_id,\n                        'formats': formats,\n                        'title': title + ' - ' + (video.get('label') or 'Teil %d' % i),\n                        'duration': float_or_none(video.get('duration')),\n                    }\n            info.update({\n                '_type': 'multi_video',\n                'entries': entries(),\n            })\n        else:\n            formats = self._extract_m3u8_formats(\n                videos[0]['url'].replace('.smil', '.m3u8'), asset_id, 'mp4')\n            section_title = strip_or_none(try_get(data, lambda x: x['section']['title']))\n            info.update({\n                'formats': formats,\n                'display_id': asset.get('permalink'),\n                'thumbnail': try_get(asset, lambda x: x['images'][0]),\n                'categories': [section_title] if section_title else None,\n                'view_count': int_or_none(asset.get('views')),\n                'is_live': asset.get('is_live') is True,\n                'timestamp': parse_iso8601(asset.get('date') or asset.get('published_at')),\n            })\n        return info\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_03HzH6yRWkMLLsAX5PDD2422",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_03HzH6yRWkMLLsAX5PDD2422",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:14:    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\nyt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_1Nf6e6p54hM9MX1fucrM3958",
+          "type": "function",
+          "function": {
+            "name": "lookup_frequency",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        },
+        {
+          "id": "call_01_0iQZUujwSWRXYOJAHiHh8324",
+          "type": "function",
+          "function": {
+            "name": "lookup_cochange",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_1Nf6e6p54hM9MX1fucrM3958",
+      "name": "lookup_frequency",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py: 7 historical edits, last edited 2022-04-12"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_01_0iQZUujwSWRXYOJAHiHh8324",
+      "name": "lookup_cochange",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "[yt_dlp/extractor/sportdeutschland.py: top 10 of 945 total co-change partners]\n  yt_dlp/extractor/common.py  (6 co-changes)\n  yt_dlp/YoutubeDL.py  (5 co-changes)\n  yt_dlp/extractor/bbc.py  (5 co-changes)\n  yt_dlp/extractor/brightcove.py  (5 co-changes)\n  yt_dlp/extractor/daum.py  (5 co-changes)\n  yt_dlp/extractor/nba.py  (5 co-changes)\n  yt_dlp/extractor/youtube.py  (5 co-changes)\n  yt_dlp/extractor/afreecatv.py  (4 co-changes)\n  yt_dlp/extractor/bilibili.py  (4 co-changes)\n  yt_dlp/extractor/dailymotion.py  (4 co-changes)"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_rOqKKor3yk73CocF2NMC5406",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"backend.sportdeutschland\", \"path\": \"\"}"
+          }
+        },
+        {
+          "id": "call_01_lUnXefFvA3yEQGbY2Qab9910",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\\\\.tv\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_rOqKKor3yk73CocF2NMC5406",
+      "name": "search",
+      "args": {
+        "pattern": "backend.sportdeutschland",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_01_lUnXefFvA3yEQGbY2Qab9910",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland\\.tv",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_yho26rnxXD6eR6nIY2Q52824",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"SportDeutschland\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_yho26rnxXD6eR6nIY2Q52824",
+      "name": "search",
+      "args": {
+        "pattern": "SportDeutschland",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:13:class SportDeutschlandIE(InfoExtractor):\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_w9rCSledBJH0cy9bx2Va2236",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"permalinks\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_w9rCSledBJH0cy9bx2Va2236",
+      "name": "search",
+      "args": {
+        "pattern": "permalinks",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "Let me look at the git history of this file to understand recent changes.",
+      "tool_calls": [
+        {
+          "id": "call_00_jAbjzLh5Pwevt1j7Cngb7754",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"_real_extract\", \"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_jAbjzLh5Pwevt1j7Cngb7754",
+      "name": "search",
+      "args": {
+        "pattern": "_real_extract",
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "42:    def _real_extract(self, url):"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_nBCAnfF5kxRDBwk7zwYM0623",
+          "type": "function",
+          "function": {
+            "name": "lookup_structure",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_00_nBCAnfF5kxRDBwk7zwYM0623",
+      "name": "lookup_structure",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "[yt_dlp/extractor/sportdeutschland.py: members 1-3 of 3 (end of file).]\n\nclass SportDeutschlandIE(InfoExtractor) L13\n  _real_extract(self, url) L42\n  entries() L62"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_UdwQeRlNKG3VAxikWMUZ2349",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\", \"offset\": 1, \"limit\": 50}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_00_UdwQeRlNKG3VAxikWMUZ2349",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py",
+        "offset": 1,
+        "limit": 50
+      },
+      "result": "[Lines 1\u201350 of 95]\nfrom .common import InfoExtractor\nfrom ..utils import (\n    clean_html,\n    float_or_none,\n    int_or_none,\n    parse_iso8601,\n    parse_qs,\n    strip_or_none,\n    try_get,\n)\n\n\nclass SportDeutschlandIE(InfoExtractor):\n    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\n    _TESTS = [{\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': '5318cac0275701382770543d7edaf0a0',\n            'ext': 'mp4',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals - Teil 1',\n            'duration': 16106.36,\n        },\n        'params': {\n            'noplaylist': True,\n            # m3u8 download\n            'skip_download': True,\n        },\n    }, {\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': 'c6e2fdd01f63013854c47054d2ab776f',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals',\n            'description': 'md5:5263ff4c31c04bb780c9f91130b48530',\n            'duration': 31397,\n        },\n        'playlist_count': 2,\n    }, {\n        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\n        'only_matching': True,\n    }]\n\n    def _real_extract(self, url):\n        display_id = self._match_id(url)\n        data = self._download_json(\n            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\n            display_id, query={'access_token': 'true'})\n        asset = data['asset']\n        title = (asset.get('title') or asset['label']).strip()\n        asset_id = asset.get('id') or asset.get('uuid')\n        info = {\n"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_PuIqPglxjOC3bPYgEJRJ3441",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\", \"offset\": 50}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_00_PuIqPglxjOC3bPYgEJRJ3441",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py",
+        "offset": 50
+      },
+      "result": "[Lines 50\u201395 of 95]\n        info = {\n            'id': asset_id,\n            'title': title,\n            'description': clean_html(asset.get('body') or asset.get('description')) or asset.get('teaser'),\n            'duration': int_or_none(asset.get('seconds')),\n        }\n        videos = asset.get('videos') or []\n        if len(videos) > 1:\n            playlist_id = parse_qs(url).get('playlistId', [None])[0]\n            if not self._yes_playlist(playlist_id, asset_id):\n                videos = [videos[int(playlist_id)]]\n\n            def entries():\n                for i, video in enumerate(videos, 1):\n                    video_id = video.get('uuid')\n                    video_url = video.get('url')\n                    if not (video_id and video_url):\n                        continue\n                    formats = self._extract_m3u8_formats(\n                        video_url.replace('.smil', '.m3u8'), video_id, 'mp4', fatal=False)\n                    if not formats and not self.get_param('ignore_no_formats'):\n                        continue\n                    yield {\n                        'id': video_id,\n                        'formats': formats,\n                        'title': title + ' - ' + (video.get('label') or 'Teil %d' % i),\n                        'duration': float_or_none(video.get('duration')),\n                    }\n            info.update({\n                '_type': 'multi_video',\n                'entries': entries(),\n            })\n        else:\n            formats = self._extract_m3u8_formats(\n                videos[0]['url'].replace('.smil', '.m3u8'), asset_id, 'mp4')\n            section_title = strip_or_none(try_get(data, lambda x: x['section']['title']))\n            info.update({\n                'formats': formats,\n                'display_id': asset.get('permalink'),\n                'thumbnail': try_get(asset, lambda x: x['images'][0]),\n                'categories': [section_title] if section_title else None,\n                'view_count': int_or_none(asset.get('views')),\n                'is_live': asset.get('is_live') is True,\n                'timestamp': parse_iso8601(asset.get('date') or asset.get('published_at')),\n            })\n        return info\n"
+    },
+    {
+      "turn": 10,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_sjci96xR0iNONLF5Rq3A4197",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"backend\\\\.\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 10,
+      "role": "tool",
+      "tool_call_id": "call_00_sjci96xR0iNONLF5Rq3A4197",
+      "name": "search",
+      "args": {
+        "pattern": "backend\\.",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\nyt_dlp/extractor/servus.py:107:            f'https://backend.servustv.com/wp-json/rbmh/v2/media_asset/aa_id/{video_id}?fieldset=page',\nyt_dlp/extractor/iprima.py:128:            f'https://api.play-backend.iprima.cz/api/v1//products/id-{video_id}/play',\nyt_dlp/extractor/condenast.py:105:        'url': 'http://player-backend.cnevids.com/script/video/59138decb57ac36b83000005.js',"
+    },
+    {
+      "turn": 11,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_8EUCNZlKjENkkL6BfG6W5737",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"_download_webpage.*json\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 11,
+      "role": "tool",
+      "tool_call_id": "call_00_8EUCNZlKjENkkL6BfG6W5737",
+      "name": "search",
+      "args": {
+        "pattern": "_download_webpage.*json",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/sovietscloset.py:12:        nuxt_jsonp = self._download_webpage(nuxt_jsonp_url, video_id, note=f'Downloading {name} __NUXT_JSONP__')\nyt_dlp/extractor/rcs.py:236:                page = self._download_webpage(url.replace('video-embed', 'video-json'), video_id)"
+    },
+    {
+      "turn": 12,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_90zBHfvbffXfFmqO0KxS9669",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"access_token\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 12,
+      "role": "tool",
+      "tool_call_id": "call_00_90zBHfvbffXfFmqO0KxS9669",
+      "name": "search",
+      "args": {
+        "pattern": "access_token",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/fox.py:57:    _access_token = None\nyt_dlp/extractor/fox.py:64:        if self._access_token:\nyt_dlp/extractor/fox.py:65:            headers['Authorization'] = 'Bearer ' + self._access_token\nyt_dlp/extractor/fox.py:84:        if not self._access_token:\nyt_dlp/extractor/fox.py:87:                self._access_token = (self._parse_json(compat_urllib_parse_unquote(\nyt_dlp/extractor/fox.py:89:            if not self._access_token:\nyt_dlp/extractor/fox.py:90:                self._access_token = self._call_api(\nyt_dlp/extractor/fox.py:98:        self._access_token = self._call_api(\nyt_dlp/extractor/sportdeutschland.py:46:            display_id, query={'access_token': 'true'})\nyt_dlp/extractor/nebula.py:18:    _zype_access_token = None\nyt_dlp/extractor/nebula.py:98:    def _fetch_zype_access_token(self):\nyt_dlp/extractor/nebula.py:105:        access_token = try_get(user_object, lambda x: x['zype_auth_info']['access_token'], str)\nyt_dlp/extractor/nebula.py:106:        if not access_token:\nyt_dlp/extractor/nebula.py:115:        return access_token\nyt_dlp/extractor/nebula.py:119:        zype_video_url = f'https://player.zype.com/embed/{zype_id}.html?access_token={self._zype_access_token}'\nyt_dlp/extractor/nebula.py:149:        self._zype_access_token = self._fetch_zype_access_token()\nyt_dlp/extractor/rokfin.py:94:        metadata = self._download_json_using_access_token(f'{_API_BASE_URL}{video_id}', video_id)\nyt_dlp/extractor/rokfin.py:212:        return try_get(self._access_mgmt_tokens, lambda x: ' '.join([x['token_type'], x['access_token']]))\nyt_dlp/extractor/rokfin.py:214:    def _download_json_using_access_token(self, url_or_request, video_id, headers={}, query={}):\nyt_dlp/extractor/openrec.py:46:                    'access-token': try_get(cookies, lambda x: x.get('access_token').value),\nyt_dlp/extractor/adn.py:132:            access_token = (self._download_json(\nyt_dlp/extractor/adn.py:141:            if access_token:\nyt_dlp/extractor/adn.py:142:                self._HEADERS = {'authorization': 'Bearer ' + access_token}\nyt_dlp/extractor/dailymotion.py:50:            token = self._get_cookie_value(cookies, 'access_token') or self._get_cookie_value(cookies, 'client_token')\nyt_dlp/extractor/dailymotion.py:69:                        data=urlencode_postdata(data))['access_token']\nyt_dlp/extractor/dailymotion.py:75:                self._set_dailymotion_cookie('access_token' if username else 'client_token', token)\nyt_dlp/extractor/prosiebensat1.py:28:                'access_token': self._TOKEN,\nyt_dlp/extractor/prosiebensat1.py:85:                    'access_token': self._TOKEN,\nyt_dlp/extractor/prosiebensat1.py:103:                        'access_token': self._TOKEN,\nyt_dlp/extractor/linuxacademy.py:139:        access_token = self._search_regex(\nyt_dlp/extractor/linuxacademy.py:140:            r'access_token=([^=&]+)', urlh.geturl(),\nyt_dlp/extractor/linuxacademy.py:142:        if not access_token:\nyt_dlp/extractor/linuxacademy.py:143:            access_token = self._parse_json(\nyt_dlp/extractor/linuxacademy.py:147:                transform_source=js_to_json)['response']['access_token']\nyt_dlp/extractor/linuxacademy.py:151:            % access_token, None, 'Downloading token validation page')\nyt_dlp/extractor/cbc.py:264:        access_token = resp['access_token']\nyt_dlp/extractor/cbc.py:267:            'access_token': access_token,\nyt_dlp/extractor/cbc.py:279:        cbc_access_token = resp['accessToken']\nyt_dlp/extractor/cbc.py:281:        headers = {'content-type': 'application/json', 'ott-device-type': 'web', 'ott-access-token': cbc_access_token}\nyt_dlp/extractor/microsoftstream.py:60:        access_token = self._html_search_regex(r'\"AccessToken\":\"(.+?)\"', webpage, 'access token')\nyt_dlp/extractor/microsoftstream.py:63:        headers = {'Authorization': f'Bearer {access_token}'}\nyt_dlp/extractor/crunchyroll.py:33:                'access_token': 'giKq5eY27ny3cqz',\nyt_dlp/extractor/crunchyroll.py:78:                    'Authorization': auth_response['token_type'] + ' ' + auth_response['access_token']\nyt_dlp/extractor/daftsex.py:100:                'token': video_params['video']['access_token'],\nyt_dlp/extractor/toutv.py:42:            self._access_token = self._download_json(\nyt_dlp/extractor/toutv.py:53:                })['access_token']\nyt_dlp/extractor/biqle.py:70:                'token': glob_params['video']['access_token'],\nyt_dlp/extractor/cda.py:156:            'token': token_res['access_token'],\nyt_dlp/extractor/cda.py:159:        self._API_HEADERS['Authorization'] = f'Bearer {token_res[\"access_token\"]}'\nyt_dlp/extractor/radiocanada.py:56:    _access_token = None\nyt_dlp/extractor/radiocanada.py:71:        if self._access_token:\nyt_dlp/extractor/radiocanada.py:72:            query['access_token'] = self._access_token\nyt_dlp/extractor/roosterteeth.py:24:        if self._get_cookies(self._API_BASE_URL).get('rt_access_token'):\nyt_dlp/extractor/spotify.py:31:            'https://open.spotify.com/get_access_token', None)['accessToken']\nyt_dlp/extractor/iprima.py:20:    access_token = None\nyt_dlp/extractor/iprima.py:66:        if self.access_token:\nyt_dlp/extractor/iprima.py:99:        self.access_token = token_data.get('access_token')\nyt_dlp/extractor/iprima.py:100:        if self.access_token is None:\nyt_dlp/extractor/iprima.py:104:        if not self.access_token:\nyt_dlp/extractor/iprima.py:130:            headers={'X-OTT-Access-Token': self.access_token},\nyt_dlp/extractor/zee5.py:128:        access_token_request = self._download_json(\nyt_dlp/extractor/zee5.py:132:            'x-access-token': access_token_request['token']\nyt_dlp/extractor/zee5.py:230:        access_token_request = self._download_json(\nyt_dlp/extractor/zee5.py:234:            'X-Access-Token': access_token_request['token'],\nyt_dlp/extractor/wimtv.py:94:        token = json.get('access_token')\nyt_dlp/extractor/udemy.py:152:            elif cookie.name == 'access_token':\nyt_dlp/extractor/rcti.py:20:            None, 'Fetching authorization key')['data']['access_token']\nyt_dlp/extractor/novaplay.py:42:    _access_token = None\nyt_dlp/extractor/novaplay.py:47:        self._access_token = self._access_token or self._download_json(\nyt_dlp/extractor/novaplay.py:55:                'Authorization': f'Bearer {self._access_token}'\nyt_dlp/extractor/zype.py:16:    _COMMON_RE = r'//player\\.zype\\.com/embed/%s\\.(?:js|json|html)\\?.*?(?:access_token|(?:ap[ip]|player)_key)='\nyt_dlp/extractor/anvato.py:249:        auth_token = f'{token_type} {reroute[\"access_token\"]}'\nyt_dlp/extractor/twitch.py:160:    def _download_access_token(self, video_id, token_kind, param_name):\nyt_dlp/extractor/twitch.py:518:        access_token = self._download_access_token(vod_id, 'video', 'id')\nyt_dlp/extractor/twitch.py:529:                    'nauth': access_token['value'],\nyt_dlp/extractor/twitch.py:530:                    'nauthsig': access_token['signature'],\nyt_dlp/extractor/twitch.py:985:        access_token = self._download_access_token(\nyt_dlp/extractor/twitch.py:987:        token = access_token['value']\nyt_dlp/extractor/twitch.py:998:            'sig': access_token['signature'].encode('utf-8'),\nyt_dlp/extractor/espn.py:359:                })['access_token']\nyt_dlp/extractor/espn.py:373:                })['access_token']\nyt_dlp/extractor/box.py:34:        access_token = self._download_json(\nyt_dlp/extractor/box.py:46:                'Authorization': 'Bearer ' + access_token,\nyt_dlp/extractor/box.py:55:            'access_token': access_token,\nyt_dlp/extractor/discovery.py:64:        access_token = None\nyt_dlp/extractor/discovery.py:73:            access_token = auth_storage.get('a') or auth_storage.get('access_token')\nyt_dlp/extractor/discovery.py:75:        if not access_token:\nyt_dlp/extractor/discovery.py:76:            access_token = self._download_json(\nyt_dlp/extractor/discovery.py:83:                })['access_token']\nyt_dlp/extractor/discovery.py:86:        headers['Authorization'] = 'Bearer ' + access_token\nyt_dlp/extractor/tennistv.py:43:    access_token, refresh_token = None, None\nyt_dlp/extractor/tennistv.py:100:        self.access_token = res.get('access_token') or self.access_token\nyt_dlp/extractor/tennistv.py:104:        if self.access_token and self.refresh_token:\nyt_dlp/extractor/tennistv.py:108:        if not cookies.get('access_token') or not cookies.get('refresh_token'):\nyt_dlp/extractor/tennistv.py:110:        self.access_token, self.refresh_token = cookies['access_token'].value, cookies['refresh_token'].value\nyt_dlp/extractor/tennistv.py:114:            f'https://atppayments.streamamg.com/api/v1/session/ksession/?lang=en&apijwttoken={self.access_token}&entryId={entryid}',\nyt_dlp/extractor/digitalconcerthall.py:58:        self._ACCESS_TOKEN = token_response['access_token']\nyt_dlp/extractor/soundcloud.py:60:    _access_token = None\nyt_dlp/extractor/soundcloud.py:123:        self._access_token = password\nyt_dlp/extractor/soundcloud.py:125:        payload = {'session': {'access_token': self._access_token}}\nyt_dlp/extractor/soundcloud.py:129:            self._HEADERS = {'Authorization': 'OAuth ' + self._access_token}\nyt_dlp/extractor/soundcloud.py:156:        self._access_token = response.get('session').get('access_token')\nyt_dlp/extractor/soundcloud.py:157:        if not self._access_token:\nyt_dlp/extractor/soundcloud.py:160:            self._HEADERS = {'Authorization': 'OAuth ' + self._access_token}\nyt_dlp/extractor/mlb.py:290:    _access_token = None\nyt_dlp/extractor/mlb.py:293:        if not self._access_token:\nyt_dlp/extractor/mlb.py:299:        access_token = self._download_json(\nyt_dlp/extractor/mlb.py:304:            }, data=data.encode())['access_token']\nyt_dlp/extractor/mlb.py:310:                'Authorization': f'Bearer {access_token}'\nyt_dlp/extractor/mlb.py:314:        self._access_token = self._download_json(\nyt_dlp/extractor/mlb.py:320:            }, data=data.encode())['access_token']\nyt_dlp/extractor/mlb.py:333:                    'Authorization': self._access_token,\nyt_dlp/extractor/mlb.py:347:            'http_headers': {'Authorization': f'Bearer {self._access_token}'},"
+    },
+    {
+      "turn": 13,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_DsmBaUCZHZedjsKdkVuL5919",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 13,
+      "role": "tool",
+      "tool_call_id": "call_00_DsmBaUCZHZedjsKdkVuL5919",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland",
+        "path": "."
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:14:    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\nyt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 14,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_wJaVPPsxXHORjalZF8Kx7262",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\\\\.tv/api\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 14,
+      "role": "tool",
+      "tool_call_id": "call_00_wJaVPPsxXHORjalZF8Kx7262",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland\\.tv/api",
+        "path": ""
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 15,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_v58biqBmjMVvjkSlituA4957",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"_download_webpage.*_search_json\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 15,
+      "role": "tool",
+      "tool_call_id": "call_00_v58biqBmjMVvjkSlituA4957",
+      "name": "search",
+      "args": {
+        "pattern": "_download_webpage.*_search_json",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 16,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_9pl8OfPGXLWna4AeG0lk6013",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"_search_json\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 16,
+      "role": "tool",
+      "tool_call_id": "call_00_9pl8OfPGXLWna4AeG0lk6013",
+      "name": "search",
+      "args": {
+        "pattern": "_search_json",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/plays.py:28:        info = self._search_json_ld(webpage, video_id,)\nyt_dlp/extractor/huya.py:58:        stream_data = self._search_json(r'stream:\\s', webpage, 'stream', video_id=video_id, default=None)\nyt_dlp/extractor/onenewsnz.py:87:        fusion_metadata = self._search_json(r'Fusion\\.globalContent\\s*=', webpage, 'fusion metadata', display_id)\nyt_dlp/extractor/vimeo.py:941:        json_ld = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/onefootball.py:36:        data_json = self._search_json_ld(webpage, id)\nyt_dlp/extractor/oftv.py:50:        json_match = self._search_json(\nyt_dlp/extractor/lrt.py:94:        json_ld_data = self._search_json_ld(webpage, video_id)\nyt_dlp/extractor/seznamzpravy.py:149:        info = self._search_json_ld(webpage, article_id, default={})\nyt_dlp/extractor/googledrive.py:312:        return self._search_json('', response, 'api response', folder_id, **kwargs) or {}\nyt_dlp/extractor/dropbox.py:56:        info_json = self._search_json(r'InitReact\\.mountComponent\\(.*?,', webpage, 'mountComponent', video_id,\nyt_dlp/extractor/instagram.py:442:            shared_data = self._search_json(\nyt_dlp/extractor/instagram.py:453:                additional_data = self._search_json(\nyt_dlp/extractor/instagram.py:703:        user_info = self._search_json(r'\"user\":', story_info, 'user info', story_id, fatal=False)\nyt_dlp/extractor/abematv.py:337:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/tempo.py:31:        json_ld_data = self._search_json_ld(webpage, display_id)\nyt_dlp/extractor/substack.py:80:        webpage_info = self._search_json(r'<script[^>]*>\\s*window\\._preloads\\s*=', webpage, 'preloads', display_id)\nyt_dlp/extractor/vbox7.py:80:            info = self._search_json_ld(\nyt_dlp/extractor/icareus.py:134:        info, token, live_title = self._search_json_ld(webpage, video_id, default={}), None, None\nyt_dlp/extractor/common.py:1246:    def _search_json(self, start_pattern, string, name, video_id, *, end_pattern='',\nyt_dlp/extractor/common.py:1468:    def _search_json_ld(self, html, video_id, expected_type=None, *, fatal=True, default=NO_DEFAULT):\nyt_dlp/extractor/listennotes.py:59:        data = self._search_json(\nyt_dlp/extractor/volejtv.py:29:        json_data = self._search_json(\nyt_dlp/extractor/aparat.py:77:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/rtnews.py:112:        ld_json = self._search_json_ld(webpage, None, fatal=False)\nyt_dlp/extractor/iltalehti.py:43:        info = self._search_json(\nyt_dlp/extractor/prosiebensat1.py:448:        json_ld = self._search_json_ld(webpage, clip_id, default={})\nyt_dlp/extractor/newsy.py:32:        ld_json = self._search_json_ld(webpage, display_id, fatal=False)\nyt_dlp/extractor/radiofrance.py:85:        # _search_json_ld doesn't correctly handle this. See https://github.com/yt-dlp/yt-dlp/pull/3874#discussion_r891903846\nyt_dlp/extractor/radiofrance.py:86:        video_data = self._search_json('', webpage, 'audio data', display_id, contains_pattern=r'{\\s*\"@type\"\\s*:\\s*\"AudioObject\".+}')\nyt_dlp/extractor/spankbang.py:131:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/foxsports.py:31:        json_ld = self._search_json_ld(webpage, video_id, expected_type='VideoObject', default={})\nyt_dlp/extractor/yahoo.py:505:        preloaded_state = self._search_json(r'__PRELOADED_STATE__\\s*=', webpage, 'preloaded state', video_id)\nyt_dlp/extractor/gamestar.py:39:        # while _search_json_ld finds only the first one\nyt_dlp/extractor/tmz.py:169:        jsonld = self._search_json_ld(webpage, url)\nyt_dlp/extractor/qingting.py:36:        info = self._search_json(r'window\\.__initStores\\s*=', webpage, 'program info', pid)\nyt_dlp/extractor/audioboom.py:40:        clip_store = self._search_json(\nyt_dlp/extractor/canvas.py:327:        info = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/facebook.py:430:            info_json_ld = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/youporn.py:181:        data = self._search_json_ld(webpage, video_id, expected_type='VideoObject', fatal=False)\nyt_dlp/extractor/genius.py:50:        metadata = self._search_json(\nyt_dlp/extractor/genius.py:58:        config = self._search_json(r'var\\s*APP_CONFIG\\s*=', webpage, 'config', video_id, default={})\nyt_dlp/extractor/genius.py:102:        json_string = self._search_json(\nyt_dlp/extractor/nbc.py:702:        nbc_data = self._search_json(\nyt_dlp/extractor/nbc.py:707:        video_data = self._search_json(\nyt_dlp/extractor/nbc.py:709:        video_data.update(self._search_json(\nyt_dlp/extractor/hytale.py:39:            self._search_json(\nyt_dlp/extractor/redtube.py:54:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/medaltv.py:87:        next_data = self._search_json(\nyt_dlp/extractor/liputan6.py:59:        json_data = self._search_json(\nyt_dlp/extractor/kaltura.py:418:                entry_data = self._search_json(\nyt_dlp/extractor/kaltura.py:437:                playlist_data = self._search_json(\nyt_dlp/extractor/cda.py:246:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/xanimu.py:32:            format_url = self._search_json(r'var\\s+%s\\s*=' % re.escape(format), webpage, format,\nyt_dlp/extractor/peekvids.py:49:        info = self._search_json_ld(webpage, video_id, expected_type='VideoObject', default={})\nyt_dlp/extractor/generic.py:2276:        flashvars = self._search_json(\nyt_dlp/extractor/generic.py:2636:        json_ld = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/olympics.py:36:        json_ld = self._search_json_ld(webpage, uuid)\nyt_dlp/extractor/yle_areena.py:69:        info = self._search_json_ld(self._download_webpage(url, video_id), video_id, default={})\nyt_dlp/extractor/tviplayer.py:64:        json_data = self._search_json(\nyt_dlp/extractor/tagesschau.py:136:        video_info = self._search_json_ld(webpage, video_id)\nyt_dlp/extractor/itv.py:175:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/eurosport.py:69:        json_ld_data = self._search_json_ld(webpage, display_id)\nyt_dlp/extractor/sportbox.py:76:        info = self._search_json_ld(webpage, media_id, default={})\nyt_dlp/extractor/tv24ua.py:68:            self._search_json(\nyt_dlp/extractor/joj.py:56:        title = (self._search_json(r'videoTitle\\s*:', webpage, 'title', video_id,\nyt_dlp/extractor/screen9.py:43:        config = self._search_json(r'var\\s+config\\s*=', webpage, 'config', video_id)\nyt_dlp/extractor/tnaflix.py:160:            json_ld = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/iprima.py:152:        final_result = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/iqiyi.py:530:        webpack_map = self._search_json(\nyt_dlp/extractor/iqiyi.py:549:        extracted_bid_tags = self._search_json(\nyt_dlp/extractor/aitube.py:41:        json_ld_data = self._search_json_ld(webpage, video_id)\nyt_dlp/extractor/acfun.py:86:        json_all = self._search_json(r'window.videoInfo\\s*=', webpage, 'videoInfo', video_id)\nyt_dlp/extractor/acfun.py:166:        json_bangumi_data = self._search_json(r'window.bangumiData\\s*=', webpage, 'bangumiData', video_id)\nyt_dlp/extractor/acfun.py:182:        json_bangumi_list = self._search_json(\nyt_dlp/extractor/mirrorcouk.py:90:        data = self._search_json(r'div\\s+class=\"json-placeholder\"\\s+data-json=\"',\nyt_dlp/extractor/spankwire.py:138:            info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/archiveorg.py:711:        player_response = self._search_json(\nyt_dlp/extractor/archiveorg.py:714:        initial_data = self._search_json(\nyt_dlp/extractor/archiveorg.py:723:            self._search_json(\nyt_dlp/extractor/archiveorg.py:729:        swf_args = self._search_json(r'swfArgs\\s*=', webpage, 'swf config', video_id, default={})\nyt_dlp/extractor/hungama.py:57:        json_ld = self._search_json_ld(\nyt_dlp/extractor/tvopengr.py:79:        info = self._search_json_ld(webpage, video_id, expected_type='VideoObject')\nyt_dlp/extractor/rai.py:754:        player_data = self._search_json(\nyt_dlp/extractor/startrek.py:59:        json_ld = self._search_json_ld(webpage, video_id, fatal=False)\nyt_dlp/extractor/youtube.py:548:        return self._search_json(self._YT_INITIAL_DATA_RE, webpage, 'yt initial data', item_id, fatal=fatal)\nyt_dlp/extractor/youtube.py:3515:            initial_pr = self._search_json(\nyt_dlp/extractor/tencent.py:61:        return self._search_json(r'QZOutputJson=', self._download_webpage(\nyt_dlp/extractor/ant1newsgr.py:90:        info = self._search_json_ld(webpage, video_id, expected_type='NewsArticle')\nyt_dlp/extractor/eporner.py:110:        json_ld = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/pornhub.py:459:        model_profile = self._search_json(\nyt_dlp/extractor/pornhub.py:485:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/cspan.py:129:            ld_info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/wakanim.py:64:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/bbc.py:906:        json_ld_info = self._search_json_ld(webpage, playlist_id, default={})\nyt_dlp/extractor/nrk.py:460:        info = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/malltv.py:91:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/mediastream.py:91:        player_config = self._search_json(r'window.MDSTRM.OPTIONS\\s*=', webpage, 'metadata', video_id)\nyt_dlp/extractor/mediastream.py:148:        media_setting_json = self._search_json(\nyt_dlp/extractor/bilibili.py:288:        initial_state = self._search_json(r'window\\.__INITIAL_STATE__\\s*=', webpage, 'initial state', video_id)\nyt_dlp/extractor/bilibili.py:289:        play_info = self._search_json(r'window\\.__playinfo__\\s*=', webpage, 'play info', video_id)['data']\nyt_dlp/extractor/bilibili.py:375:        play_info = self._search_json(r'window\\.__playinfo__\\s*=', webpage, 'play info', video_id)['data']\nyt_dlp/extractor/bilibili.py:381:        initial_state = self._search_json(r'window\\.__INITIAL_STATE__\\s*=', webpage, 'initial state', video_id)\nyt_dlp/extractor/bilibili.py:424:        initial_state = self._search_json(r'window\\.__INITIAL_STATE__\\s*=', webpage, 'initial_state', media_id)\nyt_dlp/extractor/bilibili.py:1003:            self._search_json(r'window\\.__INITIAL_(?:DATA|STATE)__\\s*=', webpage, 'preload state', video_id, default={})\nyt_dlp/extractor/bilibili.py:1017:            self._parse_video_metadata(video_data), self._search_json_ld(webpage, video_id), {\nyt_dlp/extractor/ndr.py:146:        info = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/yandexvideo.py:256:        redirect = self._search_json(r'var it\\s*=', webpage, 'redirect', id, default={}).get('retpath')\nyt_dlp/extractor/yandexvideo.py:260:        data_json = self._search_json(\nyt_dlp/extractor/yandexvideo.py:372:        redirect = self._search_json(\nyt_dlp/extractor/yandexvideo.py:377:        data = self._search_json(\nyt_dlp/extractor/detik.py:150:        json_ld_data = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/amazon.py:69:                data_json = self._search_json(\nyt_dlp/extractor/txxx.py:405:        json_ld = self._json_ld(self._search_json(\nyt_dlp/extractor/condenast.py:247:                info = self._search_json_ld(\nyt_dlp/extractor/mlb.py:368:        apollo_cache_json = self._search_json(r'window\\.initState\\s*=', webpage, 'window.initState', display_id)['apolloCache']\nyt_dlp/extractor/angel.py:37:        json_ld = self._search_json_ld(webpage, video_id)"
+    },
+    {
+      "turn": 17,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_zmjXV4ZF2TRqG3urNIQM4540",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\\\\.tv\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 17,
+      "role": "tool",
+      "tool_call_id": "call_00_zmjXV4ZF2TRqG3urNIQM4540",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland\\.tv",
+        "path": "."
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 18,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_nMlvgOVZaWZgKREZWPTF6198",
+          "type": "function",
+          "function": {
+            "name": "lookup_structure",
+            "arguments": "{\"path\": \"yt_dlp/extractor/common.py\", \"offset\": 1246}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 18,
+      "role": "tool",
+      "tool_call_id": "call_00_nMlvgOVZaWZgKREZWPTF6198",
+      "name": "lookup_structure",
+      "args": {
+        "path": "yt_dlp/extractor/common.py",
+        "offset": 1246
+      },
+      "result": "Error: offset=1246 is past the end of yt_dlp/extractor/common.py (202 members total)"
+    },
+    {
+      "turn": 19,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_jGIHtdSmAnYFG50XCpVl3208",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def _search_json_ld\", \"path\": \"yt_dlp/extractor/common.py\"}"
+          }
+        },
+        {
+          "id": "call_01_jEUTyUABDlCvHygdXCQt7079",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def _og_search\", \"path\": \"yt_dlp/extractor/common.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 19,
+      "role": "tool",
+      "tool_call_id": "call_00_jGIHtdSmAnYFG50XCpVl3208",
+      "name": "search",
+      "args": {
+        "pattern": "def _search_json_ld",
+        "path": "yt_dlp/extractor/common.py"
+      },
+      "result": "1468:    def _search_json_ld(self, html, video_id, expected_type=None, *, fatal=True, default=NO_DEFAULT):"
+    },
+    {
+      "turn": 19,
+      "role": "tool",
+      "tool_call_id": "call_01_jEUTyUABDlCvHygdXCQt7079",
+      "name": "search",
+      "args": {
+        "pattern": "def _og_search",
+        "path": "yt_dlp/extractor/common.py"
+      },
+      "result": "1356:    def _og_search_property(self, prop, html, name=None, **kargs):\n1368:    def _og_search_thumbnail(self, html, **kargs):\n1371:    def _og_search_description(self, html, **kargs):\n1374:    def _og_search_title(self, html, *, fatal=False, **kargs):\n1377:    def _og_search_video_url(self, html, name='video url', secure=True, **kargs):\n1383:    def _og_search_url(self, html, **kargs):"
+    },
+    {
+      "turn": 20,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_tNeVDtsUT4WJGKqQ3jGH2378",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/common.py\", \"offset\": 1356, \"limit\": 40}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 20,
+      "role": "tool",
+      "tool_call_id": "call_00_tNeVDtsUT4WJGKqQ3jGH2378",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/common.py",
+        "offset": 1356,
+        "limit": 40
+      },
+      "result": "[Lines 1356\u20131395 of 3818]\n    def _og_search_property(self, prop, html, name=None, **kargs):\n        prop = variadic(prop)\n        if name is None:\n            name = 'OpenGraph %s' % prop[0]\n        og_regexes = []\n        for p in prop:\n            og_regexes.extend(self._og_regexes(p))\n        escaped = self._search_regex(og_regexes, html, name, flags=re.DOTALL, **kargs)\n        if escaped is None:\n            return None\n        return unescapeHTML(escaped)\n\n    def _og_search_thumbnail(self, html, **kargs):\n        return self._og_search_property('image', html, 'thumbnail URL', fatal=False, **kargs)\n\n    def _og_search_description(self, html, **kargs):\n        return self._og_search_property('description', html, fatal=False, **kargs)\n\n    def _og_search_title(self, html, *, fatal=False, **kargs):\n        return self._og_search_property('title', html, fatal=fatal, **kargs)\n\n    def _og_search_video_url(self, html, name='video url', secure=True, **kargs):\n        regexes = self._og_regexes('video') + self._og_regexes('video:url')\n        if secure:\n            regexes = self._og_regexes('video:secure_url') + regexes\n        return self._html_search_regex(regexes, html, name, **kargs)\n\n    def _og_search_url(self, html, **kargs):\n        return self._og_search_property('url', html, **kargs)\n\n    def _html_extract_title(self, html, name='title', *, fatal=False, **kwargs):\n        return self._html_search_regex(r'(?s)<title\\b[^>]*>([^<]+)</title>', html, name, fatal=fatal, **kwargs)\n\n    def _html_search_meta(self, name, html, display_name=None, fatal=False, **kwargs):\n        name = variadic(name)\n        if display_name is None:\n            display_name = name[0]\n        return self._html_search_regex(\n            [self._meta_regex(n) for n in name],\n            html, display_name, fatal=fatal, group='content', **kwargs)\n"
+    },
+    {
+      "turn": 21,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_0pbp4eiplNYF1EyhoViI3543",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"offset\": 1468, \"path\": \"yt_dlp/extractor/common.py\", \"limit\": 80}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 21,
+      "role": "tool",
+      "tool_call_id": "call_00_0pbp4eiplNYF1EyhoViI3543",
+      "name": "read_file",
+      "args": {
+        "offset": 1468,
+        "path": "yt_dlp/extractor/common.py",
+        "limit": 80
+      },
+      "result": "[Lines 1468\u20131547 of 3818]\n    def _search_json_ld(self, html, video_id, expected_type=None, *, fatal=True, default=NO_DEFAULT):\n        \"\"\"Search for a video in any json ld in the html\"\"\"\n        if default is not NO_DEFAULT:\n            fatal = False\n        info = self._json_ld(\n            list(self._yield_json_ld(html, video_id, fatal=fatal, default=default)),\n            video_id, fatal=fatal, expected_type=expected_type)\n        if info:\n            return info\n        if default is not NO_DEFAULT:\n            return default\n        elif fatal:\n            raise RegexNotFoundError('Unable to extract JSON-LD')\n        else:\n            self.report_warning('unable to extract JSON-LD %s' % bug_reports_message())\n            return {}\n\n    def _json_ld(self, json_ld, video_id, fatal=True, expected_type=None):\n        if isinstance(json_ld, str):\n            json_ld = self._parse_json(json_ld, video_id, fatal=fatal)\n        if not json_ld:\n            return {}\n        info = {}\n\n        INTERACTION_TYPE_MAP = {\n            'CommentAction': 'comment',\n            'AgreeAction': 'like',\n            'DisagreeAction': 'dislike',\n            'LikeAction': 'like',\n            'DislikeAction': 'dislike',\n            'ListenAction': 'view',\n            'WatchAction': 'view',\n            'ViewAction': 'view',\n        }\n\n        def is_type(e, *expected_types):\n            type = variadic(traverse_obj(e, '@type'))\n            return any(x in type for x in expected_types)\n\n        def extract_interaction_type(e):\n            interaction_type = e.get('interactionType')\n            if isinstance(interaction_type, dict):\n                interaction_type = interaction_type.get('@type')\n            return str_or_none(interaction_type)\n\n        def extract_interaction_statistic(e):\n            interaction_statistic = e.get('interactionStatistic')\n            if isinstance(interaction_statistic, dict):\n                interaction_statistic = [interaction_statistic]\n            if not isinstance(interaction_statistic, list):\n                return\n            for is_e in interaction_statistic:\n                if not is_type(is_e, 'InteractionCounter'):\n                    continue\n                interaction_type = extract_interaction_type(is_e)\n                if not interaction_type:\n                    continue\n                # For interaction count some sites provide string instead of\n                # an integer (as per spec) with non digit characters (e.g. \",\")\n                # so extracting count with more relaxed str_to_int\n                interaction_count = str_to_int(is_e.get('userInteractionCount'))\n                if interaction_count is None:\n                    continue\n                count_kind = INTERACTION_TYPE_MAP.get(interaction_type.split('/')[-1])\n                if not count_kind:\n                    continue\n                count_key = '%s_count' % count_kind\n                if info.get(count_key) is not None:\n                    continue\n                info[count_key] = interaction_count\n\n        def extract_chapter_information(e):\n            chapters = [{\n                'title': part.get('name'),\n                'start_time': part.get('startOffset'),\n                'end_time': part.get('endOffset'),\n            } for part in variadic(e.get('hasPart') or []) if part.get('@type') == 'Clip']\n            for idx, (last_c, current_c, next_c) in enumerate(zip(\n                    [{'end_time': 0}] + chapters, chapters, chapters[1:])):\n                current_c['end_time'] = current_c['end_time'] or next_c['start_time']\n"
+    },
+    {
+      "turn": 22,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_iimS6ZFtyT7woB6YpuG09103",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"sportdeutschland\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 22,
+      "role": "tool",
+      "tool_call_id": "call_00_iimS6ZFtyT7woB6YpuG09103",
+      "name": "search",
+      "args": {
+        "pattern": "sportdeutschland",
+        "path": "."
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:14:    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\nyt_dlp/extractor/sportdeutschland.py:16:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:29:        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\nyt_dlp/extractor/sportdeutschland.py:38:        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\nyt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 23,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_WmfJmwUZlhgw69rCfqHf7938",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"yt_dlp/extractor/sportdeutschland.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 23,
+      "role": "tool",
+      "tool_call_id": "call_00_WmfJmwUZlhgw69rCfqHf7938",
+      "name": "read_file",
+      "args": {
+        "path": "yt_dlp/extractor/sportdeutschland.py"
+      },
+      "result": "from .common import InfoExtractor\nfrom ..utils import (\n    clean_html,\n    float_or_none,\n    int_or_none,\n    parse_iso8601,\n    parse_qs,\n    strip_or_none,\n    try_get,\n)\n\n\nclass SportDeutschlandIE(InfoExtractor):\n    _VALID_URL = r'https?://sportdeutschland\\.tv/(?P<id>(?:[^/]+/)?[^?#/&]+)'\n    _TESTS = [{\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': '5318cac0275701382770543d7edaf0a0',\n            'ext': 'mp4',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals - Teil 1',\n            'duration': 16106.36,\n        },\n        'params': {\n            'noplaylist': True,\n            # m3u8 download\n            'skip_download': True,\n        },\n    }, {\n        'url': 'https://sportdeutschland.tv/badminton/re-live-deutsche-meisterschaften-2020-halbfinals?playlistId=0',\n        'info_dict': {\n            'id': 'c6e2fdd01f63013854c47054d2ab776f',\n            'title': 'Re-live: Deutsche Meisterschaften 2020 - Halbfinals',\n            'description': 'md5:5263ff4c31c04bb780c9f91130b48530',\n            'duration': 31397,\n        },\n        'playlist_count': 2,\n    }, {\n        'url': 'https://sportdeutschland.tv/freeride-world-tour-2021-fieberbrunn-oesterreich',\n        'only_matching': True,\n    }]\n\n    def _real_extract(self, url):\n        display_id = self._match_id(url)\n        data = self._download_json(\n            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,\n            display_id, query={'access_token': 'true'})\n        asset = data['asset']\n        title = (asset.get('title') or asset['label']).strip()\n        asset_id = asset.get('id') or asset.get('uuid')\n        info = {\n            'id': asset_id,\n            'title': title,\n            'description': clean_html(asset.get('body') or asset.get('description')) or asset.get('teaser'),\n            'duration': int_or_none(asset.get('seconds')),\n        }\n        videos = asset.get('videos') or []\n        if len(videos) > 1:\n            playlist_id = parse_qs(url).get('playlistId', [None])[0]\n            if not self._yes_playlist(playlist_id, asset_id):\n                videos = [videos[int(playlist_id)]]\n\n            def entries():\n                for i, video in enumerate(videos, 1):\n                    video_id = video.get('uuid')\n                    video_url = video.get('url')\n                    if not (video_id and video_url):\n                        continue\n                    formats = self._extract_m3u8_formats(\n                        video_url.replace('.smil', '.m3u8'), video_id, 'mp4', fatal=False)\n                    if not formats and not self.get_param('ignore_no_formats'):\n                        continue\n                    yield {\n                        'id': video_id,\n                        'formats': formats,\n                        'title': title + ' - ' + (video.get('label') or 'Teil %d' % i),\n                        'duration': float_or_none(video.get('duration')),\n                    }\n            info.update({\n                '_type': 'multi_video',\n                'entries': entries(),\n            })\n        else:\n            formats = self._extract_m3u8_formats(\n                videos[0]['url'].replace('.smil', '.m3u8'), asset_id, 'mp4')\n            section_title = strip_or_none(try_get(data, lambda x: x['section']['title']))\n            info.update({\n                'formats': formats,\n                'display_id': asset.get('permalink'),\n                'thumbnail': try_get(asset, lambda x: x['images'][0]),\n                'categories': [section_title] if section_title else None,\n                'view_count': int_or_none(asset.get('views')),\n                'is_live': asset.get('is_live') is True,\n                'timestamp': parse_iso8601(asset.get('date') or asset.get('published_at')),\n            })\n        return info\n"
+    },
+    {
+      "turn": 24,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_M8DLMqlleMqgNnk6MvEh2040",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"\\\\.smil\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 24,
+      "role": "tool",
+      "tool_call_id": "call_00_M8DLMqlleMqgNnk6MvEh2040",
+      "name": "search",
+      "args": {
+        "pattern": "\\.smil",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/tubetugraz.py:101:                    f'https://wowza.tugraz.at/matterhorn_engage/smil:engage-player_{id}_{type}.smil/playlist.m3u8',\nyt_dlp/extractor/tubetugraz.py:107:                    f'https://wowza.tugraz.at/matterhorn_engage/smil:engage-player_{id}_{type}.smil/manifest_mpm4sav_mvlist.mpd',\nyt_dlp/extractor/theplatform.py:136:        'url': 'http://link.theplatform.com/s/dJ5BDC/e9I_cZgTgIPd/meta.smil?format=smil&Tracking=true&mbr=true',\nyt_dlp/extractor/sportdeutschland.py:69:                        video_url.replace('.smil', '.m3u8'), video_id, 'mp4', fatal=False)\nyt_dlp/extractor/sportdeutschland.py:84:                videos[0]['url'].replace('.smil', '.m3u8'), asset_id, 'mp4')\nyt_dlp/extractor/howstuffworks.py:58:                'http://services.media.howstuffworks.com/videos/%s/smil-service.smil' % video_id,\nyt_dlp/extractor/muenchentv.py:61:                'preference': -100 if '.smil' in s['file'] else 0,  # Strictly inferior than all other formats?\nyt_dlp/extractor/common.py:3220:        if re.search(r'(?:/smil:|\\.smil)', url_base):\nyt_dlp/extractor/common.py:3223:                    manifest_url('jwplayer.smil'),\nyt_dlp/extractor/generic.py:203:            'url': 'http://metafilegenerator.de/WDR/WDR_FS/hds/hds.smil',\nyt_dlp/extractor/generic.py:229:            'url': 'http://services.media.howstuffworks.com/videos/450221/smil-service.smil',\nyt_dlp/extractor/generic.py:242:            'url': 'http://api.new.livestream.com/accounts/1570303/events/1585861/videos/4719370.smil',\nyt_dlp/extractor/generic.py:2808:                # .smil/manifest URLs that actually serve an ISM (see [2]) and\nyt_dlp/extractor/generic.py:2814:                # 2. https://svs.itworkscdn.net/lbcivod/smil:itwfcdn/lbci/170976.smil/Manifest"
+    },
+    {
+      "turn": 25,
+      "role": "assistant",
+      "content": "Let me look at the git log for this file or look for more recent activity.",
+      "tool_calls": [
+        {
+          "id": "call_00_OPgVyyUbHMBjhARbXyT36549",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"SportDeutschlandIE\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 25,
+      "role": "tool",
+      "tool_call_id": "call_00_OPgVyyUbHMBjhARbXyT36549",
+      "name": "search",
+      "args": {
+        "pattern": "SportDeutschlandIE",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:13:class SportDeutschlandIE(InfoExtractor):\nyt_dlp/extractor/_extractors.py:1758:from .sportdeutschland import SportDeutschlandIE"
+    },
+    {
+      "turn": 26,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_dz3SHlzI1cOGmlhGE6gW0561",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"_download_webpage.*json-ld\\\\|json_ld\\\\|JSON-LD\", \"path\": \"yt_dlp/extractor\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 26,
+      "role": "tool",
+      "tool_call_id": "call_00_dz3SHlzI1cOGmlhGE6gW0561",
+      "name": "search",
+      "args": {
+        "pattern": "_download_webpage.*json-ld\\|json_ld\\|JSON-LD",
+        "path": "yt_dlp/extractor"
+      },
+      "result": "yt_dlp/extractor/plays.py:28:        info = self._search_json_ld(webpage, video_id,)\nyt_dlp/extractor/vimeo.py:941:        json_ld = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/vimeo.py:959:        return merge_dicts(info_dict, info_dict_config, json_ld)\nyt_dlp/extractor/onefootball.py:36:        data_json = self._search_json_ld(webpage, id)\nyt_dlp/extractor/lrt.py:94:        json_ld_data = self._search_json_ld(webpage, video_id)\nyt_dlp/extractor/lrt.py:108:        return merge_dicts(clean_info, jw_data, json_ld_data)\nyt_dlp/extractor/seznamzpravy.py:149:        info = self._search_json_ld(webpage, article_id, default={})\nyt_dlp/extractor/abematv.py:241:                r'(?is)</span></li></ul><script[^>]+type=([\"\\']?)application/ld\\+json\\1[^>]*>(?P<json_ld>.+?)</script>',\nyt_dlp/extractor/abematv.py:243:            jsonld = self._parse_json(jld.group('json_ld'), video_id, fatal=False)\nyt_dlp/extractor/abematv.py:337:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/abematv.py:344:                    r'(?is)<span\\s*class=\"com-m-Thumbnail__image\">(?:</span>)?<script[^>]+type=([\"\\']?)application/ld\\+json\\1[^>]*>(?P<json_ld>.+?)</script>',\nyt_dlp/extractor/abematv.py:346:                jsonld = self._parse_json(jld.group('json_ld'), video_id, fatal=False)\nyt_dlp/extractor/tempo.py:31:        json_ld_data = self._search_json_ld(webpage, display_id)\nyt_dlp/extractor/tempo.py:49:            'description': (json_ld_data.get('description') or self._html_search_meta(['description', 'twitter:description'], webpage)\nyt_dlp/extractor/vbox7.py:80:            info = self._search_json_ld(\nyt_dlp/extractor/icareus.py:134:        info, token, live_title = self._search_json_ld(webpage, video_id, default={}), None, None\nyt_dlp/extractor/common.py:1458:    def _yield_json_ld(self, html, video_id, *, fatal=True, default=NO_DEFAULT):\nyt_dlp/extractor/common.py:1463:            json_ld_item = self._parse_json(mobj.group('json_ld'), video_id, fatal=fatal)\nyt_dlp/extractor/common.py:1464:            for json_ld in variadic(json_ld_item):\nyt_dlp/extractor/common.py:1465:                if isinstance(json_ld, dict):\nyt_dlp/extractor/common.py:1466:                    yield json_ld\nyt_dlp/extractor/common.py:1468:    def _search_json_ld(self, html, video_id, expected_type=None, *, fatal=True, default=NO_DEFAULT):\nyt_dlp/extractor/common.py:1472:        info = self._json_ld(\nyt_dlp/extractor/common.py:1473:            list(self._yield_json_ld(html, video_id, fatal=fatal, default=default)),\nyt_dlp/extractor/common.py:1480:            raise RegexNotFoundError('Unable to extract JSON-LD')\nyt_dlp/extractor/common.py:1482:            self.report_warning('unable to extract JSON-LD %s' % bug_reports_message())\nyt_dlp/extractor/common.py:1485:    def _json_ld(self, json_ld, video_id, fatal=True, expected_type=None):\nyt_dlp/extractor/common.py:1486:        if isinstance(json_ld, str):\nyt_dlp/extractor/common.py:1487:            json_ld = self._parse_json(json_ld, video_id, fatal=fatal)\nyt_dlp/extractor/common.py:1488:        if not json_ld:\nyt_dlp/extractor/common.py:1589:        def traverse_json_ld(json_ld, at_top_level=True):\nyt_dlp/extractor/common.py:1590:            for e in variadic(json_ld):\nyt_dlp/extractor/common.py:1596:                    traverse_json_ld(e['@graph'], at_top_level=False)\nyt_dlp/extractor/common.py:1652:        traverse_json_ld(json_ld)\nyt_dlp/extractor/aparat.py:77:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/rtnews.py:112:        ld_json = self._search_json_ld(webpage, None, fatal=False)\nyt_dlp/extractor/prosiebensat1.py:448:        json_ld = self._search_json_ld(webpage, clip_id, default={})\nyt_dlp/extractor/prosiebensat1.py:456:        }, json_ld)\nyt_dlp/extractor/newsy.py:32:        ld_json = self._search_json_ld(webpage, display_id, fatal=False)\nyt_dlp/extractor/radiofrance.py:85:        # _search_json_ld doesn't correctly handle this. See https://github.com/yt-dlp/yt-dlp/pull/3874#discussion_r891903846\nyt_dlp/extractor/spankbang.py:131:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/foxsports.py:31:        json_ld = self._search_json_ld(webpage, video_id, expected_type='VideoObject', default={})\nyt_dlp/extractor/foxsports.py:45:            'title': data.get('name') or json_ld.get('title'),\nyt_dlp/extractor/foxsports.py:46:            'description': data.get('description') or json_ld.get('description'),\nyt_dlp/extractor/foxsports.py:48:            'timestamp': json_ld.get('timestamp'),\nyt_dlp/extractor/foxsports.py:49:            'thumbnails': json_ld.get('thumbnails'),\nyt_dlp/extractor/gamestar.py:39:        # while _search_json_ld finds only the first one\nyt_dlp/extractor/gamestar.py:40:        json_ld = self._parse_json(self._search_regex(\nyt_dlp/extractor/gamestar.py:41:            r'(?s)<script[^>]+type=([\"\\'])application/ld\\+json\\1[^>]*>(?P<json_ld>[^<]+VideoObject[^<]+)</script>',\nyt_dlp/extractor/gamestar.py:42:            webpage, 'JSON-LD', group='json_ld'), video_id)\nyt_dlp/extractor/gamestar.py:43:        info_dict = self._json_ld(json_ld, video_id)\nyt_dlp/extractor/gamestar.py:47:        view_count = int_or_none(json_ld.get('interactionCount'))\nyt_dlp/extractor/tmz.py:169:        jsonld = self._search_json_ld(webpage, url)\nyt_dlp/extractor/canvas.py:327:        info = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/facebook.py:430:            info_json_ld = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/facebook.py:431:            info_json_ld['title'] = (re.sub(r'\\s*\\|\\s*Facebook$', '', title or info_json_ld.get('title') or page_title or '')\nyt_dlp/extractor/facebook.py:433:            return merge_dicts(info_json_ld, info_dict)\nyt_dlp/extractor/youporn.py:181:        data = self._search_json_ld(webpage, video_id, expected_type='VideoObject', fatal=False)\nyt_dlp/extractor/redtube.py:54:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/cnn.py:188:        json_ld_list = list(self._yield_json_ld(webpage, display_id))\nyt_dlp/extractor/cnn.py:189:        json_ld_data = self._json_ld(json_ld_list, display_id)\nyt_dlp/extractor/cnn.py:191:            json_ld.get('embedUrl') for json_ld in json_ld_list if json_ld.get('@type') == 'VideoObject')\nyt_dlp/extractor/cnn.py:193:        return merge_dicts(json_ld_data, {\nyt_dlp/extractor/cda.py:246:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/peekvids.py:49:        info = self._search_json_ld(webpage, video_id, expected_type='VideoObject', default={})\nyt_dlp/extractor/generic.py:2636:        json_ld = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/generic.py:2637:        if json_ld.get('url') not in (url, None):\nyt_dlp/extractor/generic.py:2639:            is_direct = json_ld.get('ext') not in (None, *MEDIA_EXTENSIONS.manifests)\nyt_dlp/extractor/generic.py:2642:                'url': smuggle_url(json_ld['url'], {\nyt_dlp/extractor/generic.py:2647:            }, json_ld)]\nyt_dlp/extractor/olympics.py:36:        json_ld = self._search_json_ld(webpage, uuid)\nyt_dlp/extractor/olympics.py:37:        thumbnails_list = json_ld.get('image')\nyt_dlp/extractor/olympics.py:64:            **json_ld\nyt_dlp/extractor/yle_areena.py:69:        info = self._search_json_ld(self._download_webpage(url, video_id), video_id, default={})\nyt_dlp/extractor/tagesschau.py:136:        video_info = self._search_json_ld(webpage, video_id)\nyt_dlp/extractor/itv.py:175:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/itv.py:177:            json_ld = self._parse_json(self._search_regex(\nyt_dlp/extractor/itv.py:178:                JSON_LD_RE, webpage, 'JSON-LD', '{}',\nyt_dlp/extractor/itv.py:179:                group='json_ld'), video_id, fatal=False)\nyt_dlp/extractor/itv.py:180:            if json_ld and json_ld.get('@type') == 'BreadcrumbList':\nyt_dlp/extractor/itv.py:181:                for ile in (json_ld.get('itemListElement:') or []):\nyt_dlp/extractor/itv.py:185:                        info = self._json_ld(item, video_id, fatal=False) or {}\nyt_dlp/extractor/eurosport.py:69:        json_ld_data = self._search_json_ld(webpage, display_id)\nyt_dlp/extractor/eurosport.py:88:            'title': json_ld_data.get('title') or self._og_search_title(webpage),\nyt_dlp/extractor/eurosport.py:92:            'thumbnails': json_ld_data.get('thumbnails'),\nyt_dlp/extractor/eurosport.py:93:            'description': (json_ld_data.get('description')\nyt_dlp/extractor/eurosport.py:95:            'duration': json_ld_data.get('duration'),\nyt_dlp/extractor/eurosport.py:96:            'timestamp': json_ld_data.get('timestamp'),\nyt_dlp/extractor/sportbox.py:76:        info = self._search_json_ld(webpage, media_id, default={})\nyt_dlp/extractor/zeenews.py:43:        json_ld_list = list(self._yield_json_ld(webpage, display_id))\nyt_dlp/extractor/zeenews.py:46:            json_ld_list, (lambda _, v: v['@type'] == 'VideoObject', 'embedUrl'), get_all=False)\nyt_dlp/extractor/zeenews.py:53:            **self._json_ld(json_ld_list, display_id),\nyt_dlp/extractor/tnaflix.py:105:        formats, json_ld = [], {}\nyt_dlp/extractor/tnaflix.py:160:            json_ld = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/tnaflix.py:170:                      or json_ld.get('title')),\nyt_dlp/extractor/tnaflix.py:171:            'description': extract_field(self._DESCRIPTION_REGEX, 'description') or json_ld.get('description'),\nyt_dlp/extractor/tnaflix.py:174:                self._html_search_meta('duration', webpage, 'duration', default=None)) or json_ld.get('duration'),\nyt_dlp/extractor/tnaflix.py:176:            'uploader': extract_field(self._UPLOADER_REGEX, 'uploader') or json_ld.get('uploader'),\nyt_dlp/extractor/iprima.py:152:        final_result = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/aitube.py:41:        json_ld_data = self._search_json_ld(webpage, video_id)\nyt_dlp/extractor/aitube.py:60:        }, json_ld_data)\nyt_dlp/extractor/spankwire.py:138:            info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/npr.py:120:                raw_json_ld = self._yield_json_ld(self._download_webpage(url, playlist_id), playlist_id, fatal=False)\nyt_dlp/extractor/npr.py:121:                m3u8_url = traverse_obj(list(raw_json_ld), (..., 'subjectOf', ..., 'embedUrl'), get_all=False)\nyt_dlp/extractor/hungama.py:57:        json_ld = self._search_json_ld(\nyt_dlp/extractor/hungama.py:61:            **json_ld,\nyt_dlp/extractor/tvopengr.py:79:        info = self._search_json_ld(webpage, video_id, expected_type='VideoObject')\nyt_dlp/extractor/startrek.py:58:        # NB: Most of the data in the json_ld is undesirable\nyt_dlp/extractor/startrek.py:59:        json_ld = self._search_json_ld(webpage, video_id, fatal=False)\nyt_dlp/extractor/startrek.py:64:                r'\\bdata-title\\s*=\\s*\"([^\"]+)\"', player, 'title', json_ld.get('title')),\nyt_dlp/extractor/startrek.py:74:            'timestamp': json_ld.get('timestamp'),\nyt_dlp/extractor/ant1newsgr.py:90:        info = self._search_json_ld(webpage, video_id, expected_type='NewsArticle')\nyt_dlp/extractor/eporner.py:110:        json_ld = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/eporner.py:118:        return merge_dicts(json_ld, {\nyt_dlp/extractor/pornhub.py:485:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/pornhub.py:486:        # description provided in JSON-LD is irrelevant\nyt_dlp/extractor/cspan.py:129:            ld_info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/wakanim.py:64:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/bbc.py:906:        json_ld_info = self._search_json_ld(webpage, playlist_id, default={})\nyt_dlp/extractor/bbc.py:907:        timestamp = json_ld_info.get('timestamp')\nyt_dlp/extractor/bbc.py:909:        playlist_title = json_ld_info.get('title') or re.sub(\nyt_dlp/extractor/bbc.py:912:        playlist_description = json_ld_info.get(\nyt_dlp/extractor/nrk.py:460:        info = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/malltv.py:91:        info = self._search_json_ld(webpage, video_id, default={})\nyt_dlp/extractor/bilibili.py:1017:            self._parse_video_metadata(video_data), self._search_json_ld(webpage, video_id), {\nyt_dlp/extractor/ndr.py:146:        info = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/detik.py:150:        json_ld_data = self._search_json_ld(webpage, display_id, default={})\nyt_dlp/extractor/detik.py:151:        yield merge_dicts(json_ld_data, extra_info_dict, {\nyt_dlp/extractor/txxx.py:405:        json_ld = self._json_ld(self._search_json(\nyt_dlp/extractor/txxx.py:406:            r'\\bschemaJson\\s*=', webpage, 'JSON-LD', video_id, transform_source=js_to_json,\nyt_dlp/extractor/txxx.py:418:        }, json_ld)\nyt_dlp/extractor/condenast.py:247:                info = self._search_json_ld(\nyt_dlp/extractor/angel.py:37:        json_ld = self._search_json_ld(webpage, video_id)\nyt_dlp/extractor/angel.py:40:            json_ld.pop('url'), video_id, note='Downloading HD m3u8 information')\nyt_dlp/extractor/angel.py:52:        base_thumbnail_url = url_or_none(self._og_search_thumbnail(webpage)) or json_ld.pop('thumbnails')\nyt_dlp/extractor/angel.py:56:        return merge_dicts(info_dict, json_ld)"
+    },
+    {
+      "turn": 27,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_joAgq37gCKpOIHJFrV6D9954",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"permalinks\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 27,
+      "role": "tool",
+      "tool_call_id": "call_00_joAgq37gCKpOIHJFrV6D9954",
+      "name": "search",
+      "args": {
+        "pattern": "permalinks",
+        "path": "."
+      },
+      "result": "yt_dlp/extractor/sportdeutschland.py:45:            'https://backend.sportdeutschland.tv/api/permalinks/' + display_id,"
+    },
+    {
+      "turn": 28,
+      "role": "assistant",
+      "content": "Let me look at how similar extractors handle embedded data extraction from the HTML page as a fallback.",
+      "tool_calls": [
+        {
+          "id": "call_00_9Eh6xRMNqrVBDngt7hZD9486",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"offset\": 1246, \"path\": \"yt_dlp/extractor/common.py\", \"limit\": 30}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 28,
+      "role": "tool",
+      "tool_call_id": "call_00_9Eh6xRMNqrVBDngt7hZD9486",
+      "name": "read_file",
+      "args": {
+        "offset": 1246,
+        "path": "yt_dlp/extractor/common.py",
+        "limit": 30
+      },
+      "result": "[Lines 1246\u20131275 of 3818]\n    def _search_json(self, start_pattern, string, name, video_id, *, end_pattern='',\n                     contains_pattern=r'{(?s:.+)}', fatal=True, default=NO_DEFAULT, **kwargs):\n        \"\"\"Searches string for the JSON object specified by start_pattern\"\"\"\n        # NB: end_pattern is only used to reduce the size of the initial match\n        if default is NO_DEFAULT:\n            default, has_default = {}, False\n        else:\n            fatal, has_default = False, True\n\n        json_string = self._search_regex(\n            rf'(?:{start_pattern})\\s*(?P<json>{contains_pattern})\\s*(?:{end_pattern})',\n            string, name, group='json', fatal=fatal, default=None if has_default else NO_DEFAULT)\n        if not json_string:\n            return default\n\n        _name = self._downloader._format_err(name, self._downloader.Styles.EMPHASIS)\n        try:\n            return self._parse_json(json_string, video_id, ignore_extra=True, **kwargs)\n        except ExtractorError as e:\n            if fatal:\n                raise ExtractorError(\n                    f'Unable to extract {_name} - Failed to parse JSON', cause=e.cause, video_id=video_id)\n            elif not has_default:\n                self.report_warning(\n                    f'Unable to extract {_name} - Failed to parse JSON: {e}', video_id=video_id)\n        return default\n\n    def _html_search_regex(self, pattern, string, name, default=NO_DEFAULT, fatal=True, flags=0, group=None):\n        \"\"\"\n        Like _search_regex, but strips HTML tags and unescapes entities.\n"
+    },
+    {
+      "turn": 29,
+      "role": "assistant",
+      "content": "Based on my analysis, the issue is clear:\n\n1. The `SportDeutschland` extractor in `yt_dlp/extractor/sportdeutschland.py` tries to fetch JSON metadata from `https://backend.sportdeutschland.tv/api/permalinks/{display_id}` (line 45-46)\n2. This API endpoint returns a 404 error for the given URL, meaning the backend API has been changed or restructured by the website\n3. The extractor needs to be updated to work with the new API structure or to extract video data from the webpage directly\n\nThe only file that needs modification is the extractor itself.",
+      "tool_calls": [
+        {
+          "id": "call_00_QFl0vu1pPkfcSuGNbrhP8146",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"yt_dlp/extractor/sportdeutschland.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 29,
+      "role": "tool",
+      "tool_call_id": "call_00_QFl0vu1pPkfcSuGNbrhP8146",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "yt_dlp/extractor/sportdeutschland.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}
