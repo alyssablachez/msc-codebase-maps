@@ -1,0 +1,1008 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "fastapi",
+  "issue_idx": 17,
+  "tier": "small",
+  "role": "single",
+  "map_type": "temporal_cochange_required",
+  "rep": 2,
+  "worker_id": 4,
+  "issue_title": "Error while opening swagger docs while uploading file in APIRouter",
+  "base_commit": "c6aa28bea2f751a91078bd8d845133ff83f352bf",
+  "metrics": {
+    "total_input_tokens": 1141495,
+    "total_output_tokens": 24576,
+    "total_cached_tokens": 1068416,
+    "total_cost": 0.020104,
+    "num_turns": 32,
+    "wall_time_seconds": 217.9,
+    "stop_reason": "max_turns",
+    "hit_turn_cap": true,
+    "backstop_turns_granted": true,
+    "effective_max_turns": 32,
+    "submission_type": "max_turns",
+    "trial_token": "6ae23bef"
+  },
+  "final_files_predicted": [],
+  "final_files_predicted_scorable": [],
+  "ground_truth": [
+    "fastapi/routing.py"
+  ],
+  "ground_truth_scorable": [
+    "fastapi/routing.py"
+  ],
+  "scores": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_MvUaw1KTfBld0ieVFZCP6171",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_MvUaw1KTfBld0ieVFZCP6171",
+      "name": "list_files",
+      "args": {
+        "path": ""
+      },
+      "result": ".flake8\n.git\n.github\n.gitignore\n.pre-commit-config.yaml\nCONTRIBUTING.md\nLICENSE\nREADME.md\nSECURITY.md\ndocs\ndocs_src\nfastapi\npyproject.toml\nscripts\ntests"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_RZKguMtIoq6zbil3K3Pf8425",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/utils.py\"}"
+          }
+        },
+        {
+          "id": "call_01_TH28boUoAiHbl706siTB9217",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/openapi/utils.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_RZKguMtIoq6zbil3K3Pf8425",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/utils.py"
+      },
+      "result": "import functools\nimport re\nimport warnings\nfrom dataclasses import is_dataclass\nfrom enum import Enum\nfrom typing import TYPE_CHECKING, Any, Dict, Optional, Set, Type, Union, cast\n\nimport fastapi\nfrom fastapi.datastructures import DefaultPlaceholder, DefaultType\nfrom fastapi.openapi.constants import REF_PREFIX\nfrom pydantic import BaseConfig, BaseModel, create_model\nfrom pydantic.class_validators import Validator\nfrom pydantic.fields import FieldInfo, ModelField, UndefinedType\nfrom pydantic.schema import model_process_schema\nfrom pydantic.utils import lenient_issubclass\n\nif TYPE_CHECKING:  # pragma: nocover\n    from .routing import APIRoute\n\n\ndef is_body_allowed_for_status_code(status_code: Union[int, str, None]) -> bool:\n    if status_code is None:\n        return True\n    current_status_code = int(status_code)\n    return not (current_status_code < 200 or current_status_code in {204, 304})\n\n\ndef get_model_definitions(\n    *,\n    flat_models: Set[Union[Type[BaseModel], Type[Enum]]],\n    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\n) -> Dict[str, Any]:\n    definitions: Dict[str, Dict[str, Any]] = {}\n    for model in flat_models:\n        m_schema, m_definitions, m_nested_models = model_process_schema(\n            model, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n        )\n        definitions.update(m_definitions)\n        model_name = model_name_map[model]\n        if \"description\" in m_schema:\n            m_schema[\"description\"] = m_schema[\"description\"].split(\"\\f\")[0]\n        definitions[model_name] = m_schema\n    return definitions\n\n\ndef get_path_param_names(path: str) -> Set[str]:\n    return set(re.findall(\"{(.*?)}\", path))\n\n\ndef create_response_field(\n    name: str,\n    type_: Type[Any],\n    class_validators: Optional[Dict[str, Validator]] = None,\n    default: Optional[Any] = None,\n    required: Union[bool, UndefinedType] = True,\n    model_config: Type[BaseConfig] = BaseConfig,\n    field_info: Optional[FieldInfo] = None,\n    alias: Optional[str] = None,\n) -> ModelField:\n    \"\"\"\n    Create a new response field. Raises if type_ is invalid.\n    \"\"\"\n    class_validators = class_validators or {}\n    field_info = field_info or FieldInfo()\n\n    response_field = functools.partial(\n        ModelField,\n        name=name,\n        type_=type_,\n        class_validators=class_validators,\n        default=default,\n        required=required,\n        model_config=model_config,\n        alias=alias,\n    )\n\n    try:\n        return response_field(field_info=field_info)\n    except RuntimeError:\n        raise fastapi.exceptions.FastAPIError(\n            f\"Invalid args for response field! Hint: check that {type_} is a valid pydantic field type\"\n        )\n\n\ndef create_cloned_field(\n    field: ModelField,\n    *,\n    cloned_types: Optional[Dict[Type[BaseModel], Type[BaseModel]]] = None,\n) -> ModelField:\n    # _cloned_types has already cloned types, to support recursive models\n    if cloned_types is None:\n        cloned_types = {}\n    original_type = field.type_\n    if is_dataclass(original_type) and hasattr(original_type, \"__pydantic_model__\"):\n        original_type = original_type.__pydantic_model__\n    use_type = original_type\n    if lenient_issubclass(original_type, BaseModel):\n        original_type = cast(Type[BaseModel], original_type)\n        use_type = cloned_types.get(original_type)\n        if use_type is None:\n            use_type = create_model(original_type.__name__, __base__=original_type)\n            cloned_types[original_type] = use_type\n            for f in original_type.__fields__.values():\n                use_type.__fields__[f.name] = create_cloned_field(\n                    f, cloned_types=cloned_types\n                )\n    new_field = create_response_field(name=field.name, type_=use_type)\n    new_field.has_alias = field.has_alias\n    new_field.alias = field.alias\n    new_field.class_validators = field.class_validators\n    new_field.default = field.default\n    new_field.required = field.required\n    new_field.model_config = field.model_config\n    new_field.field_info = field.field_info\n    new_field.allow_none = field.allow_none\n    new_field.validate_always = field.validate_always\n    if field.sub_fields:\n        new_field.sub_fields = [\n            create_cloned_field(sub_field, cloned_types=cloned_types)\n            for sub_field in field.sub_fields\n        ]\n    if field.key_field:\n        new_field.key_field = create_cloned_field(\n            field.key_field, cloned_types=cloned_types\n        )\n    new_field.validators = field.validators\n    new_field.pre_validators = field.pre_validators\n    new_field.post_validators = field.post_validators\n    new_field.parse_json = field.parse_json\n    new_field.shape = field.shape\n    new_field.populate_validators()\n    return new_field\n\n\ndef generate_operation_id_for_path(\n    *, name: str, path: str, method: str\n) -> str:  # pragma: nocover\n    warnings.warn(\n        \"fastapi.utils.generate_operation_id_for_path() was deprecated, \"\n        \"it is not used internally, and will be removed soon\",\n        DeprecationWarning,\n        stacklevel=2,\n    )\n    operation_id = name + path\n    operation_id = re.sub(r\"\\W\", \"_\", operation_id)\n    operation_id = operation_id + \"_\" + method.lower()\n    return operation_id\n\n\ndef generate_unique_id(route: \"APIRoute\") -> str:\n    operation_id = route.name + route.path_format\n    operation_id = re.sub(r\"\\W\", \"_\", operation_id)\n    assert route.methods\n    operation_id = operation_id + \"_\" + list(route.methods)[0].lower()\n    return operation_id\n\n\ndef deep_dict_update(main_dict: Dict[Any, Any], update_dict: Dict[Any, Any]) -> None:\n    for key, value in update_dict.items():\n        if (\n            key in main_dict\n            and isinstance(main_dict[key], dict)\n            and isinstance(value, dict)\n        ):\n            deep_dict_update(main_dict[key], value)\n        elif (\n            key in main_dict\n            and isinstance(main_dict[key], list)\n            and isinstance(update_dict[key], list)\n        ):\n            main_dict[key] = main_dict[key] + update_dict[key]\n        else:\n            main_dict[key] = value\n\n\ndef get_value_or_default(\n    first_item: Union[DefaultPlaceholder, DefaultType],\n    *extra_items: Union[DefaultPlaceholder, DefaultType],\n) -> Union[DefaultPlaceholder, DefaultType]:\n    \"\"\"\n    Pass items or `DefaultPlaceholder`s by descending priority.\n\n    The first one to _not_ be a `DefaultPlaceholder` will be returned.\n\n    Otherwise, the first item (a `DefaultPlaceholder`) will be returned.\n    \"\"\"\n    items = (first_item,) + extra_items\n    for item in items:\n        if not isinstance(item, DefaultPlaceholder):\n            return item\n    return first_item\n"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_01_TH28boUoAiHbl706siTB9217",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/openapi/utils.py"
+      },
+      "result": "import http.client\nimport inspect\nimport warnings\nfrom enum import Enum\nfrom typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Type, Union, cast\n\nfrom fastapi import routing\nfrom fastapi.datastructures import DefaultPlaceholder\nfrom fastapi.dependencies.models import Dependant\nfrom fastapi.dependencies.utils import get_flat_dependant, get_flat_params\nfrom fastapi.encoders import jsonable_encoder\nfrom fastapi.openapi.constants import METHODS_WITH_BODY, REF_PREFIX\nfrom fastapi.openapi.models import OpenAPI\nfrom fastapi.params import Body, Param\nfrom fastapi.responses import Response\nfrom fastapi.utils import (\n    deep_dict_update,\n    generate_operation_id_for_path,\n    get_model_definitions,\n    is_body_allowed_for_status_code,\n)\nfrom pydantic import BaseModel\nfrom pydantic.fields import ModelField, Undefined\nfrom pydantic.schema import (\n    field_schema,\n    get_flat_models_from_fields,\n    get_model_name_map,\n)\nfrom pydantic.utils import lenient_issubclass\nfrom starlette.responses import JSONResponse\nfrom starlette.routing import BaseRoute\nfrom starlette.status import HTTP_422_UNPROCESSABLE_ENTITY\n\nvalidation_error_definition = {\n    \"title\": \"ValidationError\",\n    \"type\": \"object\",\n    \"properties\": {\n        \"loc\": {\n            \"title\": \"Location\",\n            \"type\": \"array\",\n            \"items\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"integer\"}]},\n        },\n        \"msg\": {\"title\": \"Message\", \"type\": \"string\"},\n        \"type\": {\"title\": \"Error Type\", \"type\": \"string\"},\n    },\n    \"required\": [\"loc\", \"msg\", \"type\"],\n}\n\nvalidation_error_response_definition = {\n    \"title\": \"HTTPValidationError\",\n    \"type\": \"object\",\n    \"properties\": {\n        \"detail\": {\n            \"title\": \"Detail\",\n            \"type\": \"array\",\n            \"items\": {\"$ref\": REF_PREFIX + \"ValidationError\"},\n        }\n    },\n}\n\nstatus_code_ranges: Dict[str, str] = {\n    \"1XX\": \"Information\",\n    \"2XX\": \"Success\",\n    \"3XX\": \"Redirection\",\n    \"4XX\": \"Client Error\",\n    \"5XX\": \"Server Error\",\n    \"DEFAULT\": \"Default Response\",\n}\n\n\ndef get_openapi_security_definitions(\n    flat_dependant: Dependant,\n) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:\n    security_definitions = {}\n    operation_security = []\n    for security_requirement in flat_dependant.security_requirements:\n        security_definition = jsonable_encoder(\n            security_requirement.security_scheme.model,\n            by_alias=True,\n            exclude_none=True,\n        )\n        security_name = security_requirement.security_scheme.scheme_name\n        security_definitions[security_name] = security_definition\n        operation_security.append({security_name: security_requirement.scopes})\n    return security_definitions, operation_security\n\n\ndef get_openapi_operation_parameters(\n    *,\n    all_route_params: Sequence[ModelField],\n    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\n) -> List[Dict[str, Any]]:\n    parameters = []\n    for param in all_route_params:\n        field_info = param.field_info\n        field_info = cast(Param, field_info)\n        if not field_info.include_in_schema:\n            continue\n        parameter = {\n            \"name\": param.alias,\n            \"in\": field_info.in_.value,\n            \"required\": param.required,\n            \"schema\": field_schema(\n                param, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n            )[0],\n        }\n        if field_info.description:\n            parameter[\"description\"] = field_info.description\n        if field_info.examples:\n            parameter[\"examples\"] = jsonable_encoder(field_info.examples)\n        elif field_info.example != Undefined:\n            parameter[\"example\"] = jsonable_encoder(field_info.example)\n        if field_info.deprecated:\n            parameter[\"deprecated\"] = field_info.deprecated\n        parameters.append(parameter)\n    return parameters\n\n\ndef get_openapi_operation_request_body(\n    *,\n    body_field: Optional[ModelField],\n    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\n) -> Optional[Dict[str, Any]]:\n    if not body_field:\n        return None\n    assert isinstance(body_field, ModelField)\n    body_schema, _, _ = field_schema(\n        body_field, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n    )\n    field_info = cast(Body, body_field.field_info)\n    request_media_type = field_info.media_type\n    required = body_field.required\n    request_body_oai: Dict[str, Any] = {}\n    if required:\n        request_body_oai[\"required\"] = required\n    request_media_content: Dict[str, Any] = {\"schema\": body_schema}\n    if field_info.examples:\n        request_media_content[\"examples\"] = jsonable_encoder(field_info.examples)\n    elif field_info.example != Undefined:\n        request_media_content[\"example\"] = jsonable_encoder(field_info.example)\n    request_body_oai[\"content\"] = {request_media_type: request_media_content}\n    return request_body_oai\n\n\ndef generate_operation_id(\n    *, route: routing.APIRoute, method: str\n) -> str:  # pragma: nocover\n    warnings.warn(\n        \"fastapi.openapi.utils.generate_operation_id() was deprecated, \"\n        \"it is not used internally, and will be removed soon\",\n        DeprecationWarning,\n        stacklevel=2,\n    )\n    if route.operation_id:\n        return route.operation_id\n    path: str = route.path_format\n    return generate_operation_id_for_path(name=route.name, path=path, method=method)\n\n\ndef generate_operation_summary(*, route: routing.APIRoute, method: str) -> str:\n    if route.summary:\n        return route.summary\n    return route.name.replace(\"_\", \" \").title()\n\n\ndef get_openapi_operation_metadata(\n    *, route: routing.APIRoute, method: str, operation_ids: Set[str]\n) -> Dict[str, Any]:\n    operation: Dict[str, Any] = {}\n    if route.tags:\n        operation[\"tags\"] = route.tags\n    operation[\"summary\"] = generate_operation_summary(route=route, method=method)\n    if route.description:\n        operation[\"description\"] = route.description\n    operation_id = route.operation_id or route.unique_id\n    if operation_id in operation_ids:\n        message = (\n            f\"Duplicate Operation ID {operation_id} for function \"\n            + f\"{route.endpoint.__name__}\"\n        )\n        file_name = getattr(route.endpoint, \"__globals__\", {}).get(\"__file__\")\n        if file_name:\n            message += f\" at {file_name}\"\n        warnings.warn(message)\n    operation_ids.add(operation_id)\n    operation[\"operationId\"] = operation_id\n    if route.deprecated:\n        operation[\"deprecated\"] = route.deprecated\n    return operation\n\n\ndef get_openapi_path(\n    *, route: routing.APIRoute, model_name_map: Dict[type, str], operation_ids: Set[str]\n) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:\n    path = {}\n    security_schemes: Dict[str, Any] = {}\n    definitions: Dict[str, Any] = {}\n    assert route.methods is not None, \"Methods must be a list\"\n    if isinstance(route.response_class, DefaultPlaceholder):\n        current_response_class: Type[Response] = route.response_class.value\n    else:\n        current_response_class = route.response_class\n    assert current_response_class, \"A response class is needed to generate OpenAPI\"\n    route_response_media_type: Optional[str] = current_response_class.media_type\n    if route.include_in_schema:\n        for method in route.methods:\n            operation = get_openapi_operation_metadata(\n                route=route, method=method, operation_ids=operation_ids\n            )\n            parameters: List[Dict[str, Any]] = []\n            flat_dependant = get_flat_dependant(route.dependant, skip_repeats=True)\n            security_definitions, operation_security = get_openapi_security_definitions(\n                flat_dependant=flat_dependant\n            )\n            if operation_security:\n                operation.setdefault(\"security\", []).extend(operation_security)\n            if security_definitions:\n                security_schemes.update(security_definitions)\n            all_route_params = get_flat_params(route.dependant)\n            operation_parameters = get_openapi_operation_parameters(\n                all_route_params=all_route_params, model_name_map=model_name_map\n            )\n            parameters.extend(operation_parameters)\n            if parameters:\n                all_parameters = {\n                    (param[\"in\"], param[\"name\"]): param for param in parameters\n                }\n                required_parameters = {\n                    (param[\"in\"], param[\"name\"]): param\n                    for param in parameters\n                    if param.get(\"required\")\n                }\n                # Make sure required definitions of the same parameter take precedence\n                # over non-required definitions\n                all_parameters.update(required_parameters)\n                operation[\"parameters\"] = list(all_parameters.values())\n            if method in METHODS_WITH_BODY:\n                request_body_oai = get_openapi_operation_request_body(\n                    body_field=route.body_field, model_name_map=model_name_map\n                )\n                if request_body_oai:\n                    operation[\"requestBody\"] = request_body_oai\n            if route.callbacks:\n                callbacks = {}\n                for callback in route.callbacks:\n                    if isinstance(callback, routing.APIRoute):\n                        (\n                            cb_path,\n                            cb_security_schemes,\n                            cb_definitions,\n                        ) = get_openapi_path(\n                            route=callback,\n                            model_name_map=model_name_map,\n                            operation_ids=operation_ids,\n                        )\n                        callbacks[callback.name] = {callback.path: cb_path}\n                operation[\"callbacks\"] = callbacks\n            if route.status_code is not None:\n                status_code = str(route.status_code)\n            else:\n                # It would probably make more sense for all response classes to have an\n                # explicit default status_code, and to extract it from them, instead of\n                # doing this inspection tricks, that would probably be in the future\n                # TODO: probably make status_code a default class attribute for all\n                # responses in Starlette\n                response_signature = inspect.signature(current_response_class.__init__)\n                status_code_param = response_signature.parameters.get(\"status_code\")\n                if status_code_param is not None:\n                    if isinstance(status_code_param.default, int):\n                        status_code = str(status_code_param.default)\n            operation.setdefault(\"responses\", {}).setdefault(status_code, {})[\n                \"description\"\n            ] = route.response_description\n            if route_response_media_type and is_body_allowed_for_status_code(\n                route.status_code\n            ):\n                response_schema = {\"type\": \"string\"}\n                if lenient_issubclass(current_response_class, JSONResponse):\n                    if route.response_field:\n                        response_schema, _, _ = field_schema(\n                            route.response_field,\n                            model_name_map=model_name_map,\n                            ref_prefix=REF_PREFIX,\n                        )\n                    else:\n                        response_schema = {}\n                operation.setdefault(\"responses\", {}).setdefault(\n                    status_code, {}\n                ).setdefault(\"content\", {}).setdefault(route_response_media_type, {})[\n                    \"schema\"\n                ] = response_schema\n            if route.responses:\n                operation_responses = operation.setdefault(\"responses\", {})\n                for (\n                    additional_status_code,\n                    additional_response,\n                ) in route.responses.items():\n                    process_response = additional_response.copy()\n                    process_response.pop(\"model\", None)\n                    status_code_key = str(additional_status_code).upper()\n                    if status_code_key == \"DEFAULT\":\n                        status_code_key = \"default\"\n                    openapi_response = operation_responses.setdefault(\n                        status_code_key, {}\n                    )\n                    assert isinstance(\n                        process_response, dict\n                    ), \"An additional response must be a dict\"\n                    field = route.response_fields.get(additional_status_code)\n                    additional_field_schema: Optional[Dict[str, Any]] = None\n                    if field:\n                        additional_field_schema, _, _ = field_schema(\n                            field, model_name_map=model_name_map, ref_prefix=REF_PREFIX\n                        )\n                        media_type = route_response_media_type or \"application/json\"\n                        additional_schema = (\n                            process_response.setdefault(\"content\", {})\n                            .setdefault(media_type, {})\n                            .setdefault(\"schema\", {})\n                        )\n                        deep_dict_update(additional_schema, additional_field_schema)\n                    status_text: Optional[str] = status_code_ranges.get(\n                        str(additional_status_code).upper()\n                    ) or http.client.responses.get(int(additional_status_code))\n                    description = (\n                        process_response.get(\"description\")\n                        or openapi_response.get(\"description\")\n                        or status_text\n                        or \"Additional Response\"\n                    )\n                    deep_dict_update(openapi_response, process_response)\n                    openapi_response[\"description\"] = description\n            http422 = str(HTTP_422_UNPROCESSABLE_ENTITY)\n            if (all_route_params or route.body_field) and not any(\n                [\n                    status in operation[\"responses\"]\n                    for status in [http422, \"4XX\", \"default\"]\n                ]\n            ):\n                operation[\"responses\"][http422] = {\n                    \"description\": \"Validation Error\",\n                    \"content\": {\n                        \"application/json\": {\n                            \"schema\": {\"$ref\": REF_PREFIX + \"HTTPValidationError\"}\n                        }\n                    },\n                }\n                if \"ValidationError\" not in definitions:\n                    definitions.update(\n                        {\n                            \"ValidationError\": validation_error_definition,\n                            \"HTTPValidationError\": validation_error_response_definition,\n                        }\n                    )\n            if route.openapi_extra:\n                deep_dict_update(operation, route.openapi_extra)\n            path[method.lower()] = operation\n    return path, security_schemes, definitions\n\n\ndef get_flat_models_from_routes(\n    routes: Sequence[BaseRoute],\n) -> Set[Union[Type[BaseModel], Type[Enum]]]:\n    body_fields_from_routes: List[ModelField] = []\n    responses_from_routes: List[ModelField] = []\n    request_fields_from_routes: List[ModelField] = []\n    callback_flat_models: Set[Union[Type[BaseModel], Type[Enum]]] = set()\n    for route in routes:\n        if getattr(route, \"include_in_schema\", None) and isinstance(\n            route, routing.APIRoute\n        ):\n            if route.body_field:\n                assert isinstance(\n                    route.body_field, ModelField\n                ), \"A request body must be a Pydantic Field\"\n                body_fields_from_routes.append(route.body_field)\n            if route.response_field:\n                responses_from_routes.append(route.response_field)\n            if route.response_fields:\n                responses_from_routes.extend(route.response_fields.values())\n            if route.callbacks:\n                callback_flat_models |= get_flat_models_from_routes(route.callbacks)\n            params = get_flat_params(route.dependant)\n            request_fields_from_routes.extend(params)\n\n    flat_models = callback_flat_models | get_flat_models_from_fields(\n        body_fields_from_routes + responses_from_routes + request_fields_from_routes,\n        known_models=set(),\n    )\n    return flat_models\n\n\ndef get_openapi(\n    *,\n    title: str,\n    version: str,\n    openapi_version: str = \"3.0.2\",\n    description: Optional[str] = None,\n    routes: Sequence[BaseRoute],\n    tags: Optional[List[Dict[str, Any]]] = None,\n    servers: Optional[List[Dict[str, Union[str, Any]]]] = None,\n    terms_of_service: Optional[str] = None,\n    contact: Optional[Dict[str, Union[str, Any]]] = None,\n    license_info: Optional[Dict[str, Union[str, Any]]] = None,\n) -> Dict[str, Any]:\n    info: Dict[str, Any] = {\"title\": title, \"version\": version}\n    if description:\n        info[\"description\"] = description\n    if terms_of_service:\n        info[\"termsOfService\"] = terms_of_service\n    if contact:\n        info[\"contact\"] = contact\n    if license_info:\n        info[\"license\"] = license_info\n    output: Dict[str, Any] = {\"openapi\": openapi_version, \"info\": info}\n    if servers:\n        output[\"servers\"] = servers\n    components: Dict[str, Dict[str, Any]] = {}\n    paths: Dict[str, Dict[str, Any]] = {}\n    operation_ids: Set[str] = set()\n    flat_models = get_flat_models_from_routes(routes)\n    model_name_map = get_model_name_map(flat_models)\n    definitions = get_model_definitions(\n        flat_models=flat_models, model_name_map=model_name_map\n    )\n    for route in routes:\n        if isinstance(route, routing.APIRoute):\n            result = get_openapi_path(\n                route=route, model_name_map=model_name_map, operation_ids=operation_ids\n            )\n            if result:\n                path, security_schemes, path_definitions = result\n                if path:\n                    paths.setdefault(route.path_format, {}).update(path)\n                if security_schemes:\n                    components.setdefault(\"securitySchemes\", {}).update(\n                        security_schemes\n                    )\n                if path_definitions:\n                    definitions.update(path_definitions)\n    if definitions:\n        components[\"schemas\"] = {k: definitions[k] for k in sorted(definitions)}\n    if components:\n        output[\"components\"] = components\n    output[\"paths\"] = paths\n    if tags:\n        output[\"tags\"] = tags\n    return jsonable_encoder(OpenAPI(**output), by_alias=True, exclude_none=True)  # type: ignore\n"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_xoSQIpNBj789o9hy6zL41627",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/routing.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_xoSQIpNBj789o9hy6zL41627",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/routing.py"
+      },
+      "result": "import asyncio\nimport dataclasses\nimport email.message\nimport inspect\nimport json\nfrom enum import Enum, IntEnum\nfrom typing import (\n    Any,\n    Callable,\n    Coroutine,\n    Dict,\n    List,\n    Optional,\n    Sequence,\n    Set,\n    Tuple,\n    Type,\n    Union,\n)\n\nfrom fastapi import params\nfrom fastapi.datastructures import Default, DefaultPlaceholder\nfrom fastapi.dependencies.models import Dependant\nfrom fastapi.dependencies.utils import (\n    get_body_field,\n    get_dependant,\n    get_parameterless_sub_dependant,\n    solve_dependencies,\n)\nfrom fastapi.encoders import DictIntStrAny, SetIntStr, jsonable_encoder\nfrom fastapi.exceptions import RequestValidationError, WebSocketRequestValidationError\nfrom fastapi.types import DecoratedCallable\nfrom fastapi.utils import (\n    create_cloned_field,\n    create_response_field,\n    generate_unique_id,\n    get_value_or_default,\n    is_body_allowed_for_status_code,\n)\nfrom pydantic import BaseModel\nfrom pydantic.error_wrappers import ErrorWrapper, ValidationError\nfrom pydantic.fields import ModelField, Undefined\nfrom starlette import routing\nfrom starlette.concurrency import run_in_threadpool\nfrom starlette.exceptions import HTTPException\nfrom starlette.requests import Request\nfrom starlette.responses import JSONResponse, Response\nfrom starlette.routing import BaseRoute, Match\nfrom starlette.routing import Mount as Mount  # noqa\nfrom starlette.routing import (\n    compile_path,\n    get_name,\n    request_response,\n    websocket_session,\n)\nfrom starlette.status import WS_1008_POLICY_VIOLATION\nfrom starlette.types import ASGIApp, Scope\nfrom starlette.websockets import WebSocket\n\n\ndef _prepare_response_content(\n    res: Any,\n    *,\n    exclude_unset: bool,\n    exclude_defaults: bool = False,\n    exclude_none: bool = False,\n) -> Any:\n    if isinstance(res, BaseModel):\n        read_with_orm_mode = getattr(res.__config__, \"read_with_orm_mode\", None)\n        if read_with_orm_mode:\n            # Let from_orm extract the data from this model instead of converting\n            # it now to a dict.\n            # Otherwise there's no way to extract lazy data that requires attribute\n            # access instead of dict iteration, e.g. lazy relationships.\n            return res\n        return res.dict(\n            by_alias=True,\n            exclude_unset=exclude_unset,\n            exclude_defaults=exclude_defaults,\n            exclude_none=exclude_none,\n        )\n    elif isinstance(res, list):\n        return [\n            _prepare_response_content(\n                item,\n                exclude_unset=exclude_unset,\n                exclude_defaults=exclude_defaults,\n                exclude_none=exclude_none,\n            )\n            for item in res\n        ]\n    elif isinstance(res, dict):\n        return {\n            k: _prepare_response_content(\n                v,\n                exclude_unset=exclude_unset,\n                exclude_defaults=exclude_defaults,\n                exclude_none=exclude_none,\n            )\n            for k, v in res.items()\n        }\n    elif dataclasses.is_dataclass(res):\n        return dataclasses.asdict(res)\n    return res\n\n\nasync def serialize_response(\n    *,\n    field: Optional[ModelField] = None,\n    response_content: Any,\n    include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n    exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n    by_alias: bool = True,\n    exclude_unset: bool = False,\n    exclude_defaults: bool = False,\n    exclude_none: bool = False,\n    is_coroutine: bool = True,\n) -> Any:\n    if field:\n        errors = []\n        response_content = _prepare_response_content(\n            response_content,\n            exclude_unset=exclude_unset,\n            exclude_defaults=exclude_defaults,\n            exclude_none=exclude_none,\n        )\n        if is_coroutine:\n            value, errors_ = field.validate(response_content, {}, loc=(\"response\",))\n        else:\n            value, errors_ = await run_in_threadpool(\n                field.validate, response_content, {}, loc=(\"response\",)\n            )\n        if isinstance(errors_, ErrorWrapper):\n            errors.append(errors_)\n        elif isinstance(errors_, list):\n            errors.extend(errors_)\n        if errors:\n            raise ValidationError(errors, field.type_)\n        return jsonable_encoder(\n            value,\n            include=include,\n            exclude=exclude,\n            by_alias=by_alias,\n            exclude_unset=exclude_unset,\n            exclude_defaults=exclude_defaults,\n            exclude_none=exclude_none,\n        )\n    else:\n        return jsonable_encoder(response_content)\n\n\nasync def run_endpoint_function(\n    *, dependant: Dependant, values: Dict[str, Any], is_coroutine: bool\n) -> Any:\n    # Only called by get_request_handler. Has been split into its own function to\n    # facilitate profiling endpoints, since inner functions are harder to profile.\n    assert dependant.call is not None, \"dependant.call must be a function\"\n\n    if is_coroutine:\n        return await dependant.call(**values)\n    else:\n        return await run_in_threadpool(dependant.call, **values)\n\n\ndef get_request_handler(\n    dependant: Dependant,\n    body_field: Optional[ModelField] = None,\n    status_code: Optional[int] = None,\n    response_class: Union[Type[Response], DefaultPlaceholder] = Default(JSONResponse),\n    response_field: Optional[ModelField] = None,\n    response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n    response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n    response_model_by_alias: bool = True,\n    response_model_exclude_unset: bool = False,\n    response_model_exclude_defaults: bool = False,\n    response_model_exclude_none: bool = False,\n    dependency_overrides_provider: Optional[Any] = None,\n) -> Callable[[Request], Coroutine[Any, Any, Response]]:\n    assert dependant.call is not None, \"dependant.call must be a function\"\n    is_coroutine = asyncio.iscoroutinefunction(dependant.call)\n    is_body_form = body_field and isinstance(body_field.field_info, params.Form)\n    if isinstance(response_class, DefaultPlaceholder):\n        actual_response_class: Type[Response] = response_class.value\n    else:\n        actual_response_class = response_class\n\n    async def app(request: Request) -> Response:\n        try:\n            body: Any = None\n            if body_field:\n                if is_body_form:\n                    body = await request.form()\n                else:\n                    body_bytes = await request.body()\n                    if body_bytes:\n                        json_body: Any = Undefined\n                        content_type_value = request.headers.get(\"content-type\")\n                        if not content_type_value:\n                            json_body = await request.json()\n                        else:\n                            message = email.message.Message()\n                            message[\"content-type\"] = content_type_value\n                            if message.get_content_maintype() == \"application\":\n                                subtype = message.get_content_subtype()\n                                if subtype == \"json\" or subtype.endswith(\"+json\"):\n                                    json_body = await request.json()\n                        if json_body != Undefined:\n                            body = json_body\n                        else:\n                            body = body_bytes\n        except json.JSONDecodeError as e:\n            raise RequestValidationError(\n                [ErrorWrapper(e, (\"body\", e.pos))], body=e.doc\n            ) from e\n        except HTTPException:\n            raise\n        except Exception as e:\n            raise HTTPException(\n                status_code=400, detail=\"There was an error parsing the body\"\n            ) from e\n        solved_result = await solve_dependencies(\n            request=request,\n            dependant=dependant,\n            body=body,\n            dependency_overrides_provider=dependency_overrides_provider,\n        )\n        values, errors, background_tasks, sub_response, _ = solved_result\n        if errors:\n            raise RequestValidationError(errors, body=body)\n        else:\n            raw_response = await run_endpoint_function(\n                dependant=dependant, values=values, is_coroutine=is_coroutine\n            )\n\n            if isinstance(raw_response, Response):\n                if raw_response.background is None:\n                    raw_response.background = background_tasks\n                return raw_response\n            response_args: Dict[str, Any] = {\"background\": background_tasks}\n            # If status_code was set, use it, otherwise use the default from the\n            # response class, in the case of redirect it's 307\n            current_status_code = (\n                status_code if status_code else sub_response.status_code\n            )\n            if current_status_code is not None:\n                response_args[\"status_code\"] = current_status_code\n            if sub_response.status_code:\n                response_args[\"status_code\"] = sub_response.status_code\n            content = await serialize_response(\n                field=response_field,\n                response_content=raw_response,\n                include=response_model_include,\n                exclude=response_model_exclude,\n                by_alias=response_model_by_alias,\n                exclude_unset=response_model_exclude_unset,\n                exclude_defaults=response_model_exclude_defaults,\n                exclude_none=response_model_exclude_none,\n                is_coroutine=is_coroutine,\n            )\n            response = actual_response_class(content, **response_args)\n            if not is_body_allowed_for_status_code(response.status_code):\n                response.body = b\"\"\n            response.headers.raw.extend(sub_response.headers.raw)\n            return response\n\n    return app\n\n\ndef get_websocket_app(\n    dependant: Dependant, dependency_overrides_provider: Optional[Any] = None\n) -> Callable[[WebSocket], Coroutine[Any, Any, Any]]:\n    async def app(websocket: WebSocket) -> None:\n        solved_result = await solve_dependencies(\n            request=websocket,\n            dependant=dependant,\n            dependency_overrides_provider=dependency_overrides_provider,\n        )\n        values, errors, _, _2, _3 = solved_result\n        if errors:\n            await websocket.close(code=WS_1008_POLICY_VIOLATION)\n            raise WebSocketRequestValidationError(errors)\n        assert dependant.call is not None, \"dependant.call must be a function\"\n        await dependant.call(**values)\n\n    return app\n\n\nclass APIWebSocketRoute(routing.WebSocketRoute):\n    def __init__(\n        self,\n        path: str,\n        endpoint: Callable[..., Any],\n        *,\n        name: Optional[str] = None,\n        dependency_overrides_provider: Optional[Any] = None,\n    ) -> None:\n        self.path = path\n        self.endpoint = endpoint\n        self.name = get_name(endpoint) if name is None else name\n        self.path_regex, self.path_format, self.param_convertors = compile_path(path)\n        self.dependant = get_dependant(path=self.path_format, call=self.endpoint)\n        self.app = websocket_session(\n            get_websocket_app(\n                dependant=self.dependant,\n                dependency_overrides_provider=dependency_overrides_provider,\n            )\n        )\n\n    def matches(self, scope: Scope) -> Tuple[Match, Scope]:\n        match, child_scope = super().matches(scope)\n        if match != Match.NONE:\n            child_scope[\"route\"] = self\n        return match, child_scope\n\n\nclass APIRoute(routing.Route):\n    def __init__(\n        self,\n        path: str,\n        endpoint: Callable[..., Any],\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        name: Optional[str] = None,\n        methods: Optional[Union[Set[str], List[str]]] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Union[Type[Response], DefaultPlaceholder] = Default(\n            JSONResponse\n        ),\n        dependency_overrides_provider: Optional[Any] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Union[\n            Callable[[\"APIRoute\"], str], DefaultPlaceholder\n        ] = Default(generate_unique_id),\n    ) -> None:\n        self.path = path\n        self.endpoint = endpoint\n        self.response_model = response_model\n        self.summary = summary\n        self.response_description = response_description\n        self.deprecated = deprecated\n        self.operation_id = operation_id\n        self.response_model_include = response_model_include\n        self.response_model_exclude = response_model_exclude\n        self.response_model_by_alias = response_model_by_alias\n        self.response_model_exclude_unset = response_model_exclude_unset\n        self.response_model_exclude_defaults = response_model_exclude_defaults\n        self.response_model_exclude_none = response_model_exclude_none\n        self.include_in_schema = include_in_schema\n        self.response_class = response_class\n        self.dependency_overrides_provider = dependency_overrides_provider\n        self.callbacks = callbacks\n        self.openapi_extra = openapi_extra\n        self.generate_unique_id_function = generate_unique_id_function\n        self.tags = tags or []\n        self.responses = responses or {}\n        self.name = get_name(endpoint) if name is None else name\n        self.path_regex, self.path_format, self.param_convertors = compile_path(path)\n        if methods is None:\n            methods = [\"GET\"]\n        self.methods: Set[str] = {method.upper() for method in methods}\n        if isinstance(generate_unique_id_function, DefaultPlaceholder):\n            current_generate_unique_id: Callable[\n                [\"APIRoute\"], str\n            ] = generate_unique_id_function.value\n        else:\n            current_generate_unique_id = generate_unique_id_function\n        self.unique_id = self.operation_id or current_generate_unique_id(self)\n        # normalize enums e.g. http.HTTPStatus\n        if isinstance(status_code, IntEnum):\n            status_code = int(status_code)\n        self.status_code = status_code\n        if self.response_model:\n            assert is_body_allowed_for_status_code(\n                status_code\n            ), f\"Status code {status_code} must not have a response body\"\n            response_name = \"Response_\" + self.unique_id\n            self.response_field = create_response_field(\n                name=response_name, type_=self.response_model\n            )\n            # Create a clone of the field, so that a Pydantic submodel is not returned\n            # as is just because it's an instance of a subclass of a more limited class\n            # e.g. UserInDB (containing hashed_password) could be a subclass of User\n            # that doesn't have the hashed_password. But because it's a subclass, it\n            # would pass the validation and be returned as is.\n            # By being a new field, no inheritance will be passed as is. A new model\n            # will be always created.\n            self.secure_cloned_response_field: Optional[\n                ModelField\n            ] = create_cloned_field(self.response_field)\n        else:\n            self.response_field = None  # type: ignore\n            self.secure_cloned_response_field = None\n        if dependencies:\n            self.dependencies = list(dependencies)\n        else:\n            self.dependencies = []\n        self.description = description or inspect.cleandoc(self.endpoint.__doc__ or \"\")\n        # if a \"form feed\" character (page break) is found in the description text,\n        # truncate description text to the content preceding the first \"form feed\"\n        self.description = self.description.split(\"\\f\")[0].strip()\n        response_fields = {}\n        for additional_status_code, response in self.responses.items():\n            assert isinstance(response, dict), \"An additional response must be a dict\"\n            model = response.get(\"model\")\n            if model:\n                assert is_body_allowed_for_status_code(\n                    additional_status_code\n                ), f\"Status code {additional_status_code} must not have a response body\"\n                response_name = f\"Response_{additional_status_code}_{self.unique_id}\"\n                response_field = create_response_field(name=response_name, type_=model)\n                response_fields[additional_status_code] = response_field\n        if response_fields:\n            self.response_fields: Dict[Union[int, str], ModelField] = response_fields\n        else:\n            self.response_fields = {}\n\n        assert callable(endpoint), \"An endpoint must be a callable\"\n        self.dependant = get_dependant(path=self.path_format, call=self.endpoint)\n        for depends in self.dependencies[::-1]:\n            self.dependant.dependencies.insert(\n                0,\n                get_parameterless_sub_dependant(depends=depends, path=self.path_format),\n            )\n        self.body_field = get_body_field(dependant=self.dependant, name=self.unique_id)\n        self.app = request_response(self.get_route_handler())\n\n    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:\n        return get_request_handler(\n            dependant=self.dependant,\n            body_field=self.body_field,\n            status_code=self.status_code,\n            response_class=self.response_class,\n            response_field=self.secure_cloned_response_field,\n            response_model_include=self.response_model_include,\n            response_model_exclude=self.response_model_exclude,\n            response_model_by_alias=self.response_model_by_alias,\n            response_model_exclude_unset=self.response_model_exclude_unset,\n            response_model_exclude_defaults=self.response_model_exclude_defaults,\n            response_model_exclude_none=self.response_model_exclude_none,\n            dependency_overrides_provider=self.dependency_overrides_provider,\n        )\n\n    def matches(self, scope: Scope) -> Tuple[Match, Scope]:\n        match, child_scope = super().matches(scope)\n        if match != Match.NONE:\n            child_scope[\"route\"] = self\n        return match, child_scope\n\n\nclass APIRouter(routing.Router):\n    def __init__(\n        self,\n        *,\n        prefix: str = \"\",\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        default_response_class: Type[Response] = Default(JSONResponse),\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        routes: Optional[List[routing.BaseRoute]] = None,\n        redirect_slashes: bool = True,\n        default: Optional[ASGIApp] = None,\n        dependency_overrides_provider: Optional[Any] = None,\n        route_class: Type[APIRoute] = APIRoute,\n        on_startup: Optional[Sequence[Callable[[], Any]]] = None,\n        on_shutdown: Optional[Sequence[Callable[[], Any]]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> None:\n        super().__init__(\n            routes=routes,\n            redirect_slashes=redirect_slashes,\n            default=default,\n            on_startup=on_startup,\n            on_shutdown=on_shutdown,\n        )\n        if prefix:\n            assert prefix.startswith(\"/\"), \"A path prefix must start with '/'\"\n            assert not prefix.endswith(\n                \"/\"\n            ), \"A path prefix must not end with '/', as the routes will start with '/'\"\n        self.prefix = prefix\n        self.tags: List[Union[str, Enum]] = tags or []\n        self.dependencies = list(dependencies or []) or []\n        self.deprecated = deprecated\n        self.include_in_schema = include_in_schema\n        self.responses = responses or {}\n        self.callbacks = callbacks or []\n        self.dependency_overrides_provider = dependency_overrides_provider\n        self.route_class = route_class\n        self.default_response_class = default_response_class\n        self.generate_unique_id_function = generate_unique_id_function\n\n    def add_api_route(\n        self,\n        path: str,\n        endpoint: Callable[..., Any],\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        methods: Optional[Union[Set[str], List[str]]] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Union[Type[Response], DefaultPlaceholder] = Default(\n            JSONResponse\n        ),\n        name: Optional[str] = None,\n        route_class_override: Optional[Type[APIRoute]] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Union[\n            Callable[[APIRoute], str], DefaultPlaceholder\n        ] = Default(generate_unique_id),\n    ) -> None:\n        route_class = route_class_override or self.route_class\n        responses = responses or {}\n        combined_responses = {**self.responses, **responses}\n        current_response_class = get_value_or_default(\n            response_class, self.default_response_class\n        )\n        current_tags = self.tags.copy()\n        if tags:\n            current_tags.extend(tags)\n        current_dependencies = self.dependencies.copy()\n        if dependencies:\n            current_dependencies.extend(dependencies)\n        current_callbacks = self.callbacks.copy()\n        if callbacks:\n            current_callbacks.extend(callbacks)\n        current_generate_unique_id = get_value_or_default(\n            generate_unique_id_function, self.generate_unique_id_function\n        )\n        route = route_class(\n            self.prefix + path,\n            endpoint=endpoint,\n            response_model=response_model,\n            status_code=status_code,\n            tags=current_tags,\n            dependencies=current_dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=combined_responses,\n            deprecated=deprecated or self.deprecated,\n            methods=methods,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema and self.include_in_schema,\n            response_class=current_response_class,\n            name=name,\n            dependency_overrides_provider=self.dependency_overrides_provider,\n            callbacks=current_callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=current_generate_unique_id,\n        )\n        self.routes.append(route)\n\n    def api_route(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        methods: Optional[List[str]] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        def decorator(func: DecoratedCallable) -> DecoratedCallable:\n            self.add_api_route(\n                path,\n                func,\n                response_model=response_model,\n                status_code=status_code,\n                tags=tags,\n                dependencies=dependencies,\n                summary=summary,\n                description=description,\n                response_description=response_description,\n                responses=responses,\n                deprecated=deprecated,\n                methods=methods,\n                operation_id=operation_id,\n                response_model_include=response_model_include,\n                response_model_exclude=response_model_exclude,\n                response_model_by_alias=response_model_by_alias,\n                response_model_exclude_unset=response_model_exclude_unset,\n                response_model_exclude_defaults=response_model_exclude_defaults,\n                response_model_exclude_none=response_model_exclude_none,\n                include_in_schema=include_in_schema,\n                response_class=response_class,\n                name=name,\n                callbacks=callbacks,\n                openapi_extra=openapi_extra,\n                generate_unique_id_function=generate_unique_id_function,\n            )\n            return func\n\n        return decorator\n\n    def add_api_websocket_route(\n        self, path: str, endpoint: Callable[..., Any], name: Optional[str] = None\n    ) -> None:\n        route = APIWebSocketRoute(\n            self.prefix + path,\n            endpoint=endpoint,\n            name=name,\n            dependency_overrides_provider=self.dependency_overrides_provider,\n        )\n        self.routes.append(route)\n\n    def websocket(\n        self, path: str, name: Optional[str] = None\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        def decorator(func: DecoratedCallable) -> DecoratedCallable:\n            self.add_api_websocket_route(path, func, name=name)\n            return func\n\n        return decorator\n\n    def include_router(\n        self,\n        router: \"APIRouter\",\n        *,\n        prefix: str = \"\",\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        default_response_class: Type[Response] = Default(JSONResponse),\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> None:\n        if prefix:\n            assert prefix.startswith(\"/\"), \"A path prefix must start with '/'\"\n            assert not prefix.endswith(\n                \"/\"\n            ), \"A path prefix must not end with '/', as the routes will start with '/'\"\n        else:\n            for r in router.routes:\n                path = getattr(r, \"path\")\n                name = getattr(r, \"name\", \"unknown\")\n                if path is not None and not path:\n                    raise Exception(\n                        f\"Prefix and path cannot be both empty (path operation: {name})\"\n                    )\n        if responses is None:\n            responses = {}\n        for route in router.routes:\n            if isinstance(route, APIRoute):\n                combined_responses = {**responses, **route.responses}\n                use_response_class = get_value_or_default(\n                    route.response_class,\n                    router.default_response_class,\n                    default_response_class,\n                    self.default_response_class,\n                )\n                current_tags = []\n                if tags:\n                    current_tags.extend(tags)\n                if route.tags:\n                    current_tags.extend(route.tags)\n                current_dependencies: List[params.Depends] = []\n                if dependencies:\n                    current_dependencies.extend(dependencies)\n                if route.dependencies:\n                    current_dependencies.extend(route.dependencies)\n                current_callbacks = []\n                if callbacks:\n                    current_callbacks.extend(callbacks)\n                if route.callbacks:\n                    current_callbacks.extend(route.callbacks)\n                current_generate_unique_id = get_value_or_default(\n                    route.generate_unique_id_function,\n                    router.generate_unique_id_function,\n                    generate_unique_id_function,\n                    self.generate_unique_id_function,\n                )\n                self.add_api_route(\n                    prefix + route.path,\n                    route.endpoint,\n                    response_model=route.response_model,\n                    status_code=route.status_code,\n                    tags=current_tags,\n                    dependencies=current_dependencies,\n                    summary=route.summary,\n                    description=route.description,\n                    response_description=route.response_description,\n                    responses=combined_responses,\n                    deprecated=route.deprecated or deprecated or self.deprecated,\n                    methods=route.methods,\n                    operation_id=route.operation_id,\n                    response_model_include=route.response_model_include,\n                    response_model_exclude=route.response_model_exclude,\n                    response_model_by_alias=route.response_model_by_alias,\n                    response_model_exclude_unset=route.response_model_exclude_unset,\n                    response_model_exclude_defaults=route.response_model_exclude_defaults,\n                    response_model_exclude_none=route.response_model_exclude_none,\n                    include_in_schema=route.include_in_schema\n                    and self.include_in_schema\n                    and include_in_schema,\n                    response_class=use_response_class,\n                    name=route.name,\n                    route_class_override=type(route),\n                    callbacks=current_callbacks,\n                    openapi_extra=route.openapi_extra,\n                    generate_unique_id_function=current_generate_unique_id,\n                )\n            elif isinstance(route, routing.Route):\n                methods = list(route.methods or [])\n                self.add_route(\n                    prefix + route.path,\n                    route.endpoint,\n                    methods=methods,\n                    include_in_schema=route.include_in_schema,\n                    name=route.name,\n                )\n            elif isinstance(route, APIWebSocketRoute):\n                self.add_api_websocket_route(\n                    prefix + route.path, route.endpoint, name=route.name\n                )\n            elif isinstance(route, routing.WebSocketRoute):\n                self.add_websocket_route(\n                    prefix + route.path, route.endpoint, name=route.name\n                )\n        for handler in router.on_startup:\n            self.add_event_handler(\"startup\", handler)\n        for handler in router.on_shutdown:\n            self.add_event_handler(\"shutdown\", handler)\n\n    def get(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.api_route(\n            path=path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            methods=[\"GET\"],\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def put(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.api_route(\n            path=path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            methods=[\"PUT\"],\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def post(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[params.Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.api_route(\n\n... (truncated at 40000 chars)"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_N86hYcP87IOkDMIMS1Hh0973",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/dependencies/utils.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_N86hYcP87IOkDMIMS1Hh0973",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/dependencies/utils.py"
+      },
+      "result": "import dataclasses\nimport inspect\nfrom contextlib import contextmanager\nfrom copy import deepcopy\nfrom typing import (\n    Any,\n    Callable,\n    Coroutine,\n    Dict,\n    ForwardRef,\n    List,\n    Mapping,\n    Optional,\n    Sequence,\n    Tuple,\n    Type,\n    Union,\n    cast,\n)\n\nimport anyio\nfrom fastapi import params\nfrom fastapi.concurrency import (\n    AsyncExitStack,\n    asynccontextmanager,\n    contextmanager_in_threadpool,\n)\nfrom fastapi.dependencies.models import Dependant, SecurityRequirement\nfrom fastapi.logger import logger\nfrom fastapi.security.base import SecurityBase\nfrom fastapi.security.oauth2 import OAuth2, SecurityScopes\nfrom fastapi.security.open_id_connect_url import OpenIdConnect\nfrom fastapi.utils import create_response_field, get_path_param_names\nfrom pydantic import BaseModel, create_model\nfrom pydantic.error_wrappers import ErrorWrapper\nfrom pydantic.errors import MissingError\nfrom pydantic.fields import (\n    SHAPE_FROZENSET,\n    SHAPE_LIST,\n    SHAPE_SEQUENCE,\n    SHAPE_SET,\n    SHAPE_SINGLETON,\n    SHAPE_TUPLE,\n    SHAPE_TUPLE_ELLIPSIS,\n    FieldInfo,\n    ModelField,\n    Required,\n    Undefined,\n)\nfrom pydantic.schema import get_annotation_from_field_info\nfrom pydantic.typing import evaluate_forwardref\nfrom pydantic.utils import lenient_issubclass\nfrom starlette.background import BackgroundTasks\nfrom starlette.concurrency import run_in_threadpool\nfrom starlette.datastructures import FormData, Headers, QueryParams, UploadFile\nfrom starlette.requests import HTTPConnection, Request\nfrom starlette.responses import Response\nfrom starlette.websockets import WebSocket\n\nsequence_shapes = {\n    SHAPE_LIST,\n    SHAPE_SET,\n    SHAPE_FROZENSET,\n    SHAPE_TUPLE,\n    SHAPE_SEQUENCE,\n    SHAPE_TUPLE_ELLIPSIS,\n}\nsequence_types = (list, set, tuple)\nsequence_shape_to_type = {\n    SHAPE_LIST: list,\n    SHAPE_SET: set,\n    SHAPE_TUPLE: tuple,\n    SHAPE_SEQUENCE: list,\n    SHAPE_TUPLE_ELLIPSIS: list,\n}\n\n\nmultipart_not_installed_error = (\n    'Form data requires \"python-multipart\" to be installed. \\n'\n    'You can install \"python-multipart\" with: \\n\\n'\n    \"pip install python-multipart\\n\"\n)\nmultipart_incorrect_install_error = (\n    'Form data requires \"python-multipart\" to be installed. '\n    'It seems you installed \"multipart\" instead. \\n'\n    'You can remove \"multipart\" with: \\n\\n'\n    \"pip uninstall multipart\\n\\n\"\n    'And then install \"python-multipart\" with: \\n\\n'\n    \"pip install python-multipart\\n\"\n)\n\n\ndef check_file_field(field: ModelField) -> None:\n    field_info = field.field_info\n    if isinstance(field_info, params.Form):\n        try:\n            # __version__ is available in both multiparts, and can be mocked\n            from multipart import __version__  # type: ignore\n\n            assert __version__\n            try:\n                # parse_options_header is only available in the right multipart\n                from multipart.multipart import parse_options_header  # type: ignore\n\n                assert parse_options_header\n            except ImportError:\n                logger.error(multipart_incorrect_install_error)\n                raise RuntimeError(multipart_incorrect_install_error)\n        except ImportError:\n            logger.error(multipart_not_installed_error)\n            raise RuntimeError(multipart_not_installed_error)\n\n\ndef get_param_sub_dependant(\n    *, param: inspect.Parameter, path: str, security_scopes: Optional[List[str]] = None\n) -> Dependant:\n    depends: params.Depends = param.default\n    if depends.dependency:\n        dependency = depends.dependency\n    else:\n        dependency = param.annotation\n    return get_sub_dependant(\n        depends=depends,\n        dependency=dependency,\n        path=path,\n        name=param.name,\n        security_scopes=security_scopes,\n    )\n\n\ndef get_parameterless_sub_dependant(*, depends: params.Depends, path: str) -> Dependant:\n    assert callable(\n        depends.dependency\n    ), \"A parameter-less dependency must have a callable dependency\"\n    return get_sub_dependant(depends=depends, dependency=depends.dependency, path=path)\n\n\ndef get_sub_dependant(\n    *,\n    depends: params.Depends,\n    dependency: Callable[..., Any],\n    path: str,\n    name: Optional[str] = None,\n    security_scopes: Optional[List[str]] = None,\n) -> Dependant:\n    security_requirement = None\n    security_scopes = security_scopes or []\n    if isinstance(depends, params.Security):\n        dependency_scopes = depends.scopes\n        security_scopes.extend(dependency_scopes)\n    if isinstance(dependency, SecurityBase):\n        use_scopes: List[str] = []\n        if isinstance(dependency, (OAuth2, OpenIdConnect)):\n            use_scopes = security_scopes\n        security_requirement = SecurityRequirement(\n            security_scheme=dependency, scopes=use_scopes\n        )\n    sub_dependant = get_dependant(\n        path=path,\n        call=dependency,\n        name=name,\n        security_scopes=security_scopes,\n        use_cache=depends.use_cache,\n    )\n    if security_requirement:\n        sub_dependant.security_requirements.append(security_requirement)\n    return sub_dependant\n\n\nCacheKey = Tuple[Optional[Callable[..., Any]], Tuple[str, ...]]\n\n\ndef get_flat_dependant(\n    dependant: Dependant,\n    *,\n    skip_repeats: bool = False,\n    visited: Optional[List[CacheKey]] = None,\n) -> Dependant:\n    if visited is None:\n        visited = []\n    visited.append(dependant.cache_key)\n\n    flat_dependant = Dependant(\n        path_params=dependant.path_params.copy(),\n        query_params=dependant.query_params.copy(),\n        header_params=dependant.header_params.copy(),\n        cookie_params=dependant.cookie_params.copy(),\n        body_params=dependant.body_params.copy(),\n        security_schemes=dependant.security_requirements.copy(),\n        use_cache=dependant.use_cache,\n        path=dependant.path,\n    )\n    for sub_dependant in dependant.dependencies:\n        if skip_repeats and sub_dependant.cache_key in visited:\n            continue\n        flat_sub = get_flat_dependant(\n            sub_dependant, skip_repeats=skip_repeats, visited=visited\n        )\n        flat_dependant.path_params.extend(flat_sub.path_params)\n        flat_dependant.query_params.extend(flat_sub.query_params)\n        flat_dependant.header_params.extend(flat_sub.header_params)\n        flat_dependant.cookie_params.extend(flat_sub.cookie_params)\n        flat_dependant.body_params.extend(flat_sub.body_params)\n        flat_dependant.security_requirements.extend(flat_sub.security_requirements)\n    return flat_dependant\n\n\ndef get_flat_params(dependant: Dependant) -> List[ModelField]:\n    flat_dependant = get_flat_dependant(dependant, skip_repeats=True)\n    return (\n        flat_dependant.path_params\n        + flat_dependant.query_params\n        + flat_dependant.header_params\n        + flat_dependant.cookie_params\n    )\n\n\ndef is_scalar_field(field: ModelField) -> bool:\n    field_info = field.field_info\n    if not (\n        field.shape == SHAPE_SINGLETON\n        and not lenient_issubclass(field.type_, BaseModel)\n        and not lenient_issubclass(field.type_, sequence_types + (dict,))\n        and not dataclasses.is_dataclass(field.type_)\n        and not isinstance(field_info, params.Body)\n    ):\n        return False\n    if field.sub_fields:\n        if not all(is_scalar_field(f) for f in field.sub_fields):\n            return False\n    return True\n\n\ndef is_scalar_sequence_field(field: ModelField) -> bool:\n    if (field.shape in sequence_shapes) and not lenient_issubclass(\n        field.type_, BaseModel\n    ):\n        if field.sub_fields is not None:\n            for sub_field in field.sub_fields:\n                if not is_scalar_field(sub_field):\n                    return False\n        return True\n    if lenient_issubclass(field.type_, sequence_types):\n        return True\n    return False\n\n\ndef get_typed_signature(call: Callable[..., Any]) -> inspect.Signature:\n    signature = inspect.signature(call)\n    globalns = getattr(call, \"__globals__\", {})\n    typed_params = [\n        inspect.Parameter(\n            name=param.name,\n            kind=param.kind,\n            default=param.default,\n            annotation=get_typed_annotation(param, globalns),\n        )\n        for param in signature.parameters.values()\n    ]\n    typed_signature = inspect.Signature(typed_params)\n    return typed_signature\n\n\ndef get_typed_annotation(param: inspect.Parameter, globalns: Dict[str, Any]) -> Any:\n    annotation = param.annotation\n    if isinstance(annotation, str):\n        annotation = ForwardRef(annotation)\n        annotation = evaluate_forwardref(annotation, globalns, globalns)\n    return annotation\n\n\ndef get_dependant(\n    *,\n    path: str,\n    call: Callable[..., Any],\n    name: Optional[str] = None,\n    security_scopes: Optional[List[str]] = None,\n    use_cache: bool = True,\n) -> Dependant:\n    path_param_names = get_path_param_names(path)\n    endpoint_signature = get_typed_signature(call)\n    signature_params = endpoint_signature.parameters\n    dependant = Dependant(\n        call=call,\n        name=name,\n        path=path,\n        security_scopes=security_scopes,\n        use_cache=use_cache,\n    )\n    for param_name, param in signature_params.items():\n        if isinstance(param.default, params.Depends):\n            sub_dependant = get_param_sub_dependant(\n                param=param, path=path, security_scopes=security_scopes\n            )\n            dependant.dependencies.append(sub_dependant)\n            continue\n        if add_non_field_param_to_dependency(param=param, dependant=dependant):\n            continue\n        param_field = get_param_field(\n            param=param, default_field_info=params.Query, param_name=param_name\n        )\n        if param_name in path_param_names:\n            assert is_scalar_field(\n                field=param_field\n            ), \"Path params must be of one of the supported types\"\n            ignore_default = not isinstance(param.default, params.Path)\n            param_field = get_param_field(\n                param=param,\n                param_name=param_name,\n                default_field_info=params.Path,\n                force_type=params.ParamTypes.path,\n                ignore_default=ignore_default,\n            )\n            add_param_to_fields(field=param_field, dependant=dependant)\n        elif is_scalar_field(field=param_field):\n            add_param_to_fields(field=param_field, dependant=dependant)\n        elif isinstance(\n            param.default, (params.Query, params.Header)\n        ) and is_scalar_sequence_field(param_field):\n            add_param_to_fields(field=param_field, dependant=dependant)\n        else:\n            field_info = param_field.field_info\n            assert isinstance(\n                field_info, params.Body\n            ), f\"Param: {param_field.name} can only be a request body, using Body()\"\n            dependant.body_params.append(param_field)\n    return dependant\n\n\ndef add_non_field_param_to_dependency(\n    *, param: inspect.Parameter, dependant: Dependant\n) -> Optional[bool]:\n    if lenient_issubclass(param.annotation, Request):\n        dependant.request_param_name = param.name\n        return True\n    elif lenient_issubclass(param.annotation, WebSocket):\n        dependant.websocket_param_name = param.name\n        return True\n    elif lenient_issubclass(param.annotation, HTTPConnection):\n        dependant.http_connection_param_name = param.name\n        return True\n    elif lenient_issubclass(param.annotation, Response):\n        dependant.response_param_name = param.name\n        return True\n    elif lenient_issubclass(param.annotation, BackgroundTasks):\n        dependant.background_tasks_param_name = param.name\n        return True\n    elif lenient_issubclass(param.annotation, SecurityScopes):\n        dependant.security_scopes_param_name = param.name\n        return True\n    return None\n\n\ndef get_param_field(\n    *,\n    param: inspect.Parameter,\n    param_name: str,\n    default_field_info: Type[params.Param] = params.Param,\n    force_type: Optional[params.ParamTypes] = None,\n    ignore_default: bool = False,\n) -> ModelField:\n    default_value: Any = Undefined\n    had_schema = False\n    if not param.default == param.empty and ignore_default is False:\n        default_value = param.default\n    if isinstance(default_value, FieldInfo):\n        had_schema = True\n        field_info = default_value\n        default_value = field_info.default\n        if (\n            isinstance(field_info, params.Param)\n            and getattr(field_info, \"in_\", None) is None\n        ):\n            field_info.in_ = default_field_info.in_\n        if force_type:\n            field_info.in_ = force_type  # type: ignore\n    else:\n        field_info = default_field_info(default=default_value)\n    required = True\n    if default_value is Required or ignore_default:\n        required = True\n        default_value = None\n    elif default_value is not Undefined:\n        required = False\n    annotation: Any = Any\n    if not param.annotation == param.empty:\n        annotation = param.annotation\n    annotation = get_annotation_from_field_info(annotation, field_info, param_name)\n    if not field_info.alias and getattr(field_info, \"convert_underscores\", None):\n        alias = param.name.replace(\"_\", \"-\")\n    else:\n        alias = field_info.alias or param.name\n    field = create_response_field(\n        name=param.name,\n        type_=annotation,\n        default=default_value,\n        alias=alias,\n        required=required,\n        field_info=field_info,\n    )\n    if not had_schema and not is_scalar_field(field=field):\n        field.field_info = params.Body(field_info.default)\n    if not had_schema and lenient_issubclass(field.type_, UploadFile):\n        field.field_info = params.File(field_info.default)\n\n    return field\n\n\ndef add_param_to_fields(*, field: ModelField, dependant: Dependant) -> None:\n    field_info = cast(params.Param, field.field_info)\n    if field_info.in_ == params.ParamTypes.path:\n        dependant.path_params.append(field)\n    elif field_info.in_ == params.ParamTypes.query:\n        dependant.query_params.append(field)\n    elif field_info.in_ == params.ParamTypes.header:\n        dependant.header_params.append(field)\n    else:\n        assert (\n            field_info.in_ == params.ParamTypes.cookie\n        ), f\"non-body parameters must be in path, query, header or cookie: {field.name}\"\n        dependant.cookie_params.append(field)\n\n\ndef is_coroutine_callable(call: Callable[..., Any]) -> bool:\n    if inspect.isroutine(call):\n        return inspect.iscoroutinefunction(call)\n    if inspect.isclass(call):\n        return False\n    dunder_call = getattr(call, \"__call__\", None)\n    return inspect.iscoroutinefunction(dunder_call)\n\n\ndef is_async_gen_callable(call: Callable[..., Any]) -> bool:\n    if inspect.isasyncgenfunction(call):\n        return True\n    dunder_call = getattr(call, \"__call__\", None)\n    return inspect.isasyncgenfunction(dunder_call)\n\n\ndef is_gen_callable(call: Callable[..., Any]) -> bool:\n    if inspect.isgeneratorfunction(call):\n        return True\n    dunder_call = getattr(call, \"__call__\", None)\n    return inspect.isgeneratorfunction(dunder_call)\n\n\nasync def solve_generator(\n    *, call: Callable[..., Any], stack: AsyncExitStack, sub_values: Dict[str, Any]\n) -> Any:\n    if is_gen_callable(call):\n        cm = contextmanager_in_threadpool(contextmanager(call)(**sub_values))\n    elif is_async_gen_callable(call):\n        cm = asynccontextmanager(call)(**sub_values)\n    return await stack.enter_async_context(cm)\n\n\nasync def solve_dependencies(\n    *,\n    request: Union[Request, WebSocket],\n    dependant: Dependant,\n    body: Optional[Union[Dict[str, Any], FormData]] = None,\n    background_tasks: Optional[BackgroundTasks] = None,\n    response: Optional[Response] = None,\n    dependency_overrides_provider: Optional[Any] = None,\n    dependency_cache: Optional[Dict[Tuple[Callable[..., Any], Tuple[str]], Any]] = None,\n) -> Tuple[\n    Dict[str, Any],\n    List[ErrorWrapper],\n    Optional[BackgroundTasks],\n    Response,\n    Dict[Tuple[Callable[..., Any], Tuple[str]], Any],\n]:\n    values: Dict[str, Any] = {}\n    errors: List[ErrorWrapper] = []\n    if response is None:\n        response = Response()\n        del response.headers[\"content-length\"]\n        response.status_code = None  # type: ignore\n    dependency_cache = dependency_cache or {}\n    sub_dependant: Dependant\n    for sub_dependant in dependant.dependencies:\n        sub_dependant.call = cast(Callable[..., Any], sub_dependant.call)\n        sub_dependant.cache_key = cast(\n            Tuple[Callable[..., Any], Tuple[str]], sub_dependant.cache_key\n        )\n        call = sub_dependant.call\n        use_sub_dependant = sub_dependant\n        if (\n            dependency_overrides_provider\n            and dependency_overrides_provider.dependency_overrides\n        ):\n            original_call = sub_dependant.call\n            call = getattr(\n                dependency_overrides_provider, \"dependency_overrides\", {}\n            ).get(original_call, original_call)\n            use_path: str = sub_dependant.path  # type: ignore\n            use_sub_dependant = get_dependant(\n                path=use_path,\n                call=call,\n                name=sub_dependant.name,\n                security_scopes=sub_dependant.security_scopes,\n            )\n\n        solved_result = await solve_dependencies(\n            request=request,\n            dependant=use_sub_dependant,\n            body=body,\n            background_tasks=background_tasks,\n            response=response,\n            dependency_overrides_provider=dependency_overrides_provider,\n            dependency_cache=dependency_cache,\n        )\n        (\n            sub_values,\n            sub_errors,\n            background_tasks,\n            _,  # the subdependency returns the same response we have\n            sub_dependency_cache,\n        ) = solved_result\n        dependency_cache.update(sub_dependency_cache)\n        if sub_errors:\n            errors.extend(sub_errors)\n            continue\n        if sub_dependant.use_cache and sub_dependant.cache_key in dependency_cache:\n            solved = dependency_cache[sub_dependant.cache_key]\n        elif is_gen_callable(call) or is_async_gen_callable(call):\n            stack = request.scope.get(\"fastapi_astack\")\n            assert isinstance(stack, AsyncExitStack)\n            solved = await solve_generator(\n                call=call, stack=stack, sub_values=sub_values\n            )\n        elif is_coroutine_callable(call):\n            solved = await call(**sub_values)\n        else:\n            solved = await run_in_threadpool(call, **sub_values)\n        if sub_dependant.name is not None:\n            values[sub_dependant.name] = solved\n        if sub_dependant.cache_key not in dependency_cache:\n            dependency_cache[sub_dependant.cache_key] = solved\n    path_values, path_errors = request_params_to_args(\n        dependant.path_params, request.path_params\n    )\n    query_values, query_errors = request_params_to_args(\n        dependant.query_params, request.query_params\n    )\n    header_values, header_errors = request_params_to_args(\n        dependant.header_params, request.headers\n    )\n    cookie_values, cookie_errors = request_params_to_args(\n        dependant.cookie_params, request.cookies\n    )\n    values.update(path_values)\n    values.update(query_values)\n    values.update(header_values)\n    values.update(cookie_values)\n    errors += path_errors + query_errors + header_errors + cookie_errors\n    if dependant.body_params:\n        (\n            body_values,\n            body_errors,\n        ) = await request_body_to_args(  # body_params checked above\n            required_params=dependant.body_params, received_body=body\n        )\n        values.update(body_values)\n        errors.extend(body_errors)\n    if dependant.http_connection_param_name:\n        values[dependant.http_connection_param_name] = request\n    if dependant.request_param_name and isinstance(request, Request):\n        values[dependant.request_param_name] = request\n    elif dependant.websocket_param_name and isinstance(request, WebSocket):\n        values[dependant.websocket_param_name] = request\n    if dependant.background_tasks_param_name:\n        if background_tasks is None:\n            background_tasks = BackgroundTasks()\n        values[dependant.background_tasks_param_name] = background_tasks\n    if dependant.response_param_name:\n        values[dependant.response_param_name] = response\n    if dependant.security_scopes_param_name:\n        values[dependant.security_scopes_param_name] = SecurityScopes(\n            scopes=dependant.security_scopes\n        )\n    return values, errors, background_tasks, response, dependency_cache\n\n\ndef request_params_to_args(\n    required_params: Sequence[ModelField],\n    received_params: Union[Mapping[str, Any], QueryParams, Headers],\n) -> Tuple[Dict[str, Any], List[ErrorWrapper]]:\n    values = {}\n    errors = []\n    for field in required_params:\n        if is_scalar_sequence_field(field) and isinstance(\n            received_params, (QueryParams, Headers)\n        ):\n            value = received_params.getlist(field.alias) or field.default\n        else:\n            value = received_params.get(field.alias)\n        field_info = field.field_info\n        assert isinstance(\n            field_info, params.Param\n        ), \"Params must be subclasses of Param\"\n        if value is None:\n            if field.required:\n                errors.append(\n                    ErrorWrapper(\n                        MissingError(), loc=(field_info.in_.value, field.alias)\n                    )\n                )\n            else:\n                values[field.name] = deepcopy(field.default)\n            continue\n        v_, errors_ = field.validate(\n            value, values, loc=(field_info.in_.value, field.alias)\n        )\n        if isinstance(errors_, ErrorWrapper):\n            errors.append(errors_)\n        elif isinstance(errors_, list):\n            errors.extend(errors_)\n        else:\n            values[field.name] = v_\n    return values, errors\n\n\nasync def request_body_to_args(\n    required_params: List[ModelField],\n    received_body: Optional[Union[Dict[str, Any], FormData]],\n) -> Tuple[Dict[str, Any], List[ErrorWrapper]]:\n    values = {}\n    errors = []\n    if required_params:\n        field = required_params[0]\n        field_info = field.field_info\n        embed = getattr(field_info, \"embed\", None)\n        field_alias_omitted = len(required_params) == 1 and not embed\n        if field_alias_omitted:\n            received_body = {field.alias: received_body}\n\n        for field in required_params:\n            loc: Tuple[str, ...]\n            if field_alias_omitted:\n                loc = (\"body\",)\n            else:\n                loc = (\"body\", field.alias)\n\n            value: Optional[Any] = None\n            if received_body is not None:\n                if (\n                    field.shape in sequence_shapes or field.type_ in sequence_types\n                ) and isinstance(received_body, FormData):\n                    value = received_body.getlist(field.alias)\n                else:\n                    try:\n                        value = received_body.get(field.alias)\n                    except AttributeError:\n                        errors.append(get_missing_field_error(loc))\n                        continue\n            if (\n                value is None\n                or (isinstance(field_info, params.Form) and value == \"\")\n                or (\n                    isinstance(field_info, params.Form)\n                    and field.shape in sequence_shapes\n                    and len(value) == 0\n                )\n            ):\n                if field.required:\n                    errors.append(get_missing_field_error(loc))\n                else:\n                    values[field.name] = deepcopy(field.default)\n                continue\n            if (\n                isinstance(field_info, params.File)\n                and lenient_issubclass(field.type_, bytes)\n                and isinstance(value, UploadFile)\n            ):\n                value = await value.read()\n            elif (\n                field.shape in sequence_shapes\n                and isinstance(field_info, params.File)\n                and lenient_issubclass(field.type_, bytes)\n                and isinstance(value, sequence_types)\n            ):\n                results: List[Union[bytes, str]] = []\n\n                async def process_fn(\n                    fn: Callable[[], Coroutine[Any, Any, Any]]\n                ) -> None:\n                    result = await fn()\n                    results.append(result)\n\n                async with anyio.create_task_group() as tg:\n                    for sub_value in value:\n                        tg.start_soon(process_fn, sub_value.read)\n                value = sequence_shape_to_type[field.shape](results)\n\n            v_, errors_ = field.validate(value, values, loc=loc)\n\n            if isinstance(errors_, ErrorWrapper):\n                errors.append(errors_)\n            elif isinstance(errors_, list):\n                errors.extend(errors_)\n            else:\n                values[field.name] = v_\n    return values, errors\n\n\ndef get_missing_field_error(loc: Tuple[str, ...]) -> ErrorWrapper:\n    missing_field_error = ErrorWrapper(MissingError(), loc=loc)\n    return missing_field_error\n\n\ndef get_body_field(*, dependant: Dependant, name: str) -> Optional[ModelField]:\n    flat_dependant = get_flat_dependant(dependant)\n    if not flat_dependant.body_params:\n        return None\n    first_param = flat_dependant.body_params[0]\n    field_info = first_param.field_info\n    embed = getattr(field_info, \"embed\", None)\n    body_param_names_set = {param.name for param in flat_dependant.body_params}\n    if len(body_param_names_set) == 1 and not embed:\n        check_file_field(first_param)\n        return first_param\n    # If one field requires to embed, all have to be embedded\n    # in case a sub-dependency is evaluated with a single unique body field\n    # That is combined (embedded) with other body fields\n    for param in flat_dependant.body_params:\n        setattr(param.field_info, \"embed\", True)\n    model_name = \"Body_\" + name\n    BodyModel: Type[BaseModel] = create_model(model_name)\n    for f in flat_dependant.body_params:\n        BodyModel.__fields__[f.name] = f\n    required = any(True for f in flat_dependant.body_params if f.required)\n\n    BodyFieldInfo_kwargs: Dict[str, Any] = dict(default=None)\n    if any(isinstance(f.field_info, params.File) for f in flat_dependant.body_params):\n        BodyFieldInfo: Type[params.Body] = params.File\n    elif any(isinstance(f.field_info, params.Form) for f in flat_dependant.body_params):\n        BodyFieldInfo = params.Form\n    else:\n        BodyFieldInfo = params.Body\n\n        body_param_media_types = [\n            getattr(f.field_info, \"media_type\")\n            for f in flat_dependant.body_params\n            if isinstance(f.field_info, params.Body)\n        ]\n        if len(set(body_param_media_types)) == 1:\n            BodyFieldInfo_kwargs[\"media_type\"] = body_param_media_types[0]\n    final_field = create_response_field(\n        name=\"body\",\n        type_=BodyModel,\n        required=required,\n        alias=\"body\",\n        field_info=BodyFieldInfo(**BodyFieldInfo_kwargs),\n    )\n    check_file_field(final_field)\n    return final_field\n"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_bbppl08G6NcTRgEtTRip5999",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/params.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_bbppl08G6NcTRgEtTRip5999",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/params.py"
+      },
+      "result": "from enum import Enum\nfrom typing import Any, Callable, Dict, Optional, Sequence\n\nfrom pydantic.fields import FieldInfo, Undefined\n\n\nclass ParamTypes(Enum):\n    query = \"query\"\n    header = \"header\"\n    path = \"path\"\n    cookie = \"cookie\"\n\n\nclass Param(FieldInfo):\n    in_: ParamTypes\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        self.deprecated = deprecated\n        self.example = example\n        self.examples = examples\n        self.include_in_schema = include_in_schema\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            **extra,\n        )\n\n    def __repr__(self) -> str:\n        return f\"{self.__class__.__name__}({self.default})\"\n\n\nclass Path(Param):\n    in_ = ParamTypes.path\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        self.in_ = self.in_\n        super().__init__(\n            default=...,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Query(Param):\n    in_ = ParamTypes.query\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Header(Param):\n    in_ = ParamTypes.header\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        convert_underscores: bool = True,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        self.convert_underscores = convert_underscores\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Cookie(Param):\n    in_ = ParamTypes.cookie\n\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            deprecated=deprecated,\n            example=example,\n            examples=examples,\n            include_in_schema=include_in_schema,\n            **extra,\n        )\n\n\nclass Body(FieldInfo):\n    def __init__(\n        self,\n        default: Any = Undefined,\n        *,\n        embed: bool = False,\n        media_type: str = \"application/json\",\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        **extra: Any,\n    ):\n        self.embed = embed\n        self.media_type = media_type\n        self.example = example\n        self.examples = examples\n        super().__init__(\n            default=default,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            **extra,\n        )\n\n    def __repr__(self) -> str:\n        return f\"{self.__class__.__name__}({self.default})\"\n\n\nclass Form(Body):\n    def __init__(\n        self,\n        default: Any,\n        *,\n        media_type: str = \"application/x-www-form-urlencoded\",\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            embed=True,\n            media_type=media_type,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            example=example,\n            examples=examples,\n            **extra,\n        )\n\n\nclass File(Form):\n    def __init__(\n        self,\n        default: Any,\n        *,\n        media_type: str = \"multipart/form-data\",\n        alias: Optional[str] = None,\n        title: Optional[str] = None,\n        description: Optional[str] = None,\n        gt: Optional[float] = None,\n        ge: Optional[float] = None,\n        lt: Optional[float] = None,\n        le: Optional[float] = None,\n        min_length: Optional[int] = None,\n        max_length: Optional[int] = None,\n        regex: Optional[str] = None,\n        example: Any = Undefined,\n        examples: Optional[Dict[str, Any]] = None,\n        **extra: Any,\n    ):\n        super().__init__(\n            default=default,\n            media_type=media_type,\n            alias=alias,\n            title=title,\n            description=description,\n            gt=gt,\n            ge=ge,\n            lt=lt,\n            le=le,\n            min_length=min_length,\n            max_length=max_length,\n            regex=regex,\n            example=example,\n            examples=examples,\n            **extra,\n        )\n\n\nclass Depends:\n    def __init__(\n        self, dependency: Optional[Callable[..., Any]] = None, *, use_cache: bool = True\n    ):\n        self.dependency = dependency\n        self.use_cache = use_cache\n\n    def __repr__(self) -> str:\n        attr = getattr(self.dependency, \"__name__\", type(self.dependency).__name__)\n        cache = \"\" if self.use_cache else \", use_cache=False\"\n        return f\"{self.__class__.__name__}({attr}{cache})\"\n\n\nclass Security(Depends):\n    def __init__(\n        self,\n        dependency: Optional[Callable[..., Any]] = None,\n        *,\n        scopes: Optional[Sequence[str]] = None,\n        use_cache: bool = True,\n    ):\n        super().__init__(dependency=dependency, use_cache=use_cache)\n        self.scopes = scopes or []\n"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_JOdjqsqpAm91JZd7pJKj1571",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \"\"}"
+          }
+        },
+        {
+          "id": "call_01_HN6hA6Aed4X93HZIRShE5870",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_JOdjqsqpAm91JZd7pJKj1571",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": ""
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_01_HN6hA6Aed4X93HZIRShE5870",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": ""
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_uFNWmssWYma2A2ZKSsq78318",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"from pydantic.schema import\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_uFNWmssWYma2A2ZKSsq78318",
+      "name": "search",
+      "args": {
+        "pattern": "from pydantic.schema import",
+        "path": "fastapi"
+      },
+      "result": "fastapi/utils.py:14:from pydantic.schema import model_process_schema\nfastapi/openapi/utils.py:24:from pydantic.schema import (\nfastapi/dependencies/utils.py:50:from pydantic.schema import get_annotation_from_field_info"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Cz4XXUalm7gidlHqplal5872",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \"/\"}"
+          }
+        },
+        {
+          "id": "call_01_tllKOi4yMonMqFwUq0o44444",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \"/\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_00_Cz4XXUalm7gidlHqplal5872",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "/"
+      },
+      "result": "Error executing search: path '/' escapes the repository root"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_01_tllKOi4yMonMqFwUq0o44444",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "/"
+      },
+      "result": "Error executing search: path '/' escapes the repository root"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_pdGjnID6cQTzPJkkkEnG1375",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \".\"}"
+          }
+        },
+        {
+          "id": "call_01_AsVXqSs7TejSWtFZs0cI1333",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_00_pdGjnID6cQTzPJkkkEnG1375",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_01_AsVXqSs7TejSWtFZs0cI1333",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 9,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_LcfhpWlyp3kbkkSOZ1gQ2821",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 9,
+      "role": "tool",
+      "tool_call_id": "call_00_LcfhpWlyp3kbkkSOZ1gQ2821",
+      "name": "list_files",
+      "args": {
+        "path": "fastapi"
+      },
+      "result": "__init__.py\napplications.py\nbackground.py\nconcurrency.py\ndatastructures.py\ndependencies\nencoders.py\nexception_handlers.py\nexceptions.py\nlogger.py\nmiddleware\nopenapi\nparam_functions.py\nparams.py\npy.typed\nrequests.py\nresponses.py\nrouting.py\nsecurity\nstaticfiles.py\ntemplating.py\ntestclient.py\ntypes.py\nutils.py\nwebsockets.py"
+    },
+    {
+      "turn": 10,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Kc96TrMnikcg7cvNjDjm5590",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \"/usr\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 10,
+      "role": "tool",
+      "tool_call_id": "call_00_Kc96TrMnikcg7cvNjDjm5590",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "/usr"
+      },
+      "result": "Error executing search: path '/usr' escapes the repository root"
+    },
+    {
+      "turn": 11,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_3oeJ98G0tuyEO2e7g2uv0304",
+          "type": "function",
+          "function": {
+            "name": "run_shell",
+            "arguments": "{\"cmd\">python3: "
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 11,
+      "role": "tool",
+      "tool_call_id": "call_00_3oeJ98G0tuyEO2e7g2uv0304",
+      "name": "run_shell",
+      "args": {},
+      "result": "Error: unknown tool 'run_shell'"
+    },
+    {
+      "turn": 12,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_esk8bJGi6lgOsSHLUmR62943",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 12,
+      "role": "tool",
+      "tool_call_id": "call_00_esk8bJGi6lgOsSHLUmR62943",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "fastapi"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 13,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_kLWlRen2VhSpSr63HGh89353",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"fastapi/applications.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 13,
+      "role": "tool",
+      "tool_call_id": "call_00_kLWlRen2VhSpSr63HGh89353",
+      "name": "read_file",
+      "args": {
+        "path": "fastapi/applications.py"
+      },
+      "result": "from enum import Enum\nfrom typing import (\n    Any,\n    Awaitable,\n    Callable,\n    Coroutine,\n    Dict,\n    List,\n    Optional,\n    Sequence,\n    Type,\n    Union,\n)\n\nfrom fastapi import routing\nfrom fastapi.datastructures import Default, DefaultPlaceholder\nfrom fastapi.encoders import DictIntStrAny, SetIntStr\nfrom fastapi.exception_handlers import (\n    http_exception_handler,\n    request_validation_exception_handler,\n)\nfrom fastapi.exceptions import RequestValidationError\nfrom fastapi.logger import logger\nfrom fastapi.middleware.asyncexitstack import AsyncExitStackMiddleware\nfrom fastapi.openapi.docs import (\n    get_redoc_html,\n    get_swagger_ui_html,\n    get_swagger_ui_oauth2_redirect_html,\n)\nfrom fastapi.openapi.utils import get_openapi\nfrom fastapi.params import Depends\nfrom fastapi.types import DecoratedCallable\nfrom fastapi.utils import generate_unique_id\nfrom starlette.applications import Starlette\nfrom starlette.datastructures import State\nfrom starlette.exceptions import HTTPException\nfrom starlette.middleware import Middleware\nfrom starlette.middleware.errors import ServerErrorMiddleware\nfrom starlette.middleware.exceptions import ExceptionMiddleware\nfrom starlette.requests import Request\nfrom starlette.responses import HTMLResponse, JSONResponse, Response\nfrom starlette.routing import BaseRoute\nfrom starlette.types import ASGIApp, Receive, Scope, Send\n\n\nclass FastAPI(Starlette):\n    def __init__(\n        self,\n        *,\n        debug: bool = False,\n        routes: Optional[List[BaseRoute]] = None,\n        title: str = \"FastAPI\",\n        description: str = \"\",\n        version: str = \"0.1.0\",\n        openapi_url: Optional[str] = \"/openapi.json\",\n        openapi_tags: Optional[List[Dict[str, Any]]] = None,\n        servers: Optional[List[Dict[str, Union[str, Any]]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        default_response_class: Type[Response] = Default(JSONResponse),\n        docs_url: Optional[str] = \"/docs\",\n        redoc_url: Optional[str] = \"/redoc\",\n        swagger_ui_oauth2_redirect_url: Optional[str] = \"/docs/oauth2-redirect\",\n        swagger_ui_init_oauth: Optional[Dict[str, Any]] = None,\n        middleware: Optional[Sequence[Middleware]] = None,\n        exception_handlers: Optional[\n            Dict[\n                Union[int, Type[Exception]],\n                Callable[[Request, Any], Coroutine[Any, Any, Response]],\n            ]\n        ] = None,\n        on_startup: Optional[Sequence[Callable[[], Any]]] = None,\n        on_shutdown: Optional[Sequence[Callable[[], Any]]] = None,\n        terms_of_service: Optional[str] = None,\n        contact: Optional[Dict[str, Union[str, Any]]] = None,\n        license_info: Optional[Dict[str, Union[str, Any]]] = None,\n        openapi_prefix: str = \"\",\n        root_path: str = \"\",\n        root_path_in_servers: bool = True,\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        swagger_ui_parameters: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n        **extra: Any,\n    ) -> None:\n        self._debug: bool = debug\n        self.title = title\n        self.description = description\n        self.version = version\n        self.terms_of_service = terms_of_service\n        self.contact = contact\n        self.license_info = license_info\n        self.openapi_url = openapi_url\n        self.openapi_tags = openapi_tags\n        self.root_path_in_servers = root_path_in_servers\n        self.docs_url = docs_url\n        self.redoc_url = redoc_url\n        self.swagger_ui_oauth2_redirect_url = swagger_ui_oauth2_redirect_url\n        self.swagger_ui_init_oauth = swagger_ui_init_oauth\n        self.swagger_ui_parameters = swagger_ui_parameters\n        self.servers = servers or []\n        self.extra = extra\n        self.openapi_version = \"3.0.2\"\n        self.openapi_schema: Optional[Dict[str, Any]] = None\n        if self.openapi_url:\n            assert self.title, \"A title must be provided for OpenAPI, e.g.: 'My API'\"\n            assert self.version, \"A version must be provided for OpenAPI, e.g.: '2.1.0'\"\n        # TODO: remove when discarding the openapi_prefix parameter\n        if openapi_prefix:\n            logger.warning(\n                '\"openapi_prefix\" has been deprecated in favor of \"root_path\", which '\n                \"follows more closely the ASGI standard, is simpler, and more \"\n                \"automatic. Check the docs at \"\n                \"https://fastapi.tiangolo.com/advanced/sub-applications/\"\n            )\n        self.root_path = root_path or openapi_prefix\n        self.state: State = State()\n        self.dependency_overrides: Dict[Callable[..., Any], Callable[..., Any]] = {}\n        self.router: routing.APIRouter = routing.APIRouter(\n            routes=routes,\n            dependency_overrides_provider=self,\n            on_startup=on_startup,\n            on_shutdown=on_shutdown,\n            default_response_class=default_response_class,\n            dependencies=dependencies,\n            callbacks=callbacks,\n            deprecated=deprecated,\n            include_in_schema=include_in_schema,\n            responses=responses,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n        self.exception_handlers: Dict[\n            Any, Callable[[Request, Any], Union[Response, Awaitable[Response]]]\n        ] = ({} if exception_handlers is None else dict(exception_handlers))\n        self.exception_handlers.setdefault(HTTPException, http_exception_handler)\n        self.exception_handlers.setdefault(\n            RequestValidationError, request_validation_exception_handler\n        )\n\n        self.user_middleware: List[Middleware] = (\n            [] if middleware is None else list(middleware)\n        )\n        self.middleware_stack: ASGIApp = self.build_middleware_stack()\n        self.setup()\n\n    def build_middleware_stack(self) -> ASGIApp:\n        # Duplicate/override from Starlette to add AsyncExitStackMiddleware\n        # inside of ExceptionMiddleware, inside of custom user middlewares\n        debug = self.debug\n        error_handler = None\n        exception_handlers = {}\n\n        for key, value in self.exception_handlers.items():\n            if key in (500, Exception):\n                error_handler = value\n            else:\n                exception_handlers[key] = value\n\n        middleware = (\n            [Middleware(ServerErrorMiddleware, handler=error_handler, debug=debug)]\n            + self.user_middleware\n            + [\n                Middleware(\n                    ExceptionMiddleware, handlers=exception_handlers, debug=debug\n                ),\n                # Add FastAPI-specific AsyncExitStackMiddleware for dependencies with\n                # contextvars.\n                # This needs to happen after user middlewares because those create a\n                # new contextvars context copy by using a new AnyIO task group.\n                # The initial part of dependencies with yield is executed in the\n                # FastAPI code, inside all the middlewares, but the teardown part\n                # (after yield) is executed in the AsyncExitStack in this middleware,\n                # if the AsyncExitStack lived outside of the custom middlewares and\n                # contextvars were set in a dependency with yield in that internal\n                # contextvars context, the values would not be available in the\n                # outside context of the AsyncExitStack.\n                # By putting the middleware and the AsyncExitStack here, inside all\n                # user middlewares, the code before and after yield in dependencies\n                # with yield is executed in the same contextvars context, so all values\n                # set in contextvars before yield is still available after yield as\n                # would be expected.\n                # Additionally, by having this AsyncExitStack here, after the\n                # ExceptionMiddleware, now dependencies can catch handled exceptions,\n                # e.g. HTTPException, to customize the teardown code (e.g. DB session\n                # rollback).\n                Middleware(AsyncExitStackMiddleware),\n            ]\n        )\n\n        app = self.router\n        for cls, options in reversed(middleware):\n            app = cls(app=app, **options)\n        return app\n\n    def openapi(self) -> Dict[str, Any]:\n        if not self.openapi_schema:\n            self.openapi_schema = get_openapi(\n                title=self.title,\n                version=self.version,\n                openapi_version=self.openapi_version,\n                description=self.description,\n                terms_of_service=self.terms_of_service,\n                contact=self.contact,\n                license_info=self.license_info,\n                routes=self.routes,\n                tags=self.openapi_tags,\n                servers=self.servers,\n            )\n        return self.openapi_schema\n\n    def setup(self) -> None:\n        if self.openapi_url:\n            urls = (server_data.get(\"url\") for server_data in self.servers)\n            server_urls = {url for url in urls if url}\n\n            async def openapi(req: Request) -> JSONResponse:\n                root_path = req.scope.get(\"root_path\", \"\").rstrip(\"/\")\n                if root_path not in server_urls:\n                    if root_path and self.root_path_in_servers:\n                        self.servers.insert(0, {\"url\": root_path})\n                        server_urls.add(root_path)\n                return JSONResponse(self.openapi())\n\n            self.add_route(self.openapi_url, openapi, include_in_schema=False)\n        if self.openapi_url and self.docs_url:\n\n            async def swagger_ui_html(req: Request) -> HTMLResponse:\n                root_path = req.scope.get(\"root_path\", \"\").rstrip(\"/\")\n                openapi_url = root_path + self.openapi_url\n                oauth2_redirect_url = self.swagger_ui_oauth2_redirect_url\n                if oauth2_redirect_url:\n                    oauth2_redirect_url = root_path + oauth2_redirect_url\n                return get_swagger_ui_html(\n                    openapi_url=openapi_url,\n                    title=self.title + \" - Swagger UI\",\n                    oauth2_redirect_url=oauth2_redirect_url,\n                    init_oauth=self.swagger_ui_init_oauth,\n                    swagger_ui_parameters=self.swagger_ui_parameters,\n                )\n\n            self.add_route(self.docs_url, swagger_ui_html, include_in_schema=False)\n\n            if self.swagger_ui_oauth2_redirect_url:\n\n                async def swagger_ui_redirect(req: Request) -> HTMLResponse:\n                    return get_swagger_ui_oauth2_redirect_html()\n\n                self.add_route(\n                    self.swagger_ui_oauth2_redirect_url,\n                    swagger_ui_redirect,\n                    include_in_schema=False,\n                )\n        if self.openapi_url and self.redoc_url:\n\n            async def redoc_html(req: Request) -> HTMLResponse:\n                root_path = req.scope.get(\"root_path\", \"\").rstrip(\"/\")\n                openapi_url = root_path + self.openapi_url\n                return get_redoc_html(\n                    openapi_url=openapi_url, title=self.title + \" - ReDoc\"\n                )\n\n            self.add_route(self.redoc_url, redoc_html, include_in_schema=False)\n\n    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:\n        if self.root_path:\n            scope[\"root_path\"] = self.root_path\n        await super().__call__(scope, receive, send)\n\n    def add_api_route(\n        self,\n        path: str,\n        endpoint: Callable[..., Coroutine[Any, Any, Response]],\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        methods: Optional[List[str]] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Union[Type[Response], DefaultPlaceholder] = Default(\n            JSONResponse\n        ),\n        name: Optional[str] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> None:\n        self.router.add_api_route(\n            path,\n            endpoint=endpoint,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            methods=methods,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def api_route(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        methods: Optional[List[str]] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        def decorator(func: DecoratedCallable) -> DecoratedCallable:\n            self.router.add_api_route(\n                path,\n                func,\n                response_model=response_model,\n                status_code=status_code,\n                tags=tags,\n                dependencies=dependencies,\n                summary=summary,\n                description=description,\n                response_description=response_description,\n                responses=responses,\n                deprecated=deprecated,\n                methods=methods,\n                operation_id=operation_id,\n                response_model_include=response_model_include,\n                response_model_exclude=response_model_exclude,\n                response_model_by_alias=response_model_by_alias,\n                response_model_exclude_unset=response_model_exclude_unset,\n                response_model_exclude_defaults=response_model_exclude_defaults,\n                response_model_exclude_none=response_model_exclude_none,\n                include_in_schema=include_in_schema,\n                response_class=response_class,\n                name=name,\n                openapi_extra=openapi_extra,\n                generate_unique_id_function=generate_unique_id_function,\n            )\n            return func\n\n        return decorator\n\n    def add_api_websocket_route(\n        self, path: str, endpoint: Callable[..., Any], name: Optional[str] = None\n    ) -> None:\n        self.router.add_api_websocket_route(path, endpoint, name=name)\n\n    def websocket(\n        self, path: str, name: Optional[str] = None\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        def decorator(func: DecoratedCallable) -> DecoratedCallable:\n            self.add_api_websocket_route(path, func, name=name)\n            return func\n\n        return decorator\n\n    def include_router(\n        self,\n        router: routing.APIRouter,\n        *,\n        prefix: str = \"\",\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        include_in_schema: bool = True,\n        default_response_class: Type[Response] = Default(JSONResponse),\n        callbacks: Optional[List[BaseRoute]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> None:\n        self.router.include_router(\n            router,\n            prefix=prefix,\n            tags=tags,\n            dependencies=dependencies,\n            responses=responses,\n            deprecated=deprecated,\n            include_in_schema=include_in_schema,\n            default_response_class=default_response_class,\n            callbacks=callbacks,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def get(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.get(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def put(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.put(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def post(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.post(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def delete(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.delete(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def options(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.options(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def head(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.head(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def patch(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.patch(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n\n    def trace(\n        self,\n        path: str,\n        *,\n        response_model: Any = None,\n        status_code: Optional[int] = None,\n        tags: Optional[List[Union[str, Enum]]] = None,\n        dependencies: Optional[Sequence[Depends]] = None,\n        summary: Optional[str] = None,\n        description: Optional[str] = None,\n        response_description: str = \"Successful Response\",\n        responses: Optional[Dict[Union[int, str], Dict[str, Any]]] = None,\n        deprecated: Optional[bool] = None,\n        operation_id: Optional[str] = None,\n        response_model_include: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_exclude: Optional[Union[SetIntStr, DictIntStrAny]] = None,\n        response_model_by_alias: bool = True,\n        response_model_exclude_unset: bool = False,\n        response_model_exclude_defaults: bool = False,\n        response_model_exclude_none: bool = False,\n        include_in_schema: bool = True,\n        response_class: Type[Response] = Default(JSONResponse),\n        name: Optional[str] = None,\n        callbacks: Optional[List[BaseRoute]] = None,\n        openapi_extra: Optional[Dict[str, Any]] = None,\n        generate_unique_id_function: Callable[[routing.APIRoute], str] = Default(\n            generate_unique_id\n        ),\n    ) -> Callable[[DecoratedCallable], DecoratedCallable]:\n        return self.router.trace(\n            path,\n            response_model=response_model,\n            status_code=status_code,\n            tags=tags,\n            dependencies=dependencies,\n            summary=summary,\n            description=description,\n            response_description=response_description,\n            responses=responses,\n            deprecated=deprecated,\n            operation_id=operation_id,\n            response_model_include=response_model_include,\n            response_model_exclude=response_model_exclude,\n            response_model_by_alias=response_model_by_alias,\n            response_model_exclude_unset=response_model_exclude_unset,\n            response_model_exclude_defaults=response_model_exclude_defaults,\n            response_model_exclude_none=response_model_exclude_none,\n            include_in_schema=include_in_schema,\n            response_class=response_class,\n            name=name,\n            callbacks=callbacks,\n            openapi_extra=openapi_extra,\n            generate_unique_id_function=generate_unique_id_function,\n        )\n"
+    },
+    {
+      "turn": 14,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_sEfJoK4EShxRZW3lJm7B6582",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"/usr/local/lib/python3.9/site-packages/pydantic\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 14,
+      "role": "tool",
+      "tool_call_id": "call_00_sEfJoK4EShxRZW3lJm7B6582",
+      "name": "list_files",
+      "args": {
+        "path": "/usr/local/lib/python3.9/site-packages/pydantic"
+      },
+      "result": "Error executing list_files: path '/usr/local/lib/python3.9/site-packages/pydantic' escapes the repository root"
+    },
+    {
+      "turn": 15,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ZFRxdWpKHSp9rSUS3jfI3942",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"import pydantic\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 15,
+      "role": "tool",
+      "tool_call_id": "call_00_ZFRxdWpKHSp9rSUS3jfI3942",
+      "name": "search",
+      "args": {
+        "pattern": "import pydantic",
+        "path": "fastapi"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 16,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_3s0obTUtCfzntKPUktwh2167",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_flat_models_from_fields\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 16,
+      "role": "tool",
+      "tool_call_id": "call_00_3s0obTUtCfzntKPUktwh2167",
+      "name": "search",
+      "args": {
+        "pattern": "def get_flat_models_from_fields",
+        "path": "fastapi"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 17,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_oreh4zhWhwpsYkRxHbLu4703",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"/\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 17,
+      "role": "tool",
+      "tool_call_id": "call_00_oreh4zhWhwpsYkRxHbLu4703",
+      "name": "list_files",
+      "args": {
+        "path": "/"
+      },
+      "result": "Error executing list_files: path '/' escapes the repository root"
+    },
+    {
+      "turn": 18,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_CKX5bEBOt42CuTEuPBJb8680",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_flat_models_from_fields\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 18,
+      "role": "tool",
+      "tool_call_id": "call_00_CKX5bEBOt42CuTEuPBJb8680",
+      "name": "search",
+      "args": {
+        "pattern": "get_flat_models_from_fields",
+        "path": "."
+      },
+      "result": "fastapi/openapi/utils.py:26:    get_flat_models_from_fields,\nfastapi/openapi/utils.py:386:    flat_models = callback_flat_models | get_flat_models_from_fields("
+    },
+    {
+      "turn": 19,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_w0StqqXEWUEeG9TivEr63953",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"Body_predict\", \"path\": \".\"}"
+          }
+        },
+        {
+          "id": "call_01_FNgyR3MvMIy8fi7FhG9b2684",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_model_definitions\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 19,
+      "role": "tool",
+      "tool_call_id": "call_00_w0StqqXEWUEeG9TivEr63953",
+      "name": "search",
+      "args": {
+        "pattern": "Body_predict",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 19,
+      "role": "tool",
+      "tool_call_id": "call_01_FNgyR3MvMIy8fi7FhG9b2684",
+      "name": "search",
+      "args": {
+        "pattern": "get_model_definitions",
+        "path": "fastapi"
+      },
+      "result": "fastapi/utils.py:28:def get_model_definitions(\nfastapi/openapi/utils.py:19:    get_model_definitions,\nfastapi/openapi/utils.py:423:    definitions = get_model_definitions("
+    },
+    {
+      "turn": 20,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_a9uQ4nRut7k1kj5DbY0L9532",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"UploadFile\", \"path\": \"tests\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 20,
+      "role": "tool",
+      "tool_call_id": "call_00_a9uQ4nRut7k1kj5DbY0L9532",
+      "name": "search",
+      "args": {
+        "pattern": "UploadFile",
+        "path": "tests"
+      },
+      "result": "tests/test_datastructures.py:2:from fastapi import UploadFile\ntests/test_datastructures.py:8:        UploadFile.validate(\"not a Starlette UploadFile\")\ntests/test_multipart_installation.py:2:from fastapi import FastAPI, File, Form, UploadFile\ntests/test_multipart_installation.py:25:        async def root(f: UploadFile = File()):\ntests/test_multipart_installation.py:55:        async def root(username: str = Form(), f: UploadFile = File()):\ntests/test_multipart_installation.py:75:        async def root(f: UploadFile = File()):\ntests/test_multipart_installation.py:105:        async def root(username: str = Form(), f: UploadFile = File()):\ntests/test_tutorial/test_request_files/test_tutorial001_03.py:99:                        \"description\": \"A file read as UploadFile\",\ntests/test_tutorial/test_request_files/test_tutorial003_py39.py:112:                        \"description\": \"Multiple files as UploadFile\",\ntests/test_tutorial/test_request_files/test_tutorial003.py:112:                        \"description\": \"Multiple files as UploadFile\",\ntests/test_custom_middleware_exception.py:4:from fastapi import APIRouter, FastAPI, File, UploadFile\ntests/test_custom_middleware_exception.py:58:def run_middleware(file: UploadFile = File(..., description=\"Big File\")):"
+    },
+    {
+      "turn": 21,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_vToIcHTITqze9rtSDqOD3030",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"tests/test_custom_middleware_exception.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 21,
+      "role": "tool",
+      "tool_call_id": "call_00_vToIcHTITqze9rtSDqOD3030",
+      "name": "read_file",
+      "args": {
+        "path": "tests/test_custom_middleware_exception.py"
+      },
+      "result": "from pathlib import Path\nfrom typing import Optional\n\nfrom fastapi import APIRouter, FastAPI, File, UploadFile\nfrom fastapi.exceptions import HTTPException\nfrom fastapi.testclient import TestClient\n\napp = FastAPI()\n\nrouter = APIRouter()\n\n\nclass ContentSizeLimitMiddleware:\n    \"\"\"Content size limiting middleware for ASGI applications\n    Args:\n      app (ASGI application): ASGI application\n      max_content_size (optional): the maximum content size allowed in bytes, None for no limit\n    \"\"\"\n\n    def __init__(self, app: APIRouter, max_content_size: Optional[int] = None):\n        self.app = app\n        self.max_content_size = max_content_size\n\n    def receive_wrapper(self, receive):\n        received = 0\n\n        async def inner():\n            nonlocal received\n            message = await receive()\n            if message[\"type\"] != \"http.request\":\n                return message  # pragma: no cover\n\n            body_len = len(message.get(\"body\", b\"\"))\n            received += body_len\n            if received > self.max_content_size:\n                raise HTTPException(\n                    422,\n                    detail={\n                        \"name\": \"ContentSizeLimitExceeded\",\n                        \"code\": 999,\n                        \"message\": \"File limit exceeded\",\n                    },\n                )\n            return message\n\n        return inner\n\n    async def __call__(self, scope, receive, send):\n        if scope[\"type\"] != \"http\" or self.max_content_size is None:\n            await self.app(scope, receive, send)\n            return\n\n        wrapper = self.receive_wrapper(receive)\n        await self.app(scope, wrapper, send)\n\n\n@router.post(\"/middleware\")\ndef run_middleware(file: UploadFile = File(..., description=\"Big File\")):\n    return {\"message\": \"OK\"}\n\n\napp.include_router(router)\napp.add_middleware(ContentSizeLimitMiddleware, max_content_size=2**8)\n\n\nclient = TestClient(app)\n\n\ndef test_custom_middleware_exception(tmp_path: Path):\n    default_pydantic_max_size = 2**16\n    path = tmp_path / \"test.txt\"\n    path.write_bytes(b\"x\" * (default_pydantic_max_size + 1))\n\n    with client:\n        with open(path, \"rb\") as file:\n            response = client.post(\"/middleware\", files={\"file\": file})\n        assert response.status_code == 422, response.text\n        assert response.json() == {\n            \"detail\": {\n                \"name\": \"ContentSizeLimitExceeded\",\n                \"code\": 999,\n                \"message\": \"File limit exceeded\",\n            }\n        }\n\n\ndef test_custom_middleware_exception_not_raised(tmp_path: Path):\n    path = tmp_path / \"test.txt\"\n    path.write_bytes(b\"<file content>\")\n\n    with client:\n        with open(path, \"rb\") as file:\n            response = client.post(\"/middleware\", files={\"file\": file})\n        assert response.status_code == 200, response.text\n        assert response.json() == {\"message\": \"OK\"}\n"
+    },
+    {
+      "turn": 22,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Ukey3d0kv9b0rPoeCNVR4594",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"embed\", \"path\": \"fastapi/dependencies/utils.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 22,
+      "role": "tool",
+      "tool_call_id": "call_00_Ukey3d0kv9b0rPoeCNVR4594",
+      "name": "search",
+      "args": {
+        "pattern": "embed",
+        "path": "fastapi/dependencies/utils.py"
+      },
+      "result": "633:        embed = getattr(field_info, \"embed\", None)\n634:        field_alias_omitted = len(required_params) == 1 and not embed\n718:    embed = getattr(field_info, \"embed\", None)\n720:    if len(body_param_names_set) == 1 and not embed:\n723:    # If one field requires to embed, all have to be embedded\n725:    # That is combined (embedded) with other body fields\n727:        setattr(param.field_info, \"embed\", True)"
+    },
+    {
+      "turn": 23,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Ow6DXyu5SggbDG7n2cGy2906",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"get_model_name_map\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 23,
+      "role": "tool",
+      "tool_call_id": "call_00_Ow6DXyu5SggbDG7n2cGy2906",
+      "name": "search",
+      "args": {
+        "pattern": "get_model_name_map",
+        "path": "fastapi"
+      },
+      "result": "fastapi/openapi/utils.py:27:    get_model_name_map,\nfastapi/openapi/utils.py:422:    model_name_map = get_model_name_map(flat_models)"
+    },
+    {
+      "turn": 24,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Wf0muWzXRDJb1cy3Zw2k1892",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"/usr/local\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 24,
+      "role": "tool",
+      "tool_call_id": "call_00_Wf0muWzXRDJb1cy3Zw2k1892",
+      "name": "list_files",
+      "args": {
+        "path": "/usr/local"
+      },
+      "result": "Error executing list_files: path '/usr/local' escapes the repository root"
+    },
+    {
+      "turn": 25,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_iDwk9Xl4dhsiVyTEvUJI0002",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \"/usr\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 25,
+      "role": "tool",
+      "tool_call_id": "call_00_iDwk9Xl4dhsiVyTEvUJI0002",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "/usr"
+      },
+      "result": "Error executing search: path '/usr' escapes the repository root"
+    },
+    {
+      "turn": 26,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ZKs2KgNN7SnVHp6Ti5hI4577",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def model_name\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 26,
+      "role": "tool",
+      "tool_call_id": "call_00_ZKs2KgNN7SnVHp6Ti5hI4577",
+      "name": "search",
+      "args": {
+        "pattern": "def model_name",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 27,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_2l1ilktnTglbt6gj8qAt5983",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \"/home\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 27,
+      "role": "tool",
+      "tool_call_id": "call_00_2l1ilktnTglbt6gj8qAt5983",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "/home"
+      },
+      "result": "Error executing search: path '/home' escapes the repository root"
+    },
+    {
+      "turn": 28,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_ET_n0bgVLcZvUvGLAhxwVpb9226",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"/home\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 28,
+      "role": "tool",
+      "tool_call_id": "call_00_ET_n0bgVLcZvUvGLAhxwVpb9226",
+      "name": "list_files",
+      "args": {
+        "path": "/home"
+      },
+      "result": "Error executing list_files: path '/home' escapes the repository root"
+    },
+    {
+      "turn": 29,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_nw8U7mOZTbTtsm9X7ADY0732",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"def get_model_name_map\", \"path\": \".\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 29,
+      "role": "tool",
+      "tool_call_id": "call_00_nw8U7mOZTbTtsm9X7ADY0732",
+      "name": "search",
+      "args": {
+        "pattern": "def get_model_name_map",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 30,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_l2kTreBuSCNzG2tHlQ7U7295",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"Body_predict\", \"path\": \"tests\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 30,
+      "role": "tool",
+      "tool_call_id": "call_00_l2kTreBuSCNzG2tHlQ7U7295",
+      "name": "search",
+      "args": {
+        "pattern": "Body_predict",
+        "path": "tests"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 31,
+      "role": "assistant",
+      "content": "Let me look at the `get_model_definitions` function more closely and search for related test cases.",
+      "tool_calls": [
+        {
+          "id": "call_00_6jaFCvnGb0EEBhaDMRzA8420",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"KeyError.*model_name_map\", \"path\": \".\"}"
+          }
+        },
+        {
+          "id": "call_01_L2pMgYJ0drgTbfIdY9B09082",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"model_name_map\", \"path\": \"fastapi\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 31,
+      "role": "tool",
+      "tool_call_id": "call_00_6jaFCvnGb0EEBhaDMRzA8420",
+      "name": "search",
+      "args": {
+        "pattern": "KeyError.*model_name_map",
+        "path": "."
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 31,
+      "role": "tool",
+      "tool_call_id": "call_01_L2pMgYJ0drgTbfIdY9B09082",
+      "name": "search",
+      "args": {
+        "pattern": "model_name_map",
+        "path": "fastapi"
+      },
+      "result": "fastapi/utils.py:31:    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\nfastapi/utils.py:36:            model, model_name_map=model_name_map, ref_prefix=REF_PREFIX\nfastapi/utils.py:39:        model_name = model_name_map[model]\nfastapi/openapi/utils.py:27:    get_model_name_map,\nfastapi/openapi/utils.py:91:    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\nfastapi/openapi/utils.py:104:                param, model_name_map=model_name_map, ref_prefix=REF_PREFIX\nfastapi/openapi/utils.py:122:    model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],\nfastapi/openapi/utils.py:128:        body_field, model_name_map=model_name_map, ref_prefix=REF_PREFIX\nfastapi/openapi/utils.py:193:    *, route: routing.APIRoute, model_name_map: Dict[type, str], operation_ids: Set[str]\nfastapi/openapi/utils.py:221:                all_route_params=all_route_params, model_name_map=model_name_map\nfastapi/openapi/utils.py:239:                    body_field=route.body_field, model_name_map=model_name_map\nfastapi/openapi/utils.py:253:                            model_name_map=model_name_map,\nfastapi/openapi/utils.py:282:                            model_name_map=model_name_map,\nfastapi/openapi/utils.py:313:                            field, model_name_map=model_name_map, ref_prefix=REF_PREFIX\nfastapi/openapi/utils.py:422:    model_name_map = get_model_name_map(flat_models)\nfastapi/openapi/utils.py:424:        flat_models=flat_models, model_name_map=model_name_map\nfastapi/openapi/utils.py:429:                route=route, model_name_map=model_name_map, operation_ids=operation_ids"
+    },
+    {
+      "turn": "final",
+      "role": "assistant",
+      "content": "Let me look at the `get_model_definitions` function more closely and search for related test cases."
+    }
+  ]
+}
