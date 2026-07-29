@@ -2308,8 +2308,289 @@ Applied identically across all four `_required` harnesses. All four
 still `py_compile` clean.
 
 ### Status
-Not yet committed. Not yet re-run at batch scale -- the pilot data in
-`study_3/pilot_results/`/`study_3/pilot_logs/` still reflects the
-pre-fix harness, which is exactly why it was archived separately before
-these changes (see previous entry).
+Committed in three commits (batch runner/comparison script, pilot
+archive, harness fixes), then re-run at full scale -- see the next two
+entries for the launch, the data that came out of it, and everything
+built on top of it since.
+
+## 2026-07-23 (cont'd) / 2026-07-24
+## Cleaned Up, Redeployed the Fixed Harness, and Launched Study 3 for Real
+
+Removed all 540 `_required` result dirs and 540 log dirs from the
+native filesystem (voluntary-condition and Study 1 data left untouched
+-- verified by targeting only `*_required`-named directories), then
+copied the four fixed `_required` harness files over, checksum-verified
+against the repo copy. `run_batch_tools_required.py` itself hadn't
+changed this session, confirmed identical via `diff` before skipping
+its redeploy.
+
+Dry-ran the launch plan before committing to it: 180 trials, 0 already
+done, 0 missing index files, for each worker/model/rep combination.
+Caught one real conflict before launching -- the initial plan double-
+booked worker 3 (nemotron rep3 and ministral rep1 simultaneously,
+which risks a git-checkout race against the same `worker_3` repo
+clone) -- resolved via explicit user choice (ministral moved to
+workers 4/5) rather than guessing which one was intended. Launched:
+nemotron reps 1/2/3 on workers 1/2/3, ministral reps 1/2 on workers
+4/5, all via plain foreground commands (no `nohup`/backgrounding) since
+the user wanted to watch progress directly rather than have me run
+them.
+
+**DeepInfra rate-limiting, not just model slowness.** Nemotron's ETA
+climbed from ~10h to ~20h and looked alarming; traced it to a small
+early sample (1-2 completions) being volatile, one large repo
+(`transformers`) trial genuinely taking 7+ minutes, and -- the real
+finding -- `RateLimitError: DeepinfraException - Model busy, retry
+later` firing repeatedly across all three concurrently-running nemotron
+workers, with 2 trials fully lost after exhausting the 3-attempt retry
+budget (no result file at all, confirmed by checking directly). Root
+cause: three workers hammering the same DeepInfra-hosted model
+concurrently. Decision: leave it running rather than reduce
+concurrency, accepting the wasted-trial rate since failed trials get
+naturally backfilled by a later re-run (same mechanism as the Study 2
+nemotron gap).
+
+Moved deepseek onto workers 3/4/5 (all three reps at once) after
+explicitly reasoning that DeepSeek's own API is a different provider
+than DeepInfra and shouldn't inherit the same rate-limit risk -- turned
+out correct, all 3 reps (540 trials) finished with zero failures and no
+rate-limit errors at all. Continued reassigning workers as batches
+freed up over the following turns: gpt-oss onto workers 3/4 (rep1/2),
+ministral rep3 onto worker 5, then nemotron rep3 retried on worker 3
+once gpt-oss finished there (with 3 leftover results from the earlier
+rate-limited attempt correctly skipped, not re-run).
+
+## 2026-07-27
+## Verified Study 3 Completeness, Migrated Both Studies to the Repo, Built the Comparison Notebook
+
+**Verification before migration.** Confirmed all four models' `_required`
+batches complete: 2,160/2,160 trials (45 issues x 4 conditions x 3 reps
+x 4 models), 0 missing files, 0 corrupt JSON, 0 null F1 scores despite
+scorable ground truth, 0 internal `rep`/`repo`/`issue_idx`/`map_type`
+metadata mismatches against file path -- across every trial, not a
+sample.
+
+**Study 3 to the repo.** Copied all 2,160 results + 2,160 logs from the
+native filesystem into `study_3/results/`/`study_3/logs/`,
+checksum-verified (re-verified a second time immediately before
+committing, since some time had passed). `.gitignore` needed the same
+two fixes as `study_3/pilot_results` before it: a `*.json` exception,
+and -- new this time, since `study_3/logs` is literally named `logs`
+unlike `pilot_logs` -- an explicit `!study_3/` / `!study_3/logs/` /
+`!study_3/logs/**` chain, because git's unanchored `logs/` rule prunes
+traversal into any directory named `logs` at any depth and won't
+re-include children unless the directory itself is re-included too.
+Committed (`191739f`).
+
+**Study 2 to the repo, plus a backfill.** Copied all four models'
+voluntary-condition results/logs the same way (2,155 results + 2,157
+logs -- nemotron was 5 short, all `rep3`, a known gap from the
+free-choice batch that the user was backfilling separately).
+Discovered later the same day that the backfill had in fact finished
+on the native filesystem but never made it into the repo copy, since
+that sync only happens on request -- copied the 5 files in, two of
+which replaced an already-committed partial/crashed log with the
+completed run's log, and committed.
+
+**Native filesystem vs `/mnt/c/` filesystem, explained and measured.**
+The repo lives on the Windows drive, reached via WSL2's `9p`
+protocol bridge (`drvfs`); the harness runs against `/home/afb225/study1`
+on WSL2's own `ext4` virtual disk. Measured the actual cost of that
+bridge directly: reading 2,160 JSON files took 30.1s from `/mnt/c/`
+vs. 4.0s from the native ext4 copy -- about 7.5x slower, which explains
+both the `git add`/`git status` slowness on large commits all session
+and why a later background re-run of the notebook's full data loader
+looked "stuck" (it wasn't; ~90s for 6,480 files was just genuinely
+required) and got killed prematurely as a result.
+
+**Built `notebooks/study_comparison_by_map_type.ipynb`.** Originally
+scoped as an HTML artifact (the `artifact-design` skill was invoked and
+a cartographic-themed token system drafted) but redirected mid-build to
+a Jupyter notebook per explicit user preference. Loads and caches all
+trials across the 12 conditions (Study 1 baseline/context, Study 2
+tool-free, Study 3 tool-required) for the 4 models with complete
+coverage across every condition. `show_issue(repo, issue_idx)` prints
+the issue's original title/body, then per map-type group (structural /
+frequency / co-change / all-tools-combined, organised by map type
+rather than by study per explicit request) a grouped bar chart of
+precision/recall/F1 -- pooled panel first, then one panel per model --
+using a single teal color ramp stepped by "intervention intensity"
+(baseline grey through tool-required deep ink) rather than four
+unrelated hues.
+
+Debugged a real user-reported issue ("all_tools combined renders blank
+bars") down to real near-zero data (`pandas/44`'s `all_tools`/
+`all_tools_required` pooled F1 of 0.042, correctly computed, just
+visually indistinguishable from empty on a 0-1.05 axis) rather than a
+calculation bug -- verified by re-deriving the pooled means by hand
+against the raw trial JSON and separately confirming a different issue
+(`pandas/26`) rendered correctly with visible bars. A stale
+`ScheduleWakeup` (meant for `/loop` mode, misused here) fired late with
+a duplicate version of the same question mid-investigation; handled by
+quickly re-confirming against the referenced issue rather than
+repeating the full investigation.
+
+Added a `print_predictions()` block, called immediately after each
+chart inside `show_issue()`, printing ground truth once plus every
+model x condition x rep's predicted files with an `exact`/`partial`/
+`miss`/`empty` tag -- pulled from `final_files_predicted_scorable`/
+`ground_truth_scorable` in each trial's JSON, the same filtered values
+that produced the precision/recall/F1 numbers, so the readout can't
+drift from the bars above it.
+
+## 2026-07-28
+## Issue-by-Issue Case-Study Analysis, Position/Distance Metrics for the Maps
+
+Shifted from the quantitative notebook to qualitative case-study work,
+aimed at explaining *why* the F1 patterns are so model-dependent and
+messy rather than just reporting them. Worked through several rounds
+of ad hoc investigation before landing on a plan:
+
+- Computed the full 45-issue ranking by pooled mean F1
+  (`/tmp/full_ranking.csv`, not yet a committed artifact). Read the
+  extremes first: `scrapy/20` (144/144 perfect -- the issue quotes the
+  exact class and method being fixed, self-locating from prose alone)
+  and `pandas/35` (0/144 -- ground truth is a code-generation template
+  several layers removed from where the symptom would naturally be
+  investigated; flagged as possibly a ground-truth-extraction artifact
+  worth checking against the real PR). Near-miss cases
+  (`fastapi/17`, `thefuck/20`, both ~98-99% failure) turned out to
+  share a distinct shape: the traceback/symptom confidently implicates
+  the *wrong* file, and every single one of the rare successes (4
+  trials total) was ministral-3b -- never the larger models --
+  suggesting confident reasoning follows the misleading lead more
+  reliably than noisier, weaker-model exploration does.
+- Statistically profiled the near-always-succeeded tier (12 issues,
+  92-99.7% pooled success): failures split 31 mistral / 17 nemotron /
+  8 gpt-oss / 3 deepseek -- almost the mirror image of the near-miss
+  tier's model ranking -- and two issues (`rich/8`, `core/20`)
+  accounted for over a third of all failures in that tier, almost all
+  Ministral failing regardless of condition, meaning pooling across
+  models had been masking a single-model weakness as "mostly solved."
+- Cross-checked two specific behavioral-difference questions against
+  the full 45-issue dataset rather than trusting a single issue:
+  deepseek's submit-rate is statistically identical between baseline
+  and `temporal_frequency` (72.6% vs 73.3%, noise) despite looking
+  very different on one issue (`pandas/26`); nemotron's is not --
+  baseline is 100% `max_turns` with a 100%-empty forced fallback on
+  `pandas/26` specifically, while context/tool conditions self-submit
+  or at least leave something non-empty in the fallback, a pattern
+  that traces back to the same "some models sometimes just disengage"
+  trait already documented for the stop-path gate work.
+
+**Designed a two-table case-study schema** after an interrupted first
+attempt (a single flat CSV) turned out to conflate two different
+question types. Table 1 (`data/issue_case_study_notes.csv`, committed
+`83af28f`) is for manual qualitative judgment -- one row per issue,
+columns for how directly the issue text connects to its ground-truth
+file (`quoted` / `traceback-direct` / `convention` /
+`investigation-required` / `misleading` / `unreachable`), ground-truth
+plausibility, recurring wrong-guess files tagged as `plausible-sibling`
+vs `attractor-file`, precision- vs recall-dominated failures, model
+decisiveness quirks, and free text -- pre-filled with the 6 issues
+already case-studied as a worked example, 39 rows left blank.
+
+Table 2 (`data/map_position_metrics.csv`, same commit) is fully
+automated, no manual judgment: for every (issue, ground-truth file, map
+type) combination, where that file's own entry falls in the *actual
+injected* map text (`compact_map_pruned_55k.txt` etc. -- confirmed via
+`MAP_FILES` in `run_trial.py` that these pruned variants, not the full
+ones, are what the harness really injects) -- token offset via
+`tiktoken`, percent through by token count, file rank, percent through
+by file count, or `pruned_out` if the file never appears in the
+injected text at all because the size budget cut it.
+
+**Correction, 2026-07-29**: the first pass computed this against the
+*raw* `ground_truth` column, not filtered through
+`scripts/source_filter.py`'s `scorable_files()` -- so 6 of the 96 raw
+ground-truth files (docs/test/non-Python/out-of-package-scope files
+that could never appear in any map regardless of budget) were being
+counted as "pruned" when they'd never been eligible in the first
+place. Refiltered through `scorable_files()` and recomputed: structural
+still genuinely drops files to budget truncation, but at **22.2%**, not
+27.1%. Frequency and co-change's "pruning" was **entirely** an artifact
+of non-scorable files -- once filtered, both sit at **0%**: neither map
+type has ever actually dropped a real, in-scope ground-truth file in
+this dataset. The `fastapi/20` "lost *all* ground-truth files from
+structural" finding held up under the recheck (its one file is
+scorable and genuinely absent).
+
+**Added a co-change pair-distance metric per the user's advisor's
+suggestion**, refined once mid-design: the first read ("how many steps
+removed") was graph-hop-distance within the co-change relationship
+itself, but the actual ask was directory-tree distance vs. co-change
+frequency, treated as independent signals -- the hypothesis being that
+files in the same directory might be an easy connection for an LLM to
+guess without any map at all, so co-change earns its keep specifically
+where directory structure *wouldn't* suggest a relationship but a real
+shared-commit history exists anyway. Verified `cochange_index_full.json`
+is fully symmetric first (7,480 directed edges checked, 0 mismatches)
+and not top-K-truncated (list lengths up to 107 of 120 total files) so
+a single lookup suffices per pair. Computed, for every ground-truth
+file pair within the issues that have >=2 ground-truth files: directory
+distance, raw co-change count, and each file's rank within the *other*
+file's own co-change partner list. Same non-scorable-file bug as above
+was present here too and got the same fix (see 2026-07-29 correction
+below) -- the numbers here are already the corrected ones. 17 issues
+have >=2 scorable ground-truth files, 136 pairs total. Findings:
+`gpt-engineer/12`'s `file_selector.py`/`steps.py` pair is the clearest
+"hidden relationship" case (directory-distance 4, but ranked #2 and #5
+in each other's lists, confirmed to survive the scorable-files
+recheck); 25 of 136 pairs (18.4%) never co-changed at all despite being
+part of the same fix, an upper bound on what co-change could possibly
+contribute for that subset regardless of model behavior; the "redundant
+with directory browsing" tier (same directory, real co-change signal)
+is 22 of 136 pairs (16.2%, or 29.4% if adjacent directories are
+included) -- still smaller than a naive guess, meaning most of the real
+co-change signal in this dataset sits at moderate directory distance
+(`dist=2`, 61.8% of all pairs, 79.8% of which carry real signal), not
+trivially redundant with what a model could infer from browsing alone.
+Saved to `data/cochange_pair_metrics.csv`.
+
+## 2026-07-29
+## Fixed a Non-Scorable-File Bug in Both New Metrics
+
+User caught it: `cochange_pair_metrics.csv` had ground-truth-file pairs
+that included things like test and docs files -- files that would have
+been entirely skipped when the maps themselves were generated, so
+treating their absence from the co-change index as a real "never
+co-changed" finding was meaningless. Root cause: both
+`map_position_metrics.csv` and `cochange_pair_metrics.csv` had been
+built against the *raw* `ground_truth` column in
+`issue_selection_final.csv` directly, never passed through
+`scripts/source_filter.py`'s `scorable_files()` -- the same filter
+`run_trial.py` itself uses at scoring time, and the actual definition
+of "discoverable via this study's maps and tools" (excludes tests/
+benchmarks/docs/config/non-`.py` files, and anything outside the
+resolved package directory).
+
+Quantified before fixing: 6 of 96 raw ground-truth files across the 45
+issues are non-scorable (a docs file, a test file, a JS file, files
+outside package scope). Small in absolute count, but several of them
+were exactly the files behind specific findings already written up and
+reported -- `fastapi/9`'s docs file, `gpt-engineer/12`'s test file and
+an out-of-scope `controller.py`, `stable-diffusion-webui/13`'s
+extension file all showed up in the earlier "never co-changed"/"hidden
+relationship candidate" lists as artifacts, not real results.
+
+Refiltered both scripts through `scorable_files()` and regenerated both
+CSVs in place (see corrections inline above, in each metric's original
+entry, rather than duplicated here). Net effect: frequency/co-change
+pruning drops to a genuine 0% (was an artifact-inflated 6.25%),
+structural drops from 27.1% to 22.2%, and the co-change pair count
+drops from 156 to 136 (17 issues instead of 18 have >=2 scorable
+ground-truth files) -- but the headline example
+(`gpt-engineer/12`'s `file_selector.py`/`steps.py`) and the
+`fastapi/20`-loses-everything structural finding both survived the
+recheck untouched.
+
+### Status
+`study_2/`, `study_3/`, and the comparison notebook are committed and
+complete. `data/issue_case_study_notes.csv` has 6 of 45 rows filled in,
+manual completion ongoing. `data/map_position_metrics.csv` is fully
+computed and committed. `data/cochange_pair_metrics.csv` is computed
+but not yet committed. `notebooks/study_comparison_by_map_type.ipynb`
+has uncommitted interactive-session changes from the user's own
+exploration (execution counts only, no logic changes) intentionally
+left out of recent commits.
 
