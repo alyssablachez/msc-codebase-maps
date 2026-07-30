@@ -2587,10 +2587,99 @@ recheck untouched.
 ### Status
 `study_2/`, `study_3/`, and the comparison notebook are committed and
 complete. `data/issue_case_study_notes.csv` has 6 of 45 rows filled in,
-manual completion ongoing. `data/map_position_metrics.csv` is fully
-computed and committed. `data/cochange_pair_metrics.csv` is computed
-but not yet committed. `notebooks/study_comparison_by_map_type.ipynb`
-has uncommitted interactive-session changes from the user's own
-exploration (execution counts only, no logic changes) intentionally
-left out of recent commits.
+manual completion ongoing. `data/map_position_metrics.csv` and
+`data/cochange_pair_metrics.csv` are both fully computed and committed
+(`a345926`, alongside the scorable-files fix below).
+`notebooks/study_comparison_by_map_type.ipynb` has uncommitted
+interactive-session changes from the user's own exploration (execution
+counts only, no logic changes) intentionally left out of recent
+commits.
+
+## 2026-07-29 (cont'd)
+## Real Per-Model Token Counts for the Pruned Maps
+
+Follow-on from the `chars/4` budget-estimation bug above: once that was
+understood, the natural next question was how far off `chars/4` really
+is, and specifically whether `cl100k_base` (used for the position
+metrics) was a fair stand-in given none of the four study models are
+OpenAI models. Worked out what "how many tokens is this map" can even
+mean, then actually answered it per model rather than continuing to
+approximate.
+
+**The four candidate methods, in increasing order of fidelity:**
+1. `chars // 4` -- what the map generators use. Free, instant, no
+   dependencies, but calibrated for English prose; undercounts
+   code-like text (line-number markers, punctuation, short path
+   segments) which BPE tokenizers tend to split more finely than prose.
+2. A specific real tokenizer's exact count (`tiktoken`/`cl100k_base`,
+   used for `data/map_position_metrics.csv`) -- exact for that
+   vocabulary, but that vocabulary belongs to OpenAI's GPT-3.5/4
+   generation, not any of ministral-3b/deepseek-v4-flash/
+   nemotron-3-super/gpt-oss-120b.
+3. Each model's actual tokenizer -- exact and model-correct, but needs
+   that model's real tokenizer files.
+4. The billed `total_input_tokens` already recorded per trial (from
+   each provider's own `response.usage.prompt_tokens`) -- unambiguously
+   correct for that specific trial, but covers the whole prompt
+   (system + issue + map + tool schemas together), not the map in
+   isolation, so it can't answer "where in the map does file X fall."
+
+**Went with method 3.** Environment had no `transformers` installed and
+`pip install` is blocked by Debian's externally-managed-environment
+guard; the stdlib `venv` module is present but missing `ensurepip`
+(can't bootstrap pip on its own). Used the separately-installed
+`virtualenv` binary instead, which bundles its own pip bootstrap --
+isolated at `/tmp/claude-1000/tokcheck_venv`, no changes to system
+Python. Installed `transformers`, `sentencepiece`, `huggingface_hub`,
+`tiktoken` there.
+
+Found each study model's real HuggingFace repo via
+`HfApi().list_models(search=...)` -- all four resolved to an exact or
+near-exact name match with no ambiguity: `mistralai/Ministral-3-3B-
+Instruct-2512`, `deepseek-ai/DeepSeek-V4-Flash`, `nvidia/NVIDIA-
+Nemotron-3-Super-120B-A12B-BF16`, `openai/gpt-oss-120b`. Mistral's
+tokenizer needed `fix_mistral_regex=True` on load -- `transformers`
+itself warns that the default `tokenizer.json` for this model family
+has a known regex bug that silently mis-tokenizes without the flag.
+
+Ran all 45 issues x 3 map types (structural/frequency/cochange, the
+actual injected `_pruned_55k.txt` files, matching `MAP_FILES` in
+`run_trial.py`) through `cl100k_base` and all four real model
+tokenizers, alongside the `chars/4` estimate -- 135 rows, saved to
+`data/map_token_counts_by_model.csv` (not yet committed).
+
+**Caught and verified a surprising result rather than trusting it
+blindly**: Ministral-3B and Nemotron-3-Super came back with identical
+mean (34,881) and identical max (81,505) token counts on structural
+maps -- suspicious enough to be a fallback bug rather than a
+coincidence. Checked directly: both report `vocab_size=131072` and
+produce byte-identical token IDs on a test string
+(`def hello_world(x, y=None): return x + y  # comment`). Genuine, not
+a loading error -- the two model families have converged on the same
+~131k-vocab BPE tokenizer.
+
+**Results (structural maps, n=45):**
+
+| Method | Mean tokens | Max tokens | Issues exceeding 55k |
+|---|---|---|---|
+| `chars/4` (generator's own estimate) | 24,700 | 55,000 | 0/45 |
+| `cl100k_base` (OpenAI, used for position metrics) | 29,825 | 70,384 | 14/45 |
+| Ministral-3B (actual) | 34,881 | 81,505 | 15/45 |
+| DeepSeek-V4-Flash (actual) | 31,937 | 75,069 | 14/45 |
+| Nemotron-3-Super (actual) | 34,881 | 81,505 | 15/45 |
+| gpt-oss-120b (actual) | 29,901 | 69,910 | 14/45 |
+
+Two conclusions: `chars/4` undercounts for *every* real model in the
+study, not just as an artifact of picking `cl100k_base` as a stand-in
+-- Ministral's and Nemotron's actual tokenizers run ~40% higher than
+the generator believed, a wider gap than `cl100k_base` alone
+suggested. And the over-budget issue set (14-15 of 45) is nearly
+identical regardless of which of the five methods you check against --
+it's the same underlying issues each time (the `yt-dlp`/`pandas` cases
+already identified), not a tokenizer-choice artifact, which is
+reassuring for trusting the finding even without picking one "true"
+tokenizer to standardize on.
+
+### Status
+`data/map_token_counts_by_model.csv` saved, not yet committed.
 
