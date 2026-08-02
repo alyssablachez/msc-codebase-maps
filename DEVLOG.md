@@ -2683,3 +2683,67 @@ tokenizer to standardize on.
 ### Status
 `data/map_token_counts_by_model.csv` saved, not yet committed.
 
+## 2026-08-02
+## Trajectory Plots: Axis/Node Toggles, and a Cumulative-Tokens Fix
+
+Follow-on work on `plot_trajectories()` in
+`notebooks/study_comparison_by_map_type.ipynb`, driven by iterative
+feedback while inspecting real trials.
+
+**Three new optional toggles**, all off by default:
+- `align_y_per_model` -- shares one token-axis range across a model's 4
+  role panels, scaled to that row's own max, so a role with naturally
+  lower token usage (e.g. structural context, fewer turns) doesn't look
+  like it's hitting the ceiling just because its own panel auto-scaled
+  tightly to smaller data. Deliberately *not* aligned across different
+  models' rows, since token volume varies too much model-to-model for a
+  shared global scale to stay useful.
+- `fixed_x_axis` -- caps every panel's turn axis at a fixed 32, global
+  across the whole grid (unlike the per-row token alignment), since
+  turn count is directly comparable across models in a way raw token
+  volume isn't.
+- `show_nodes` -- hides the intermediate per-turn tool-call pie nodes,
+  leaving just the distance-colored connecting lines; the final
+  F1-colored node and any "!" rejected-submit marker still draw
+  regardless.
+
+**Found and fixed a real semantic mismatch, not a bug in the strict
+sense**: user noticed the token bar charts' "mean input tokens" (built
+from `metrics.total_input_tokens`) were an order of magnitude larger
+than what the trajectory lines' endpoints showed for the same
+trials. Traced this to `extract_trajectory()` using each turn's raw
+`usage.prompt_tokens` as a *snapshot* of that turn's own context size,
+while `total_input_tokens` is a *running sum* accumulated in the
+harness's turn loop (`total_input_tokens += response.usage.prompt_tokens`
+every turn) -- since the full history is resent and re-billed every
+turn, summing 30 already-large, growing snapshots is legitimately far
+bigger than any single one of them. Verified the arithmetic directly on
+one trial (`deepseek-v4-flash / fastapi/17 / structural / rep1`):
+summing the log's 30 per-turn `prompt_tokens` values gives 464,282,
+plus one un-logged final-answer-elicitation call (~20k, tagged
+differently so it isn't captured by the `turn_N` extraction) closely
+matches the recorded `total_input_tokens` of 484,676.
+
+Changed `extract_trajectory()` to build a running sum of per-turn
+`prompt_tokens` (matching how `total_input_tokens` itself is
+constructed) instead of using the raw per-turn value directly, so the
+trajectory lines' endpoints and the token bar charts are now telling
+the same story.
+
+**Side effect worth recording**: this also incidentally resolved an
+separate, previously-investigated anomaly -- DeepSeek-V4-Flash trials
+that hit the 30-turn cap reproducibly showed a real dip in reported
+`prompt_tokens` at exactly turn 24->25 (115 of 117 such trials, always
+at that exact boundary, always co-occurring with a 10-50x spike in that
+turn's `completion_tokens`). Confirmed this is a genuine quirk in how
+DeepSeek's own API reports usage under prompt caching once the
+turn-budget-warning message breaks the cached prefix (`harness/
+run_trial.py`'s `messages` list is verified append-only, so it isn't a
+harness bug) -- not something fixed here, since the underlying
+per-turn numbers are still real, but summing rather than snapshotting
+means the plotted line itself can no longer visibly dip, since a
+running total of non-negative numbers is monotonic by construction.
+
+### Status
+Committed.
+
