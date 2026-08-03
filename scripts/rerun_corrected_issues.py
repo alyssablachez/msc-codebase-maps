@@ -40,11 +40,22 @@ Usage:
         --maps-base /home/afb225/study1/repo_maps \
         --results-base /home/afb225/study1/results
 
-    # Restrict to one model/repo (e.g. to run two repos in parallel safely
+    # Restrict to one model/repo/rep (e.g. to run two repos in parallel safely
     # on different worker IDs -- concurrent trials against the SAME repo
     # clone are unsafe, different repo clones are fine):
     python3 scripts/rerun_corrected_issues.py --repo thefuck --worker-id 1 &
     python3 scripts/rerun_corrected_issues.py --repo stable-diffusion-webui --worker-id 2 &
+
+    # --repo and --rep combine to split across up to 5 worker clones at once
+    # (there are 2 repos x 3 reps = 6 combinations, but only 5 worker_N/
+    # clones exist -- run 5 concurrently, then the 6th once one frees up):
+    python3 scripts/rerun_corrected_issues.py --repo thefuck --rep 1 --worker-id 1 &
+    python3 scripts/rerun_corrected_issues.py --repo thefuck --rep 2 --worker-id 2 &
+    python3 scripts/rerun_corrected_issues.py --repo thefuck --rep 3 --worker-id 3 &
+    python3 scripts/rerun_corrected_issues.py --repo stable-diffusion-webui --rep 1 --worker-id 4 &
+    python3 scripts/rerun_corrected_issues.py --repo stable-diffusion-webui --rep 2 --worker-id 5 &
+    wait  # then, once a worker frees up:
+    python3 scripts/rerun_corrected_issues.py --repo stable-diffusion-webui --rep 3 --worker-id 1
 """
 import argparse
 import datetime
@@ -144,6 +155,7 @@ def build_trial_list(args):
 
     issues = TARGET_ISSUES if args.repo is None else [t for t in TARGET_ISSUES if t[0] == args.repo]
     models = MODELS if args.model is None else [args.model]
+    reps = REPS if args.rep is None else [args.rep]
 
     for repo, issue_idx in issues:
         for condition, (_, _, required_files) in CONDITIONS.items():
@@ -151,11 +163,11 @@ def build_trial_list(args):
             if missing:
                 print(f"WARNING: missing map file(s) for {repo}/{issue_idx}/{condition}: {missing}",
                       file=sys.stderr)
-                skipped_missing_map += len(models) * len(REPS)
+                skipped_missing_map += len(models) * len(reps)
                 continue
             for model in models:
                 safe_model = model.replace("/", "_")
-                for rep in REPS:
+                for rep in reps:
                     result_path = result_path_for(
                         args.results_base, safe_model, repo, issue_idx, condition, rep)
                     if os.path.exists(result_path):
@@ -179,6 +191,10 @@ def main():
                          help="Restrict to one of the two corrected repos (for safe parallel runs)")
     parser.add_argument("--model", choices=MODELS, default=None,
                          help="Restrict to one model (default: all 4)")
+    parser.add_argument("--rep", type=int, choices=REPS, default=None,
+                         help="Restrict to one rep (default: all 3) -- combine with --repo "
+                              "and different --worker-id values to parallelize across up to "
+                              "5 worker clones instead of just 2")
     parser.add_argument("--repos-base",   default=DEFAULT_REPOS_BASE)
     parser.add_argument("--maps-base",    default=DEFAULT_MAPS_BASE)
     parser.add_argument("--results-base", default=DEFAULT_RESULTS_BASE)
