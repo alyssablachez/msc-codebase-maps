@@ -2830,3 +2830,135 @@ for real trial execution) -- requires syncing the corrected CSV/maps
 there and clearing the equivalent stale results before running
 `scripts/rerun_corrected_issues.py`. Not yet committed.
 
+## Re-Run Completed: Synced 288 Trials, Fixed a Copy Bug, and Corrected Every Derived CSV
+
+The user ran the 288-trial re-run themselves on the native machine
+(`/home/afb225/study1`) using the commands from the previous session.
+Verified completeness before touching anything: all 288 files present
+(144 each for `thefuck/10` and `stable-diffusion-webui/5`), all valid
+JSON with real `scores` dicts, all 12 conditions x 4 models x 3 reps
+accounted for, and `base_commit` matching the corrected parent-commit
+hash on every single file -- no partial or stale results slipped
+through.
+
+**Caught and fixed a bug in my own sync script mid-copy.** The first
+pass silently dropped every model but the last one processed for each
+`(condition, rep)` pair, because the destination path was built from a
+variable that had already had the model segment stripped off for
+condition-parsing -- verified by checking file counts per study (12
+instead of the expected 48) rather than trusting the "288 files copied"
+success message. Deleted the wrongly-placed files and re-ran with the
+corrected path construction; re-verified 48/48/48 per study per issue,
+144/144 totals, no `map_type`/directory mismatches.
+
+**Then swept every CSV derived from trial data or the regenerated
+maps**, not just the raw results, per explicit request to correct "all
+of the relevant data csvs, including the map position metrics etc":
+
+- `data/map_position_metrics.csv` -- no generator script exists for
+  this one (traced its methodology from DEVLOG's 2026-07-16/07-29
+  entries: `cl100k_base` token offsets against the actual injected
+  `_pruned_55k.txt` map files). Reverse-engineered the exact parsing
+  convention for all three map formats and validated it byte-for-byte
+  against `scrapy/48`'s already-correct rows before trusting it on the
+  two corrected issues -- structural's `file_rank`/`total_files_listed`
+  turned out to count file headers *plus* top-level (module-level)
+  function/class signatures combined, not just files, which only
+  became clear by reverse-matching the known-good numbers.
+- `data/cochange_pair_metrics.csv` -- recomputing this surfaced a real
+  finding, not just a refresh: `stable-diffusion-webui/5`'s
+  `shared_options.py`/`ui_extra_networks.py` pair now shows **zero**
+  historical co-change (was showing a weak link before), because the
+  old `base_commit` had been counting the fix commit's own co-edit of
+  both files as "historical" evidence -- the same contamination
+  mechanism as the original bug, just surfacing in a second, derived
+  metric.
+- `data/issue_map_effect_ranking.csv`, `data/map_token_counts_by_model.csv`
+  (re-ran the real tokenizer venv at `/tmp/claude-1000/tokcheck_venv`,
+  still cached from 2026-07-29, no network needed), the
+  `pruned_ground_truth_check*.csv` family, `data/min_budget_for_gt.csv`,
+  `data/compiled_results.pkl` -- all regenerated via their actual
+  generator scripts. Several came back byte-identical, confirmed rather
+  than assumed: the position shifts from moving `base_commit` one
+  commit earlier were small enough not to cross any pruning-status or
+  first-file-reached threshold for these two issues specifically.
+- `data/tool_usage_comparison_*.csv` (three files) -- regenerated and
+  found a second, larger staleness unrelated to this correction:
+  `required_n_trials` jumped from 45 to 135 across every row, meaning
+  these files were stale from before Study 3 finished on the native
+  machine generally, not just missing the two corrected issues.
+- `data/issue_case_study_notes.csv`'s own `rank`/`mean_f1` columns --
+  recomputed fresh across all 45 issues. Only 4 rows actually changed:
+  `thefuck/10` (0.0928 -> 0.1372) and `stable-diffusion-webui/5`
+  (0.3970 -> 0.4461) each swap rank with their immediate neighbor
+  (`pandas/44`, `gpt-engineer/12`) -- two clean adjacent swaps, no
+  cascading reorder.
+
+Committed as `5b8069e2` (586 files: 288 results + 288 logs + 10 CSVs).
+`notebooks/study_comparison_by_map_type.ipynb` showed as modified
+throughout but was deliberately left out, per the user's own
+instruction and the established convention that its diffs are
+pre-existing execution-count churn, not something this session
+produced.
+
+## Case Studies: thefuck/10, stable-diffusion-webui/5, gpt-engineer/12, yt-dlp/45, fastapi/9
+
+Worked through five issues with the corrected/fresh data, each via the
+established bug-explain -> wrong/right-file breakdown -> search-terms
+-> map-effect-diagnosis -> conjecture workflow, logging six new entries
+in `data/model_failure_points.md` (#26-#30, plus a same-day addendum to
+#20).
+
+- **`thefuck/10`** (first analysis against the corrected data --
+  earlier discussion of this issue predates the fix and is superseded).
+  `conf.py`/`const.py` (settings-plumbing for the fix's new opt-out
+  setting) found in **0/144 trials each** -- the first pair of
+  scorable ground-truth files in this project found literally zero
+  times. A real, mutual co-change link exists between the found file
+  (`utils.py`) and the missing `conf.py` (9x each direction, delivered
+  in context) and goes unused. Entry #26.
+- **`stable-diffusion-webui/5`** (same correction batch). DeepSeek's
+  apparent perfect 3/3 under the `cochange` condition looked like a
+  map win at a glance but wasn't: the two ground-truth files never
+  co-change with each other at all in the actual data. The real driver
+  is a domain-*convention* search (`needs_reload_ui`, a decorator
+  already used on other settings) discovered independently of any map
+  -- third confirmed instance of failure point #14's
+  aggregate-correlation caution. Entry #27.
+- **`gpt-engineer/12`** ("`ValueError: Could not parse following text
+  as code edit`" -- the real fix is a full rewrite of the edit-parsing
+  pipeline onto the `Diff`/`Hunk` system introduced here, which
+  `gpt-engineer/11`'s later issue, three months on, found a bug in).
+  Essentially no wrong guesses at all across 144 trials -- models
+  under-predict rather than substitute. `file_selector.py` and
+  `files_dict.py` touched **0/144 times each**, not just unkept -- a
+  clean natural experiment splitting co-change truncation into a
+  fixable half (`file_selector.py`, a real 10x link hidden only by
+  list length) and an unfixable half (`files_dict.py`, genuinely weak
+  even untruncated). Entry #28.
+- **`yt-dlp/45`** (flagged as another no-real-fix "comment"-sourced
+  issue, `loc_way='comment'`, same category as `yt-dlp/41`/
+  `fastapi/20` -- weighted accordingly). Fourth confirmed co-change
+  instance, and the strongest raw link count of any of them (99x,
+  mutual, both files' top-3). Entry #29.
+- **`fastapi/9`** ("pass method return value as positional parameters
+  to Response" -- `RedirectResponse` breaks because its first
+  parameter isn't named `content`). The traceback names the exact
+  crashing line; `routing.py` found in 141/144 (98%), zero wrong
+  guesses, tightest model-to-model F1 spread in this project. Sixth
+  co-change instance, but a different mechanism from the other five:
+  not signal-seen-and-discounted, but exploration that never reaches
+  the (strong, complete) signal at all because a single traceback-named
+  file already looks like a finished answer. Entry #30 -- the first
+  entry in this list to conjecture a harness-level fix (a submit-gate
+  tied to checking co-change partners of the specific file already
+  found, not just any tool call) rather than a map-content change.
+
+### Status
+`thefuck/10` and `stable-diffusion-webui/5` are now analyzed against
+valid, corrected data (`model_failure_points.md`'s "Notes on use"
+updated to remove the invalidation flags). Five issues fully
+case-studied and logged this session; `data/issue_case_study_notes.csv`
+and `data/model_failure_points.md` both modified, not yet committed as
+of this entry.
+

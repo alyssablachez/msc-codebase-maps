@@ -785,6 +785,21 @@ imported from `w3lib`, an external dependency") the first time a search
 resolves to an import statement rather than a local definition, rather
 than the generic no-match/path-escape errors currently returned.
 
+**Counter-example found, 2026-08-04 (`pandas/26`, Nemotron-3-Super,
+tool-based conditions)**: this project already has a live version of
+the proposed fix, and it doesn't reliably work. `lookup_structure`
+returns a genuinely clear, unambiguous message for an unindexed file --
+`"Error: no structural data for 'pandas/tslib.pyx' (not a known file in
+this package)"` -- and in `all_tools/rep2`, the trial calls
+`lookup_structure` on `pandas/tslib.pyx` twice in a row, receiving the
+identical error both times, with no behavioral change in between. The
+mechanism conjectured above already exists in this harness for the tool
+delivery path; getting told a file isn't indexed does not reliably stop
+a model from re-querying it. Worth downgrading this entry's fix
+conjecture from "untested, plausible" to "tested in a related form,
+insufficient on its own" -- an informative error message alone doesn't
+substitute for whatever forces a model to actually update on it.
+
 ---
 
 ## 21. Frequency map's raw edit-count ranking can actively favor the wrong file — and, rarely, the per-trial data confirms a map-type effect rather than debunking it
@@ -1128,6 +1143,453 @@ unaffected problem.
 
 ---
 
+## 26. First case with two scorable ground-truth files at a genuine 0% find rate -- and a real, if partial, co-change signal for the pair sitting unused
+
+**Type:** model behavior (evidence weighting), re-analyzed with the
+corrected data -- the first entry in this list computed from
+`thefuck/10`'s valid re-run (see entry #17's original bug and the
+2026-08-03 correction/sync note in "Notes on use" below; any earlier
+discussion of this issue predates the fix and should not be cited).
+
+**Evidence:** `thefuck/10` (ground truth: `thefuck/utils.py`,
+`thefuck/conf.py`, `thefuck/const.py`; see the bug/fix explanation
+given in conversation on 2026-08-03 -- `get_all_executables()`'s `$PATH`
+scan is genuinely slow, and the fix adds an opt-out setting rather than
+speeding up the scan itself, split across a filter function in
+`utils.py` and settings-plumbing in `conf.py`/`const.py`). Across all
+144 trials: `utils.py` found in 44 (31%); **`conf.py` and `const.py`
+found in 0/144 each** -- the first pair of scorable, in-scope
+ground-truth files in this project found *zero* times, not just rarely
+(compare `rich/12`'s `console.py`/`text.py`, each found once).
+
+**Dominant wrong guess is a strongly "quoted" pull**:
+`thefuck/rules/missing_space_before_subcommand.py` (104/144, 72%) is
+the exact rule named verbatim in the issue's own debug output (`DEBUG:
+Trying rule: missing_space_before_subcommand; took: 0:00:08.341279`) --
+the caller of the slow function, not the file that needs to change.
+
+**`conf.py`/`const.py` are touched occasionally (11-14% of trials) but
+converted to a kept answer 0% of the time** -- lower base rate than
+most touch-vs-kept cases in this list, but the same 0% conversion
+pattern. Checked the actual delivered (truncated top-3) co-change text
+for the pair that's found (`utils.py`) against the pair that's missing
+(`conf.py`):
+```
+thefuck/utils.py → thefuck/conf.py (9x)   [rank 2 of 3]
+thefuck/conf.py  → thefuck/utils.py (9x)  [rank 2 of 3, mutual]
+thefuck/const.py → thefuck/conf.py (6x)   [rank 1 of 3]
+```
+A real, mutual, top-3 co-change link exists between the one
+ground-truth file models do find and the ones they don't -- weaker than
+`rich/12`'s case (not the entire top-3, and `const.py`'s link only runs
+one direction: `conf.py`'s own top-3 doesn't list `const.py` back,
+edged out by `types.py`/`utils.py`/`corrector.py`), but genuine, not
+noise, and sitting directly in context every time `utils.py` is found.
+Consistent with the recurring co-change-available-but-unused pattern
+(#6, #12, #21, #24), just at this issue's much lower `utils.py` base
+find rate (31%) than those cases' higher-frequency ones.
+
+**Per-model split**: gpt-oss-120B is the clear floor (F1=0.0139, 0/3
+baseline through 0/12 `tool_required` on `utils.py`'s keep rate --
+never converts a touch into a kept answer in any condition).
+DeepSeek-V4-Flash is the strongest converter, especially under
+`context` (7/9 kept, 78%). Mean F1 by model: DeepSeek 0.2209, Ministral
+0.2056, Nemotron 0.1083, gpt-oss 0.0139.
+
+---
+
+## 27. A perfect condition-level score dissolves into a search-strategy coincidence -- and the strategy that actually worked was a domain-convention search, not anything map-derived
+
+**Type:** methodological caution (third confirming instance of failure
+point #14's pattern) + a genuinely new, positive finding about *what
+kind of search* succeeds when neither traceback nor map relationship is
+available.
+
+**Evidence:** `stable-diffusion-webui/5` (ground truth:
+`ui_extra_networks.py`, `shared_options.py`; see the bug/fix
+explanation given in conversation on 2026-08-03 -- a one-sentence
+feature request with zero technical detail, no code names, no error
+text). `shared_options.py` is found by only one model at all
+(DeepSeek-V4-Flash, 10/144 overall; the other three models: 0/108
+combined). Broken down by exact condition, DeepSeek's `cochange`
+(map-as-context) trials are a perfect 3/3 -- looks like a clean
+co-change win at a glance.
+
+**Checked the actual delivered co-change data first, and it doesn't
+support that reading.** `ui_extra_networks.py`'s top-3 partners
+(`ui_extra_networks_checkpoints.py`, `shared.py`,
+`ui_extra_networks_hypernets.py`) and `shared_options.py`'s top-3
+(`sd_samplers_common.py`, `processing.py`, `sd_samplers_kdiffusion.py`)
+never mention each other in either direction -- there is no co-change
+link between the two ground-truth files for this map to have surfaced.
+
+**Checked the actual transcript instead.** No `lookup_cochange` call
+(Study 1 context conditions have no tools to call). The real path: after
+reading `ui_extra_networks.py` and noticing the new UI elements should
+trigger a settings-reload, the trial searches for `needs_reload_ui` --
+a decorator already used on other, unrelated settings in
+`shared_options.py` -- across `modules`, which surfaces the file
+directly. A genuinely resourceful piece of reasoning: recognizing a
+*codebase convention* (a decorator marking settings that need a UI
+reload) as a bridge from one known-relevant file to another, unrelated
+by any map signal, entirely independent of co-change data.
+
+**Confirmed this isn't map-dependent**: checked `ast_compact` (0/3
+kept) directly -- DeepSeek never tries the `needs_reload_ui` search in
+any of those 3 reps, despite touching `shared_options.py` by other
+means in 2 of them. What determines success looks like whether a given
+trial happens to try this specific search, not which map condition it's
+running under -- the same shape as `yt-dlp/41`'s original debunked
+correlation (#14), now recurring for a third time (also `keras/5`,
+conversation on 2026-08-03).
+
+**Why the positive half is worth keeping despite the negative
+methodological point**: this is the first case in this list where the
+winning strategy for an issue with *no* traceback, *no* quoted
+vocabulary, and *no* map relationship between its ground-truth files is
+a search for a shared code-convention marker rather than a shared
+data-relationship. No map type tested in this project encodes "which
+settings share a decorator/convention" as a queryable signal -- it's a
+different kind of relationship entirely from AST structure, edit
+frequency, or co-change history, and worth flagging as a candidate
+signal type distinct from anything else conjectured in this list so
+far.
+
+---
+
+## 28. Two ground-truth files never explored even once -- a clean natural experiment distinguishing "truncation hides a real signal" from "the signal itself is too weak to survive any list length"
+
+**Type:** map/tool design limitation (confirmed, two-part) -- a
+concrete, quantified extension of failure point #7's per-file co-change
+truncation finding, using two ground-truth files from the same issue as
+a controlled contrast.
+
+**Evidence:** `gpt-engineer/12` (ground truth, scorable: `chat_to_files.py`,
+`steps.py`, `file_selector.py`, `files_dict.py`; see the bug/fix
+explanation given in conversation on 2026-08-03 -- the real PR is a full
+architectural rewrite of the edit-parsing pipeline, not a targeted
+patch, triggered by an inline traceback naming `chat_to_files.py`'s
+functions directly). Unlike every other issue in this list, wrong
+guesses are essentially absent: of 144 trials, 107 predict exactly one
+scorable file, 31 predict exactly two, 6 predict zero -- almost no
+trial ever substitutes a plausible-but-wrong file, they simply stop
+once they run out of ideas. `chat_to_files.py` is found in 130/144
+(90%); `steps.py` in 39/144 (27%, almost entirely DeepSeek-V4-Flash,
+8-9/9 per condition); **`file_selector.py` and `files_dict.py` are
+found in 0/144 each, and -- checked directly -- touched (read or
+looked up) in 0/144 each, across every mechanism including baseline.**
+This is not a touch-vs-kept case (#9, #10, #15, #18, #21, #22, #23,
+#24, #26, #27) -- it's total non-exploration, the first clean instance
+of that shape in this list.
+
+**The co-change data explains why, and splits into two distinct
+sub-cases worth telling apart.** Checked the actual delivered
+(truncated top-3) co-change text: `chat_to_files.py`'s top-3 is
+`steps.py` (10x), `base_agent.py` (8x), `cli_agent.py` (7x); `steps.py`'s
+top-3 is `custom_steps.py` (21x), `cli_agent.py` (20x), `main.py`
+(14x). `file_selector.py` co-changes with `steps.py` at **10x -- the
+same strength as `chat_to_files.py`'s own link to `steps.py`** -- but
+is edged out of the delivered top-3 by three non-ground-truth files
+with higher counts. This is failure point #7's mechanism, concretely
+quantified: a real, dominant-strength relationship, hidden purely by
+list length, not signal weakness -- fixable by a longer list.
+`files_dict.py` is a genuinely different case: checked its full,
+untruncated 21-partner list directly, and it does have real links to
+all three other ground-truth files (`chat_to_files.py` 3x,
+`file_selector.py` 2x, `steps.py` 2x) -- but weak enough to sit around
+rank 7-15 of 21 even without any truncation at all. No amount of
+list-length increase would have reliably surfaced this one; the signal
+itself is too faint relative to the file's other, unrelated co-change
+partners.
+
+**`steps.py`'s DeepSeek-specific success is not map-dependent** --
+touched and kept at or near 100% even at baseline (3/3 touched, 3/3
+kept), tracking to the traceback-derived search term
+`improve_existing_code` (the function that calls into `steps.py`) that
+DeepSeek searches consistently and the other three models search far
+less reliably. The one dip is under `tool_free` (7/12 kept, 58%,
+vs. 100% under both `context` and `tool_required`) -- an unusual
+mechanism ordering where voluntary tool access underperforms both
+passive context and the forced gate.
+
+**Practical implication**: this is the cleanest evidence yet for a
+graduated fix to co-change delivery -- lengthening the truncated list
+(or biasing it toward other ground-truth-scope files when known, though
+that's not available at inference time) would plausibly have helped
+`file_selector.py` specifically, while `files_dict.py` would need a
+fundamentally stronger signal than co-change can provide at all, not
+just a longer list of the same signal.
+
+---
+
+## 29. A strong, mutual, prominently-delivered co-change link between the found file and its missing partner -- fourth confirmed instance, and the strongest-magnitude case yet
+
+**Type:** model behavior (evidence weighting) -- fourth confirmed
+instance of the co-change-retrieved-and-ignored pattern (#6, #12, #21,
+#24, #26), and notably the strongest individual link count seen in any
+of them.
+
+**Evidence:** `yt-dlp/45` (ground truth: `yt_dlp/__init__.py`,
+`yt_dlp/YoutubeDL.py`; see the bug/fix explanation given in conversation
+on 2026-08-03 -- flagged as another no-real-fix "comment"-sourced issue
+like `yt-dlp/41`/`fastapi/20`, `loc_way='comment'`, no linked PR/commit;
+the real explanation is almost certainly a maintainer pointing out that
+the reporter's own script sets the wrong option key, `cookies` instead
+of the actual internal name `cookiefile` -- confirmed as the likely
+answer since `cookiefile` is itself a heavily-searched term across
+every model, up to 70 hits in a single condition). `YoutubeDL.py` found
+in 98/144 (68%); `__init__.py` found in 3/144 (2%).
+
+**The co-change link between them is not weak or truncated -- it's
+prominent and mutual, the strongest raw count seen in any instance of
+this pattern so far**: `__init__.py`'s delivered top-3 lists
+`YoutubeDL.py` at 99x (rank 2 of 3); `YoutubeDL.py`'s delivered top-3
+lists `__init__.py` back at 99x (rank 3 of 3). Frequency reinforces
+this further rather than competing with it: `YoutubeDL.py` is the
+single most-edited file in the entire 1071-file repo (rank 1, 552
+edits), `__init__.py` sits at rank 7 (168 edits) -- both prominent by
+either signal, delivered together, and still only one half of the pair
+ever gets kept.
+
+**Mechanism check**: `__init__.py` touch rate scales the usual way with
+mechanism strength (baseline 8% -> context 22% -> tool_free 15% ->
+tool_required 33%, roughly 4x baseline under the gate) -- exploration
+increases as expected, conversion still doesn't follow.
+
+**Read this one with the no-real-fix caveat in mind** (see `yt-dlp/41`,
+failure points #14-#15): since there's no actual code change behind
+this issue, "the model should have found `__init__.py`" is a claim
+about matching an annotator's inference from a comment, not about
+localizing a real defect -- worth logging for the co-change pattern
+itself (which recurs regardless), but not treated as equally strong
+evidence as the PR-linked cases (`fastapi/17`, `keras/12`,
+`localstack/19`, `gpt-engineer/12`) when arguing the pattern is general.
+
+---
+
+## 30. A traceback anchor so direct it caps exploration before a near-perfect co-change signal ever gets a chance to matter
+
+**Type:** model behavior (under-exploration) -- distinct from the
+touch-vs-kept shape running through most of this list (#9, #10, #15,
+#18, #21, #22, #23, #24, #26, #27, #29): here the bottleneck isn't a
+commitment failure after finding the missing files, it's that almost no
+trial ever looks at them at all, because the traceback's own target
+already looks like a complete answer.
+
+**Evidence:** `fastapi/9` (ground truth, scorable: `routing.py`,
+`openapi/utils.py`, `applications.py`; see the bug/fix explanation
+given in conversation on 2026-08-03 -- `response_class(content=...)`
+breaks for any response class whose first parameter isn't literally
+named `content`, e.g. `RedirectResponse`'s `url`; fixed by passing the
+value positionally). The traceback names the exact crashing line in
+`routing.py`. Results: `routing.py` found in **141/144 (98%)**;
+`openapi/utils.py` and `applications.py` found in **0/144 each**. Zero
+wrong guesses across all 144 trials -- 141 trials predict exactly one
+file, 3 predict zero, not a single trial predicts more than one. Mean
+F1 is the tightest model-to-model spread found in this project (0.4861,
+0.4861, 0.4861, 0.5000) -- a clear ceiling effect from a connection
+direct enough that essentially any model reaches it and none look
+further.
+
+**Only 11/144 trials ever even touch `openapi/utils.py` or
+`applications.py`** -- not a touch-vs-kept story, near-total
+non-exploration. Checked by mechanism: baseline 0/12 (0%) -> context
+3/36 (8%) -> tool_free 3/48 (6%) -> tool_required 5/48 (10%) -- even the
+submit-gate barely moves it, a much weaker mechanism effect than #18/#23
+found elsewhere. **Of the 11 trials that do touch either file, 0 ever
+keep it** -- the same 0% conversion as the rest of this list, just off
+a far smaller exploration base.
+
+**The co-change signal is the strongest, most complete version of this
+pattern found in this project.** `routing.py`'s delivered top-3:
+```
+fastapi/routing.py
+→ fastapi/applications.py (33x)
+→ fastapi/dependencies/utils.py (23x)
+→ fastapi/openapi/utils.py (22x)
+```
+Both missing ground-truth files sit in the top-3, delivered directly
+alongside the file 98% of trials already find, and the relationship is
+mutual in both directions (`applications.py`'s own top partner is
+`routing.py` at 33x; `openapi/utils.py`'s own #2 partner is `routing.py`
+at 22x). Sixth confirmed instance of the co-change-retrieved-and-ignored
+pattern (#6, #12, #21, #24, #26, #29) -- but the mechanism producing the
+non-use is different here: it's not that the signal was seen and
+discounted, it's that almost no trial's exploration ever reaches far
+enough to encounter it, because the traceback alone already looks like
+a finished job.
+
+**Implication distinct from every other entry in this list**: a
+stronger or more prominent co-change signal would not help here, since
+the bottleneck is upstream of ever consulting it. What might help is
+something that signals "this traceback-named file is not the whole
+fix" before the model stops looking -- e.g. an explicit note when a
+found file has unusually strong co-change partners that were never
+retrieved, or a harness-level nudge that a single-file answer to a
+multi-file ground truth issue warrants one more verification pass. Nothing
+tested in this project does either.
+
+---
+
+## 31. Chasing the file that genuinely contains the real implementation, correctly, until the turn budget runs out before ever submitting anything -- because that file sits outside the study's own scoring boundary
+
+**Type:** methodological artifact (confirmed) + model behavior
+(turn-budget exhaustion) -- distinct from every prior "chasing the
+wrong thing" entry (#1, #3, `keras/5`'s recurrence of #3): in those
+cases the chased target was either absent from the repo or a coincidental
+distraction. Here the chased target is real, substantial, and
+*correctly identified as central to the actual fix* -- it's simply
+outside the file-extension boundary this study's `scorable_files()`
+filter scores against.
+
+**Evidence:** `pandas/26` (ground truth, scorable: `pandas/core/
+generic.py`, `pandas/tseries/index.py`; see the bug/fix explanation
+given in conversation on 2026-08-04 -- `tz_localize`'s old boolean-only
+`infer_dst` parameter is replaced by a generalized `ambiguous` parameter
+that also accepts a per-row boolean array, letting a caller supply
+known DST flags directly instead of only inferring or raising). Mean F1
+inverts this project's usual model ranking sharply: gpt-oss-120B 0.8435
+(best), Ministral-3B 0.6945, Nemotron-3-Super 0.4167,
+**DeepSeek-V4-Flash 0.1833 (worst)** -- DeepSeek is normally this
+project's strongest model.
+
+**`tz_localize_to_utc` dominates every model's search vocabulary**
+(57-169 hits per cell) -- not a coincidental distraction like prior
+"chasing" entries, but a real, substantial part of this specific fix:
+checked the actual PR and `pandas/tslib.pyx` (the Cython implementation)
+receives a 152-line change in the same commit, including the identical
+parameter rename and the actual array-handling logic for `ambiguous` --
+more changed lines than either scorable ground-truth file. **Confirmed
+`.pyx` files are genuinely normal, hand-edited source in this codebase,
+not generated artifacts**: `tslib.pyx` has 120 commits before this
+issue's `base_commit` alone, with ordinary contributor commit messages
+(`BUG: Timestamp cannot parse nanosecond from string`, `API:
+Timestamp.tz_localize and tz_convert raises TypeError`, `ENH:
+tz_localize(None) allows to reset tz`) -- real logic, not boilerplate.
+It's simply excluded from `ground_truth_scorable` because this study's
+`scorable_files()` filter is `.py`-only (the same mechanism that
+excludes `.js`/test/docs files elsewhere in this list), presumably
+because the structural/AST maps can't parse Cython syntax.
+
+**DeepSeek is the model most drawn to this real-but-unscored file, and
+it costs it severely.** Checked its raw (unfiltered, pre-scoring-filter)
+predictions across all 36 trials: it submits `pandas/tslib.pyx` in 7 --
+a correct, sophisticated identification of where the fix's actual
+implementation lives. But **29 of 36 trials (81%) submit nothing at all
+scorable or otherwise** -- checked one directly (`none`/`rep1`):
+`hit_turn_cap: True`, `stop_reason: "max_turns"`, and its literal last
+action before running out of its 30-turn budget is another `search
+"tz_localize_to_utc"` call. It never reaches `submit_answer`. This is
+the most extreme version of the "chase the underlying implementation"
+pattern found in this project -- not wasted-but-recovered effort, a
+complete failure to submit anything in the large majority of trials.
+
+**gpt-oss searches the same term almost as heavily (57-89/cell) but
+converts far better** -- it also searches `is_dst` consistently
+(20-31/cell, a term straight from the new parameter's docstring),
+suggesting it balances checking the Cython source against actually
+committing to the two Python wrapper files, rather than getting stuck
+purely chasing the implementation the way DeepSeek does.
+
+**Why this is worth treating as a methodological finding, not just a
+DeepSeek weakness**: DeepSeek's technical instinct here was arguably
+*more* correct than the models that scored better -- it identified the
+file containing the actual algorithmic change, which happens to sit
+outside an extension-based scoring boundary chosen for map-tooling
+reasons unrelated to code relevance. This is a genuine limitation of
+`scorable_files()`'s `.py`-only scope for any repo (like pandas, at
+this era) where core logic legitimately lives in compiled-extension
+source files -- worth flagging as a scope caveat when interpreting any
+cross-model comparison on Cython-heavy issues, separate from whatever
+conjecture follows about turn-budget management.
+
+---
+
+## 32. Map presence doesn't stop a model from falling into an unproductive search loop -- it helps by getting the real answer "banked" before the loop consumes the turn budget, which only sometimes translates into an actual submission
+
+**Type:** model behavior (turn-budget dynamics) -- a mechanism-level
+finding for *why* map presence sometimes rescues a trial from the same
+Nemotron/`pandas/26` context as entry #31, distinct from that entry's
+own focus (the `.pyx` scoring boundary). Checked directly rather than
+inferred from aggregate numbers, per this project's established
+standard (see failure point #14).
+
+**Evidence:** `pandas/26`, Nemotron-3-Super, whose mean F1 on this
+issue swings from **0.000 at baseline** (0/3) to **0.667 under context**
+(`ast_compact`/`freq`/`cochange` pooled) to 0.361/0.389 under
+`tool_free`/`tool_required` -- a large aggregate effect that could
+easily be misread as "the map prevented the search-loop trap." Checked
+several transcripts directly and it doesn't: **Nemotron falls into the
+same obsessive `tz_localize_to_utc` re-search loop as entry #31's
+DeepSeek case, at similar or even higher proportional rates, under
+every condition including context.** One baseline trial spends 13 of
+30 turns (43%) on `tslib.pyx` alone and hits `max_turns` never having
+called `submit_answer`.
+
+**What actually differs is *when* the real ground-truth file gets
+read, and whether that's early enough to survive being "banked" before
+the loop eats the rest of the budget.** In a successful `freq` trial,
+`pandas/tseries/index.py` is read as the 3rd action -- then the trial
+spends the remaining ~27 turns on the same repeated `tz_localize_to_utc`
+search pattern as baseline, and its final action at turn 30 is
+`submit_answer(files=["generic.py", "index.py", "tslib.pyx"])`,
+bundling the early find together with the never-resolved Cython chase.
+**But early discovery alone doesn't guarantee success**: checked a
+*failed* `cochange` trial and `index.py` is read just as early (2nd
+action) -- yet this trial never calls `submit_answer` at all, hitting
+`max_turns` with empty final content after the identical obsessive
+search pattern consumes the rest of its budget.
+
+**The mechanism is closer to raising the odds of a late accidental
+submission than to preventing the underlying trap.** Map presence gets
+the correct file into the trial's working context earlier, which
+plausibly leaves more "slack" turns for the model to eventually break
+off its search loop and call `submit_answer` before the hard cutoff --
+but it's stochastic per trial, not a reliable guarantee, since the
+counter-example above found the file at essentially the same turn and
+still ran out the clock with no submission at all.
+
+**Distinct implication from entry #31's methodological framing**: even
+if `scorable_files()` were extended to include `.pyx` files (that
+entry's conjecture), this specific failure mode -- burning the turn
+budget on a single repeated search until the trial times out with no
+submission -- would still cost real credit on any issue with a similarly
+strong non-file-specific attractor term. The harness-level fix
+conjectured in entry #31 (a diminishing-returns check on repeated
+near-identical search queries, or a forced interim "submit your current
+best guess" once turns run low) is the more directly actionable lever
+for *this* mechanism specifically, independent of the scoring-boundary
+question.
+
+**Follow-up, checked at the turn level (2026-08-04): the "early
+banking" mechanism explains context's jump cleanly but does *not*
+explain `tool_free`/`tool_required`'s improvement over baseline**,
+which needs a different (currently unconfirmed) explanation:
+
+| Mechanism | mean turn `index.py` first touched | ever submits anything |
+|---|---:|---:|
+| baseline | 5.7 | 0/3 (0%) |
+| context | **2.3** | 8/9 (89%) |
+| tool_free | 5.7 (identical to baseline) | 6/12 (50%) |
+| tool_required | 4.9 | 6/12 (50%) |
+
+`tool_free`'s mean first-touch turn is exactly the same as baseline's,
+yet its submission rate is far higher (50% vs 0%) -- so unlike context,
+something other than "found the file sooner" is driving the
+improvement. Two honest, unverified candidates rather than a confirmed
+mechanism: (1) `baseline`'s n=3 is small enough that 0% could partly be
+an unlucky sample rather than a robust floor, and (2) a
+`lookup_structure` call returns a condensed structural summary rather
+than a full file body, which is cheaper to process per-turn than
+`read_file` and could leave more effective turns for the
+search-loop-then-submit cycle without changing when the first touch
+happens -- not directly verified. Flagged explicitly as an open
+question rather than folded into the "map presence helps via early
+banking" claim above, since the data for tool conditions doesn't
+actually support that mechanism.
+
+---
+
 ### Notes on use
 
 - Failure points are not mutually exclusive — a single trial can exhibit
@@ -1138,9 +1600,61 @@ unaffected problem.
 - Fourteen issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
   `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`,
   `pandas/44`, `scrapy/48`, `transformers/27`, `gpt-engineer/11`,
-  `rich/12`, `keras/5`); intentionally kept broad and issue-specific
-  rather than prematurely generalized — revisit once a handful more
-  issues are logged here to see which patterns recur. **Update,
+  `rich/12`, `keras/5`, `thefuck/10`, `stable-diffusion-webui/5`,
+  `gpt-engineer/12`, `yt-dlp/45`, `fastapi/9`, `pandas/26`);
+  intentionally kept broad and issue-specific rather than prematurely
+  generalized — revisit once a handful more issues are logged here to
+  see which patterns recur. `pandas/26` (entry #31) is a distinct
+  finding worth remembering when interpreting any other Cython-heavy
+  repo in this dataset (`pandas` especially): `scorable_files()`'s
+  `.py`-only scope means a model correctly identifying real logic in a
+  `.pyx` file gets zero credit and can be structurally disadvantaged
+  relative to models that never look that deep — DeepSeek's
+  worst-in-project score here (0.1833) reflects a scope boundary as
+  much as, or more than, any reasoning failure. Entry #32, same issue,
+  is a mechanism-level companion finding worth checking for whenever an
+  aggregate baseline-vs-map delta looks large for one model: map
+  presence didn't stop Nemotron's search loop, it got the real file
+  "banked" earlier, which only sometimes translated into an actual
+  submission before the turn cap — a third, more granular addition to
+  the family of cautions started by failure point #14 about not taking
+  aggregate condition deltas at face value.
+  `yt-dlp/45` (entry #29) is a fourth confirmed instance of the
+  co-change-retrieved-and-ignored pattern (#6, #12, #21, #24, #26) and
+  the strongest raw link count of any of them (99x, mutual, top-3 both
+  directions) — but is also a no-real-fix "comment"-sourced issue like
+  `yt-dlp/41`/`fastapi/20`, so weight it accordingly when citing the
+  pattern's generality (the PR-linked instances — `fastapi/17`,
+  `keras/12`, `localstack/19`, `gpt-engineer/12` — are the stronger
+  evidence). `fastapi/9` (entry #30) is PR-linked and a sixth co-change
+  instance, but with a genuinely different mechanism from the other
+  five: not signal-seen-and-discounted, but exploration that never
+  reaches the signal at all because a single traceback-named file
+  already looks like a complete answer — worth treating as a distinct
+  subtype (under-exploration triggered by anchor confidence) rather
+  than folding into the touch-vs-kept commitment-gap story that
+  dominates the rest of this list. `gpt-engineer/12`
+  (entry #28) is the first issue with essentially no wrong guesses at
+  all (models stop rather than substitute a plausible-but-wrong file)
+  and the first with two ground-truth files at 0% *touch* rate (not
+  just 0% kept) — a clean natural experiment splitting failure point
+  #7's truncation finding into a fixable half (`file_selector.py`, real
+  dominant-strength link, hidden only by list length) and an unfixable
+  half (`files_dict.py`, genuinely weak signal even untruncated). Worth
+  citing over #7 itself when arguing for a specific fix (longer
+  co-change lists), since this is the quantified, two-sided version of
+  that claim. `thefuck/10` (entry #26) is the first issue
+  analyzed with two scorable ground-truth files found in literally
+  0/144 trials each, and is the first entry computed against this
+  issue's corrected data — see the sync note directly below and entry
+  #17 for the original bug. `stable-diffusion-webui/5` (entry #27,
+  computed against the same corrected data) is the third confirmed
+  instance of failure point #14's "condition-level correlation dissolves
+  on inspection" pattern (after `yt-dlp/41` and `keras/5`) — worth
+  treating as an established recurring risk in this dataset's small
+  per-condition n (3 reps), not an occasional fluke, and checking for by
+  default whenever a single condition stands out sharply for one model.
+  **Update,
   2026-08-03**: the `thefuck/10` / `stable-diffusion-webui/5` re-run
   (see entry #17) is now complete and verified — 288/288 valid trials
   synced from the native machine into `study_1/2/3`, correct
