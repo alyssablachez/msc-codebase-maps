@@ -69,6 +69,23 @@ DeepSeek-V4-Flash and Ministral-3B, whose top terms are real, present-in-repo
 symbol names (`take`, `take_nd`, `_ixs`, `flags`, `writeable`). High search
 volume did not correlate with productive search terms.
 
+**A second, noisier variant confirmed on `keras/5`** (see the bug/fix
+explanation given in conversation on 2026-08-03): the reported error
+there, `"TypeError: float() argument must be a string or a number, not
+'dict'"`, is Python's own builtin `float()` message, equally absent from
+the repo. But unlike `pandas/35`'s Cython text -- distinctive enough
+that a literal-phrase search cleanly returns zero matches -- searching
+the single word `float` (what models actually query, not the full
+phrase) returns a flood of real, irrelevant hits, since it's a ubiquitous
+token in any numerical library. `float` dominates first-search behavior
+for gpt-oss-120B (100% of trials), Nemotron-3-Super (88.9%), and
+DeepSeek-V4-Flash (75%), tracking closely with final F1 ranking;
+Ministral-3B (16.7%) is the outlier and has the best score on this
+issue. The failure texture differs from the original case: not an
+obvious, immediately-abandoned dead end, but a noisy trap that can
+plausibly encourage repeated variations rather than quick abandonment,
+since each query looks like it's "finding something."
+
 ---
 
 ## 4. No mechanism to consult prior/linked issue history
@@ -619,6 +636,498 @@ ever regenerated or extended with more issues from the same source pickle.
 
 ---
 
+## 18. Correct file touched at a 0% keep rate, including a case that searched the exact right function name and never read it -- and a real, model-consistent gap between delivery mechanisms (not map types)
+
+**Type:** model behavior (decision-weighting) -- most extreme instance yet
+of the "retrieval succeeds, commitment fails" pattern (failure points #10,
+#15), plus a new, cleanly-isolated finding about *which* delivery mechanism
+drives exploration toward the right file.
+
+**Evidence:** `pandas/44` (ground truth: `pandas/core/indexing.py`, a
+one-line-ancillary-import file like `fastapi/20`'s `background.py`, and
+`pandas/tseries/index.py`, where the real fix -- a missing `elif reso ==
+'second'` branch in `DatetimeIndex._partial_date_slice` -- actually lives;
+see the bug/fix explanation given in conversation on 2026-08-03). The wrong-
+guess grid is dominated by `pandas/core/frame.py` (99 of 111 wrong guesses,
+89%) -- the exact file/method (`__getitem__`) named in the issue's own
+traceback. **38 of 144 trials touched (read or looked up)
+`pandas/tseries/index.py` -- the real fix file -- and 0 of them ever kept
+it in the final answer.** A 0% conversion rate, more extreme than
+`fastapi/20`'s 22% (failure point #15). Entirely concentrated in
+DeepSeek-V4-Flash (30 touches) and Ministral-3B (8); gpt-oss-120B and
+Nemotron-3-Super never touch it once.
+
+**Sharper than a simple "read it, discarded it" case**: checked
+`DeepSeek-V4-Flash / structural / rep3` in detail. Turn 9 reads
+`_get_string_slice()`, which literally calls
+`self._partial_date_slice(reso, parsed, ...)` -- the buggy function, by
+name, in the code it just read. Turns 10 and 19 read the neighboring
+`get_value`/`get_loc` methods. **Turn 24 explicitly searches
+`'def _partial_date_slice'` in `pandas/tseries/index.py` and gets a
+location hit** -- the model typed the exact correct function name into a
+search query. No `read_file` call at that offset follows anywhere in the
+remaining 5 turns; the trial pivots back to `indexing.py`/`internals.py`
+and submits `frame.py` + `indexing.py` (F1=0.5). This is one hop short of
+even failure point #1's pattern (`pandas/35`, which never searched the
+right term at all) -- here the right term *was* searched, and the model
+still didn't take the one further step of reading what it found.
+
+**Checked whether map type or delivery mechanism explains the touch rate --
+it's the mechanism, not the map.** Touch rate by map type is flat and
+undifferentiated: Structural 28%, Frequency 31%, Co-change 25%, All tools
+21% (10/36, 11/36, 9/36, 5/24) -- no map type stands out. Touch rate by
+*delivery mechanism*, pooled across the three individual map types, is a
+real, monotonic step: context 22% (8/36) < tool_free 23% (11/48) <
+tool_required 33% (16/48). Verified this holds per-model, not just pooled:
+
+| Model | baseline (none) | context | tool_free | tool_required |
+|---|---|---|---|---|
+| Ministral-3B | 0/3 (0%) | 1/9 (11%) | 2/9 (22%) | 3/9 (33%) |
+| DeepSeek-V4-Flash | 3/3 (100%) | 7/9 (78%) | 8/9 (89%) | 9/9 (100%) |
+
+For Ministral, baseline truly is the floor and the progression is fully
+monotonic (0% -> 11% -> 22% -> 33%). For DeepSeek it isn't: baseline ties
+`tool_required` at 100% and is *higher* than `context` (78%) -- passively
+injecting a map into the system prompt appears to make this specific,
+already-thorough-explorer model explore *less* broadly than giving it
+nothing at all, plausibly by signaling "you already have enough
+information," while being required to call a lookup tool restores (but
+doesn't exceed) its no-map exploration thoroughness. Baseline is a noisier
+comparison than the other three points (n=3 vs. n=9 pooled per model), so
+trust the direction more than the exact percentages.
+
+**Bottom line, stated plainly**: Study 3's submit-gate mechanism
+demonstrably works at its stated job -- DeepSeek touches the correct file
+in 100% of required-condition trials, a perfect 9/9 -- and it does nothing
+whatsoever for the decision made once there, since the keep rate is still
+0% even at that ceiling. "Make the model look at more things" and "make
+the model use what it looked at" are separate problems; the gate only ever
+solves the first one.
+
+---
+
+## 19. Identical basename in a different directory creates the most one-sided wrong-guess dominance seen yet
+
+**Type:** model behavior (search/disambiguation) — a new subtype, distinct
+from "plausible name match" (#13) and "traceback-named file" (#5, #10):
+here the wrong file isn't merely *similarly* named, it has the exact same
+filename as the correct one, one directory up.
+
+**Evidence:** `scrapy/48` (ground truth: `scrapy/commands/shell.py` and
+`scrapy/utils/url.py` — see the bug/fix explanation given in conversation
+on 2026-08-03). `scrapy/shell.py` (the `Shell` class that drives the
+interactive console) and `scrapy/commands/shell.py` (the CLI command that
+parses `scrapy shell <url>`'s arguments) share an identical basename.
+Across all 144 trials, `scrapy/shell.py` was submitted **101 times (70%)**
+— the dominant wrong answer by a wide margin — versus 33 (23%) for the
+correct `scrapy/commands/shell.py`. This is the most one-sided wrong-guess
+concentration recorded in this list to date on a *single* competing file
+(contrast `pandas/44`'s `frame.py`, 89% of *wrong guesses* but a
+traceback-named file, a different mechanism per #5).
+
+**Why this is worth separating from #13's `keras/utils/io_utils.py`
+case**: `io_utils.py` was plausible because it genuinely contains the
+class named in the issue (`HDF5Matrix`) — a content-level match. Here
+there's no comparable content hook; the two `shell.py` files draw
+confusion from the filename match alone, which any tool or map indexing
+files by basename-first (or any model skimming a directory listing) is
+structurally prone to conflating.
+
+**Revised mitigation** (an earlier draft of this entry proposed "always
+show full paths, not basenames" — checked and retracted: every map type
+here already displays full relative paths, `scrapy/shell.py` vs.
+`scrapy/commands/shell.py` are never truncated to bare basenames
+anywhere in the delivered maps, so that alone doesn't explain the
+confusion or fix it). What actually distinguishes the two files is
+control flow, not naming: `cmdline.py` → `commands/shell.py::run()` is
+the true CLI entry point, the first code to touch the raw argument;
+`shell.py::fetch()` only runs afterward, once `run()` has already
+decided what to do with the URL. A call graph rooted at the actual entry
+point — showing which file is reached *first* from where user input
+enters the program — would give a structural reason to prefer the
+entry-point file over its same-named sibling, something none of
+structural/frequency/co-change encode (see entry #21's `best_map_potential`
+conclusion for `scrapy/48`, revised in conversation on 2026-08-03: none
+of the three existing map types is really the answer for this issue).
+
+---
+
+## 20. Chasing a real symbol whose definition lives outside the repository entirely
+
+**Type:** model behavior (search strategy) — a new subtype, distinct from
+#3: #3's searched text (a Cython runtime error message) could never exist
+in any repo; here the searched symbol is real, genuinely used, and
+findable via `import` — it's just not *defined* in the target repository.
+
+**Evidence:** `scrapy/48`. `scrapy/shell.py`'s `Shell.fetch()` calls
+`any_to_uri(request_or_url)`, imported from the external `w3lib` package.
+`any_to_uri` dominates search vocabulary across **every single
+model×map-type cell** in this issue (683 total hits across all trials,
+more than 2x the next-highest term `shell` at 137) — not a map-specific
+or model-specific artifact, a constant. Checked one representative trial
+in full (`DeepSeek-V4-Flash / none / rep2`, baseline): it reads
+`scrapy/utils/url.py` in full at turn 12 and even searches the literal
+string `add_http_if_no_scheme` — the real fix's exact function name —
+early in the trial. Getting no match (correctly, since the function
+doesn't exist pre-fix), it pivots to hunting `any_to_uri`'s definition
+instead, escalating across 15+ further searches into `/usr`,
+`/usr/local/lib`, `/usr/lib/python2.7`, and site-packages paths, each
+returning `"Error executing search: path '...' escapes the repository
+root"`. The trial exhausts its turn budget this way and is forced to
+submit `['scrapy/shell.py']` alone.
+
+**Map implication**: no map type addresses this — structural, frequency,
+and co-change maps are all repo-scoped by construction, so none can
+signal "this symbol is external, stop looking for it here." A cheap,
+targeted fix would be for the `search` tool itself to short-circuit with
+a distinguishing error (e.g. "not found in repository; `any_to_uri` is
+imported from `w3lib`, an external dependency") the first time a search
+resolves to an import statement rather than a local definition, rather
+than the generic no-match/path-escape errors currently returned.
+
+---
+
+## 21. Frequency map's raw edit-count ranking can actively favor the wrong file — and, rarely, the per-trial data confirms a map-type effect rather than debunking it
+
+**Type:** map/tool design limitation (confirmed) + a methodological
+counterpoint to #14 — the aggregate/per-trial split for once resolves in
+the map's favor, not against it.
+
+**Evidence:** `scrapy/48`. The frequency map ranks `scrapy/shell.py` (58
+historical edits, last-edit 2015-09-08) above `scrapy/commands/shell.py`
+(23 edits, last-edit 2015-05-09) — both in raw edit-count and in literal
+position in the delivered text (`freq_map.txt` line 6 vs. line 37).
+Historical edit volume here tracks *how old and busy a file has been*,
+not relevance to this issue, and the busier file happens to be the wrong
+one. Co-change's ordering runs the other way: `scrapy/commands/shell.py`
+appears at line 59 of `cochange_map.txt`, `scrapy/shell.py` not until
+line 665. For DeepSeek-V4-Flash specifically this produces a clean,
+deterministic split, checked trial-by-trial: **`cochange` → predicts only
+`['scrapy/commands/shell.py']` in 3/3 reps (F1=0.6667 each); `freq` →
+predicts only `['scrapy/shell.py']` in 3/3 reps (F1=0.0 each).** Every
+rep flips identically within each condition — not a majority pattern, a
+total one.
+
+**Why this is a useful counterpoint to failure point #14**: #14 warned
+that a condition-level correlation (map X looks better than map Y in the
+mean-F1 table) often dissolves once individual trials are checked, and
+turned out not to be causal for `yt-dlp/41`. This is the reverse finding
+on the same kind of check — here, inspecting the individual trials
+*confirms* rather than debunks a map-type effect, at least for one model
+on one issue. Worth remembering both directions exist: aggregate
+differences are a hypothesis to verify, not automatically noise. Not
+generalized beyond DeepSeek-V4-Flash on this issue — Nemotron's best
+condition on the same issue is `structural_required` (0.611), and
+Ministral/gpt-oss show weak/noisy per-condition patterns, so this is a
+real but model-specific effect, not evidence frequency maps are
+generally worse than co-change maps.
+
+---
+
+## 22. Ground truth requires generalizing a confirmed bug pattern across near-duplicate files, not just finding the reported instance — near-universal failure across the formal model roster, with one exploratory counter-example proving it's achievable
+
+**Type:** new issue category — not a localization failure in the usual
+sense (finding *a* file), but a generalization failure (finding *all*
+instances of the same latent defect once one is confirmed). Distinct
+from every prior entry in this list.
+
+**Evidence:** `transformers/27` (ground truth: 12 files — see the bug/fix
+explanation given in conversation on 2026-08-03). The reporter's issue
+and traceback describe exactly one symptom: `T5TokenizerFast.
+save_vocabulary()` crashes when `self.vocab_file` is `None`. The real PR
+(#12806) fixed T5 *and* swept the identical copy-pasted pattern across 11
+other sentencepiece-based fast tokenizers plus their shared base class —
+none of which the issue text mentions or could be inferred from the
+traceback alone. Across all 144 trials (12 conditions x 4 models x 3
+reps): **`t5/tokenization_t5_fast.py` found in 144/144 (100%); every one
+of the other 11 ground-truth files found in 0/144.** Mean F1 is an
+almost perfectly flat ~0.154 for all four models regardless of map
+type — precision 1.0, recall 1/12, every time. This is the most
+deterministic result recorded in this project: not "models get confused
+between plausible files" (the dominant shape in every prior entry) but
+"models solve the reported instance and never attempt the swept fix
+at all."
+
+**A confirmed near-miss, not just silence**: checked
+`DeepSeek-V4-Flash / cochange / rep2` in full. After reading
+`t5_fast.py` it explicitly states *"Let me check other fast tokenizers
+that might have similar `save_vocabulary` implementations,"* searches
+`def save_vocabulary` across `src/transformers/models` (a real GT file,
+`mbart50_fast.py`, appears in the hit list), reads several siblings at
+the wrong offsets (copied from T5's own line numbers, landing on
+unrelated methods), then runs `search "abspath"` and gets back, verbatim:
+`mbart50/tokenization_mbart50_fast.py:268: if os.path.abspath(self.
+vocab_file) != os.path.abspath(out_vocab_file):` — direct, unambiguous,
+search-confirmed proof the identical bug recurs in a second ground-truth
+file. It then pivots to unrelated code and submits `t5_fast.py` alone,
+dropping a thread it had just confirmed. Sharper than failure point #1
+(never searched the right term) or #18 (searched the right term, never
+read the result) — here the model found and read direct proof of the
+exact thing the task required, and still didn't act on it.
+
+**Touch rate on the other 11 files scales with map richness, but never
+converts to a kept answer.** Checked every trial's `read_file`/
+`lookup_*` calls against the other 11 GT files directly:
+
+| Map-type group | Touch rate | | Mechanism | Touch rate |
+|---|---:|---|---|---:|
+| baseline | 1/12 (8.3%) | | baseline | 8.3% |
+| Structural | 6/36 (16.7%) | | context | **38.9%** |
+| Frequency | 10/36 (27.8%) | | tool_free | 25.0% |
+| Co-change | 12/36 (33.3%) | | tool_required | 22.9% |
+| All tools | 9/24 (37.5%) | | | |
+
+Map presence roughly doubles-to-quadruples exploration breadth over
+baseline, scaling with how much signal is on offer (`All tools` highest).
+Delivery-mechanism ordering here is `context > tool_free > tool_required`
+— the reverse of `pandas/44`'s finding (failure point #18), plausibly
+because context conditions passively list every file up front, so a
+model already looking at `t5_fast.py` is more likely to notice the
+`*_fast.py` naming pattern while scanning, without ever deciding to call
+a lookup tool. **Per-model touch rate is a near-total split**:
+DeepSeek-V4-Flash 61.1% (100% under `All tools`, 6/6), gpt-oss-120B
+33.3%, Ministral-3B 11.1%, **Nemotron-3-Super 0/36 (0.0%) — every
+condition, no exceptions.** For DeepSeek specifically, touch rate is 0%
+at baseline and jumps to 58-78% the moment any map is present, even
+though DeepSeek already burns near-max turns at baseline too — map
+presence, not turn budget, is what triggers the broader look for this
+model. None of this breadth ever converts: kept-count for the other 11
+files stays 0/144 in every cell, including the 100%-touch DeepSeek/
+All-tools cell.
+
+**Counter-example, outside the formal 4-model roster**: an exploratory
+run with `claude-haiku-4-5-20251001` (`study_1/exploratory_results/`,
+`none` and `cochange` only, 3 reps each — not part of the formal study
+and not comparable to the main results table) shows the generalization
+step is achievable, not a hard ceiling. Baseline behaves like the study
+models (t5_fast.py only, F1≈0.14). Under `cochange`, 2 of 3 reps
+generalize sharply: rep1 predicts 17 files, hits **10 of 12** GT files
+(F1=**0.6897**, the best score recorded anywhere in this issue by a wide
+margin); rep3 hits 10/12 (F1=0.526); rep2 reverts to 2 files (F1=0.143,
+the instinct doesn't fire every time even for this model). The rep1
+transcript shows the exact step every study-model trial stopped short
+of: turn 2, immediately after reading `t5_fast.py`, *"Now let me check
+if there are other similar fast tokenizer files that might have the same
+issue"* — broadens to `search "save_vocabulary"` across
+`src/transformers/models`, then methodically reads and explicitly
+confirms the pattern in five separate siblings ("This has the same
+issue!" / "Same issue."), including checking a negative control
+(`gpt2_fast.py`, which has no vocab file and correctly isn't flagged) to
+reason about *which* tokenizers are actually susceptible. Submits 17
+files, imperfect (7 aren't in the true ground truth) but the only trial
+in the entire issue that turns "the bug recurs" into a broader answer
+rather than an abandoned observation.
+
+**Why this matters for the project's overall claims**: every other
+"maps didn't help" finding in this list is compatible with "the model
+just isn't capable of that leap yet" being false in general — this issue
+is the cleanest test of that question this project has, since one
+exploratory data point shows the leap is achievable given the right
+model, even if none of the four formally-studied models make it. Worth
+treating as a capability-ceiling question (does the model's own
+reasoning support pattern generalization at all) layered on top of, not
+instead of, the map-effectiveness question this project's main models
+were chosen to answer.
+
+---
+
+## 23. Widest per-model split recorded (0% to 100%), and the sharpest touch-vs-kept gap yet -- a case where the submit-gate mechanism demonstrably doesn't touch the actual bottleneck
+
+**Type:** model behavior (decision-weighting) -- the most extreme instance
+of the "retrieval succeeds, commitment fails" pattern (#9, #10, #15,
+#18, #21, #22) found so far, plus new evidence about which failures
+Study 3's submit-gate can and can't fix.
+
+**Evidence:** `gpt-engineer/11` (ground truth: single file
+`gpt_engineer/core/diff.py`; see the bug/fix explanation given in
+conversation on 2026-08-03 -- note the real PR only fixes the *silent*
+part of "failing silently," leaving the underlying partial-application
+behavior the reporter actually objected to unchanged). Per-model success
+rate is a near-total, almost binary split: **DeepSeek-V4-Flash 33/33
+(100% -- every condition, including baseline), gpt-oss-120B 0/36 (0% --
+every condition, no exceptions), Nemotron-3-Super 2/33 (6%),
+Ministral-3B 8/33 (24%).** Both extremes are ceiling/floor effects: no
+map type or delivery mechanism can move DeepSeek's or gpt-oss's number,
+because it's already fixed at the boundary in every cell.
+
+**gpt-oss-120B reads `diff.py` in 26/36 trials (72%) and keeps it in the
+final answer 0/36 times** -- the most extreme touch-vs-kept gap recorded
+in this project (previous record: `fastapi/20`'s 0% for this same
+model, but off a much lower 21-touch base rate; here it's nearly
+three-quarters of all trials). Checked one trial in full detail
+(`ast_compact/rep2`): reads `diff.py` in its entirety (418 lines),
+confirms `class Diff:` via search, then spends 15 further turns
+re-reading `steps.py` and `chat_to_files.py` in loops (several
+exact-duplicate reads of identical line ranges) before producing **two
+different final answers that disagree with each other**: its own
+closing reasoning text reads `["gpt_engineer/core/default/steps.py"]`,
+but the actual `submit_answer` tool call, on a separate later "final"
+turn, names `chat_to_files.py` instead. Neither is correct, and unlike
+failure point #9 (reasoning names one file, submission uses another) the
+disconnect here is between two different *submitted* answers -- an even
+sharper instance of the same underlying pattern.
+
+**Turn count rules out under-exploration as the explanation.**
+gpt-oss-120B averages the *most* assistant turns of any model on this
+issue (13.0, vs. 9.9-11.5 for the other three) despite scoring zero --
+consistent with its 72% touch rate, it is not failing from insufficient
+looking.
+
+**Mechanism breakdown shows the submit-gate helps exactly one model, and
+does nothing for the model that most needs help:**
+
+| Model | baseline | context | tool_free | tool_required |
+|---|---|---|---|---|
+| DeepSeek-V4-Flash | 3/3 | 9/9 | 12/12 | 12/12 |
+| gpt-oss-120B | 0/3 | 0/9 | 0/12 | 0/12 |
+| Nemotron-3-Super | 0/3 | 0/9 | 1/12 | 1/12 |
+| Ministral-3B | 0/3 | 1/9 (11%) | 2/12 (17%) | 5/12 (42%) |
+
+Ministral shows a real, monotonic gate effect matching `pandas/44`'s
+finding (failure point #18): baseline 0% -> tool_required 42%. For
+gpt-oss, `tool_required` -- the condition designed specifically to force
+more exploration before answering -- produces the identical 0% as
+baseline. This is direct, clean evidence that Study 3's gate mechanism
+targets *one specific* failure mode (under-exploration) and is
+structurally incapable of fixing the other (already-explored,
+won't-commit) even when both failure modes reduce to the same F1 score.
+
+**Map implication**: none. Search vocabulary was already on-target for
+every model, including gpt-oss (`apply_diffs`, `validate_and_correct`
+-- the literal function name in `diff.py` -- `salvage_correct_hunks`),
+and DeepSeek solves the issue from baseline with no map present at all.
+This is not an information-availability gap; nothing tested in this
+project (structural, frequency, co-change, or the submit-gate mechanism)
+addresses a pure commit-to-a-finding failure once the finding has
+already been made.
+
+---
+
+## 24. Submit-gate mechanism trades exploration breadth for single-answer confidence -- helps single-file ground truth, actively hurts multi-file ground truth that needs a combination
+
+**Type:** map/tool design limitation (confirmed) -- a genuine
+complication of the Study 3 submit-gate finding from failure points #18
+and #23, not a simple extension of it. Those two entries showed the
+gate reliably *increases* success; this issue shows the same mechanism
+*decreasing* it, and the reason is structural, not model-specific.
+
+**Evidence:** `rich/12` (ground truth: 4 files -- `markdown.py` (the
+obviously-relevant file, contains the buggy `"default"` lexer-name
+fallback), `syntax.py` (the actual fix mechanism, a new `default_lexer`
+fallback property), plus `console.py` and `text.py` (docstring-only,
+essentially unfindable by design); see the bug/fix explanation given in
+conversation on 2026-08-03). `syntax.py`'s touch rate is already
+near-ceiling in every condition -- DeepSeek-V4-Flash reads it in
+**literally 100% of trials (36/36) regardless of mechanism**, Ministral
+11/12-12/12 under tool_free/tool_required, Nemotron 10/12-12/12 -- so
+this is not an under-exploration case at all. Despite that, kept rate
+stays low everywhere, and for three of four models, moving from
+`tool_free` to `tool_required` -- the more forceful mechanism -- makes
+the keep rate on `syntax.py` *worse*, not better: DeepSeek 2/12 -> 0/12,
+Ministral 4/12 -> 1/12, Nemotron 2/12 -> 0/12. This is the opposite
+direction from `pandas/44` (#18) and `gpt-engineer/11` (#23), where the
+same gate reliably raised success rates.
+
+**Root cause, checked directly**: mean number of files predicted per
+trial, and how often both `markdown.py` and `syntax.py` land in the same
+answer together, by mechanism:
+
+| Mechanism | mean files predicted | both GT files kept together |
+|---|---:|---:|
+| baseline | 1.00 | 1/12 |
+| context | 1.14 | 2/36 |
+| tool_free | 1.12 | 5/48 |
+| tool_required | **0.98** | **0/48** |
+
+`tool_required` has the lowest answer breadth of any mechanism (below
+1.0 -- some trials submit nothing scorable at all) and is the only
+mechanism where the two real ground-truth files are never submitted
+together, in 48 trials. The gate appears to push toward a single,
+maximally-confident answer rather than a broader one -- which is exactly
+why it helped on `gpt-engineer/11`'s single-file ground truth (forcing
+commitment to the one right answer) and why it hurts here: full credit
+requires *combining* the obvious file with the less-obvious mechanism
+file, and a mechanism that narrows toward one confident pick works
+against that regardless of which file gets picked.
+
+**Why this matters beyond this one issue**: it reframes the submit-gate
+not as a uniformly positive intervention but as one with a real
+trade-off axis -- single-file/single-candidate issues benefit from
+forced commitment, multi-file issues requiring a *combination* of a
+salient file and a non-salient one are structurally disadvantaged by the
+same mechanism. Worth checking against other multi-file issues in this
+list (`localstack/19`, `keras/12`, `transformers/27`) to see whether this
+breadth-narrowing effect recurs, since all three also involve combining
+an obvious file with a much-less-obvious one.
+
+---
+
+## 25. Map presence can silently change first-move behavior without ever being narrated -- and the effect is both model-specific and map-type-specific
+
+**Type:** methodological finding + model behavior -- addresses a real
+gap in every prior entry's evidentiary standard. All previous "did the
+model use the map" checks in this list relied on explicit textual
+citation or an observable tool call; this entry shows that standard
+under-detects usage for context-delivered maps, where a model can act on
+injected information without ever narrating that it did.
+
+**Evidence:** `keras/5` (ground truth: `keras/engine/saving.py`; see
+the bug/fix explanation given in conversation on 2026-08-03). Checked
+each model's literal first tool call across `none` (baseline) vs.
+`ast_compact`/`freq`/`cochange` (all three maps delivered as context):
+
+| Model | baseline | ast_compact | freq | cochange |
+|---|---|---|---|---|
+| DeepSeek-V4-Flash | blind explore (3/3) | **direct-read saving.py (3/3)** | mixed | mixed |
+| Nemotron-3-Super | blind explore (3/3) | **direct-read saving.py (3/3)** | blind explore (3/3) | blind explore (3/3) |
+| Ministral-3B | search | search | float-trap (3/3) | search |
+| gpt-oss-120B | explore/search | **float-trap (3/3)** | mixed | mostly float-trap |
+
+DeepSeek and Nemotron both flip from 100% blind-exploration at baseline
+to 100% direct `read_file` on the ground-truth file as their literal
+first action under `ast_compact` -- zero search calls, immediate and
+total -- with no reasoning text ever mentioning the structural map. This
+is only explicable by the map's injected content (`ast_compact`
+literally lists `get_json_type(obj) L61`, `save_model(...)`,
+`load_model(...)` under the file's entry): a model that opens by reading
+the exact right file, unprompted by any search, is acting on something
+already sitting in its context window.
+
+**The effect is map-type-specific, not just model-specific.**
+`freq` and `cochange` -- which deliver only numbers (edit counts,
+co-change counts) rather than actual symbol/file names -- do **not**
+produce the same flip for either DeepSeek or Nemotron, both of whom
+mostly stay at blind-explore under those two conditions. Naming
+concrete symbols appears to be what triggers the silent jump; a bare
+ranked-list-of-counts does not.
+
+**Ministral shows the effect 0% of the time** -- it always searches
+first regardless of condition, never jumping straight to the file even
+under `ast_compact`.
+
+**gpt-oss-120B shows the effect inverted -- a genuine harm, not a
+non-help.** At baseline it doesn't open with the literal-error-text
+search (`float`) at all. Under `ast_compact` specifically, it does so in
+100% of trials -- worse than having no map. One untested, plausible
+mechanism: a denser system prompt (map content plus issue text) gives
+more material to skim past before acting, and this model defaults to
+anchoring on the issue's own error text rather than parsing the map's
+symbol list -- the opposite of the intended effect. Worth flagging as a
+real cost of structural-map-as-context delivery for this model, not
+merely an absence of benefit.
+
+**Even the clean, silent, unambiguous form of context usage still
+mostly fails to convert.** Nemotron's `ast_compact`/rep1 reads
+`saving.py` first and still submits `optimizers.py`; DeepSeek does the
+same in 2 of its 3 `ast_compact` trials. This sharpens rather than
+undercuts the commitment-gap thesis running through this whole list
+(#9, #10, #15, #18, #21, #22, #23, #24): even when map usage is about
+as unambiguous as it can get -- immediate, total, zero-search -- the
+downstream decision to keep the finding is a separate, largely
+unaffected problem.
+
+---
+
 ### Notes on use
 
 - Failure points are not mutually exclusive — a single trial can exhibit
@@ -626,14 +1135,74 @@ ever regenerated or extended with more issues from the same source pickle.
 - "Type" tags exist to separate what a better map/tool could plausibly fix
   from what's a model-side reasoning issue, since those need different
   remedies in any recommendations section.
-- Eight issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
-  `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`);
-  intentionally kept broad and issue-specific rather than prematurely
-  generalized — revisit once a handful more issues are logged here to see
-  which patterns recur. Entry #17 additionally identified a second affected
-  issue (`stable-diffusion-webui/5`) via a full audit of all 45 issues in
-  `issue_selection_final.csv`, not from separate deep-dive analysis — that
-  issue's own detailed notes/failure entries are still outstanding.
+- Fourteen issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
+  `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`,
+  `pandas/44`, `scrapy/48`, `transformers/27`, `gpt-engineer/11`,
+  `rich/12`, `keras/5`); intentionally kept broad and issue-specific
+  rather than prematurely generalized — revisit once a handful more
+  issues are logged here to see which patterns recur. **Update,
+  2026-08-03**: the `thefuck/10` / `stable-diffusion-webui/5` re-run
+  (see entry #17) is now complete and verified — 288/288 valid trials
+  synced from the native machine into `study_1/2/3`, correct
+  `base_commit` confirmed on every file, and every downstream derived
+  CSV (`map_position_metrics.csv`, `cochange_pair_metrics.csv`,
+  `issue_map_effect_ranking.csv`, `map_token_counts_by_model.csv`, the
+  pruned-ground-truth-check family, `min_budget_for_gt.csv`,
+  `compiled_results.pkl`, the tool-usage comparison CSVs, and
+  `issue_case_study_notes.csv`'s own `rank`/`mean_f1` columns) has been
+  recomputed against the corrected data — full audit trail in
+  conversation on 2026-08-03. Both issues' mean F1 moved (`thefuck/10`
+  0.0928→0.1372, `stable-diffusion-webui/5` 0.3970→0.4461), each
+  swapping rank with its immediate neighbor (`pandas/44`,
+  `gpt-engineer/12` respectively) — no other issue's data changed. The
+  two issues' own case-study entries/rows are still outstanding (based
+  on the old, invalid data, or not yet written) and should be treated as
+  the next issues up for analysis, not as already covered. `rich/12` (entry
+  #24) complicates the submit-gate finding from #18/#23 — the same
+  mechanism that reliably helps single-file ground truth measurably hurts
+  multi-file ground truth needing a combination of a salient and a
+  non-salient file, by narrowing answer breadth toward one confident
+  pick. `keras/5` provides a second, independent instance of that same
+  gate-hurts-not-helps pattern for DeepSeek-V4-Flash specifically
+  (tool_free 1/12 kept → tool_required 0/12 on `saving.py`, mirroring
+  `rich/12`'s `syntax.py` result) — worth treating as a real
+  DeepSeek-specific susceptibility rather than a one-issue fluke, and
+  revisiting if a third instance turns up. `keras/5` is also a rare
+  complete inversion of this project's usual per-model strength
+  ordering — DeepSeek-V4-Flash, normally the strongest model in this
+  series, is the *worst* performer on this issue (F1=0.0556, lowest of
+  all four), a useful caution against treating any model as uniformly
+  "the strong one" across issues. Entry #25 additionally establishes
+  that context-delivered maps can be used silently, never appearing in a
+  model's reasoning text — a detection gap in every prior entry's
+  evidentiary standard (explicit citation or an observable tool call),
+  worth checking for on other context-condition issues in this list
+  retroactively, since absence of citation was previously treated as
+  evidence of non-use. `transformers/27` (entry #22) is
+  categorically different from the other ten — a generalization failure
+  (find all instances of a confirmed pattern) rather than a localization
+  failure (find the one relevant file) — and should be read as its own
+  category, not pooled with the others when looking for cross-issue
+  trends. `gpt-engineer/11` (entry #23) now holds the record for both the
+  widest per-model success-rate split (0% to 100%) and the sharpest
+  touch-vs-kept gap (72% touch / 0% keep, gpt-oss-120B) found in this
+  project, and is the clearest evidence yet that Study 3's submit-gate
+  mechanism only helps the under-exploration failure mode, not the
+  already-explored-but-won't-commit one. The "retrieval succeeds,
+  commitment fails" touch-vs-kept pattern (#10, #15, #18) now has a fourth
+  instance in `scrapy/48` (`scrapy/utils/url.py` touched in 59/144 trials,
+  kept in 1) — not written up as its own entry since it adds no new
+  mechanism, but strengthens the case that this is a general, recurring
+  model disposition rather than an issue-specific quirk. Entry #17
+  additionally identified a
+  second affected issue (`stable-diffusion-webui/5`) via a full audit of
+  all 45 issues in `issue_selection_final.csv`, not from separate deep-dive
+  analysis — that issue's own detailed notes/failure entries are still
+  outstanding. Note `thefuck/10`'s own entries (#10's search-vocabulary
+  discussion, folded into #17) are based on the now-invalidated,
+  wrong-`base_commit` trial data — its case-study conclusions should be
+  redone once the corrected re-run (already underway as of 2026-08-03)
+  completes; `stable-diffusion-webui/5` is in the same position.
   The co-change-retrieved-and-ignored pattern (#6, #12) has now recurred
   across three separate issues (`fastapi/17`, `keras/12`, `localstack/19` —
   the latter two both folded into entry #12) and is the strongest repeat
