@@ -2747,3 +2747,86 @@ running total of non-negative numbers is monotonic by construction.
 ### Status
 Committed.
 
+---
+
+## 2026-08-03
+## Found and Started Correcting a base_commit Bug Affecting Two Issues
+
+Deep-dived `thefuck/10` ("Trying rule missing_space_before_subcommand
+taking so long") for the case-study notes. The real fix is a clean,
+well-documented single commit adding an `excluded_search_path_prefixes`
+setting so `get_all_executables()` can skip slow PATH directories (e.g.
+`/mnt/c/WINDOWS` under WSL) -- but the search-term breakdown showed
+models searching for that exact setting name and its helper function
+`include_path_in_search`, neither of which appears anywhere in the
+issue text. Checked whether this was memorized training-data knowledge
+by looking at turn order: in every trial, the term is searched *after*
+`thefuck/utils.py` is read, never before -- so not memorization. Went
+one step further and checked whether the term is actually present in
+what the model reads, expecting to confirm genuine in-context
+discovery. Instead: **`include_path_in_search` was already sitting in
+the file, before any fix should have been needed.**
+
+Traced this to `base_commit` for this issue being recorded as the *fix
+commit's own hash* rather than its parent -- every one of the 144
+trials for this issue explored an already-fixed codebase, not a
+pre-fix one. Confirmed directly against real trial data, not just the
+map: turn 3 of `deepseek-v4-flash/none/rep1`'s actual `read_file`
+output on `thefuck/utils.py` contains the fix verbatim. Verified the
+correct base_commit by walking to the immediate parent commit
+(`1a595f1ba23843823037479d0caede926b0bd752`, 4 days before the fix) and
+confirming `include_path_in_search` is genuinely absent there.
+
+**Audited all 45 issues in `issue_selection_final.csv`** for the same
+defect (comparing each row's `base_commit` against the underlying
+MULocBench pickle's `commit_html_url` for a self-referential hash) and
+found a second, independently confirmed case: `stable-diffusion-webui/5`
+("Sort items by date by default"). Same pattern exactly -- `base_commit`
+is the real fix commit (`d9499f43...`, touches exactly the 3
+ground-truth files), correct parent is `16ab17429016a1154b9aa83244cdbfc7ba463d72`.
+Root cause looks upstream, in the raw MULocBench pickle itself (both
+records have `base_commit == commit_html_url`'s hash there already,
+before this project's own extraction touches them) -- not a bug this
+project's pipeline introduced.
+
+Logged as failure point #17 in `data/model_failure_points.md`, then
+started the actual correction rather than leaving it as a finding:
+
+1. Patched `base_commit` for both issues in-place in the raw pickle
+   (`data/all_issues_with_pr_commit_comment_all_project_0922.pkl`,
+   backed up first) -- necessary because `generate_all_maps.py` sources
+   `base_commit` from the pickle, not the CSV, while the harness itself
+   reads the CSV directly. Fixing only one of the two would leave the
+   wholesale maps stale even after the harness started checking out the
+   right commit.
+2. Fixed `data/issue_selection_final.csv`'s two rows (`base_commit` +
+   `commit_date`) to match.
+3. Regenerated every map artifact for both issues: wholesale maps
+   (`generate_all_maps.py --only`), full tool-lookup indexes
+   (`generate_all_indexes.py --only`), nodoc/pruned compact maps at all
+   three token budgets (30k/50k/55k), and pruned freq/cochange maps.
+   Verified `include_path_in_search` is genuinely gone from the
+   regenerated `thefuck/10` maps.
+4. Moved (not deleted, per explicit choice) the 288 now-invalid
+   completed trials + matching logs across `study_1/2/3` to
+   `stale_results_wrong_base_commit_20260803/`.
+5. Wrote `scripts/rerun_corrected_issues.py` -- hard-scoped to exactly
+   these two `(repo, issue_idx)` pairs rather than driven from the full
+   45-issue CSV like `run_batch*.py`, specifically to eliminate any risk
+   of accidentally re-running the other 43 issues. Mirrors the existing
+   batch runners' invocation pattern (same retry/timeout logic, same
+   skip-if-exists safety) but combines all 12 conditions across all
+   three studies into one script, and hardcodes `--max-turns 30` rather
+   than trusting the harnesses' own default of 20 (a mistake DEVLOG
+   already recorded catching once before, 2026-07-22). Dry-run confirmed
+   exactly 288 trials picked up correctly, 0 skipped for missing maps.
+
+### Status
+Correction done locally: pickle + CSV patched, maps regenerated and
+verified, stale results moved aside, re-run script written and
+dry-run-verified but not yet committed. Actual 288-trial re-run still
+needs to happen on the native-filesystem machine (per prior convention
+for real trial execution) -- requires syncing the corrected CSV/maps
+there and clearing the equivalent stale results before running
+`scripts/rerun_corrected_issues.py`. Not yet committed.
+
