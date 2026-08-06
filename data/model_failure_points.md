@@ -1590,6 +1590,430 @@ actually support that mechanism.
 
 ---
 
+## 33. A single file's co-change links split cleanly into "genuinely absent" and "real but directionally hidden" -- worth distinguishing rather than treating a low find-rate as one uniform kind of failure
+
+**Type:** map/tool design limitation (mixed) -- refines every prior
+co-change-ignored entry (#6, #12, #21, #24, #26, #29, #30) by checking
+*all* of one file's potential ground-truth-pair links at once, rather
+than one link in isolation. The mix within a single file is the new
+observation: this project has separately documented "signal never
+existed" (part of failure point #12's `localstack/19` case) and "signal
+existed and was ignored" (every other instance) as different issues'
+findings; here both happen for the same file simultaneously.
+
+**Evidence:** `transformers/5` (ground truth, scorable: `dummy_pt_objects.py`,
+`dummy_tf_objects.py`, `__init__.py`, `modeling_tf_auto.py`,
+`convert_pytorch_checkpoint_to_tf2.py`; see the bug/fix explanation
+given in conversation on 2026-08-04 -- a "what else do I need to
+change" contribution-checklist issue, PR-linked). `dummy_pt_objects.py`
+is found in 1/144 trials, far below its four sibling files (50-63%).
+Checked `data/cochange_pair_metrics.csv`'s all 10 pairs among the 5
+files directly:
+
+| Pair with `dummy_pt_objects.py` | co-change count | rank |
+|---|---:|---|
+| ↔ `dummy_tf_objects.py` (its most "obvious" pairing) | 1 | 120/121, 22/22 (dead last, both directions) |
+| ↔ `__init__.py` | 11 | **1/121**, 13/257 |
+| ↔ `modeling_tf_auto.py` | **0** | never co-changed |
+| ↔ `convert_pytorch_checkpoint_to_tf2.py` | **0** | never co-changed |
+
+**Two of the four links are genuinely, literally absent** -- no map
+type computed from this repo's history could have surfaced them,
+categorically different from this list's other co-change findings.
+**The `__init__.py` link is `dummy_pt_objects.py`'s single strongest
+relationship of any kind** -- its #1 partner out of 121 (11x, vs. 4x
+for the runner-up) -- but a second correction (2026-08-04, pushed back
+on by the user before being checked) downgrades this from "strong,
+correctly-delivered signal" to a directional-truncation case, the same
+mechanism as failure point #7. **Checked `__init__.py`'s own delivered
+top-3 entry directly -- the direction 91/144 trials actually
+approach this from, since that's the file they read -- and
+`dummy_pt_objects.py` isn't in it at all**:
+```
+src/transformers/__init__.py
+→ src/transformers/modeling_auto.py (52x)
+→ src/transformers/tokenization_auto.py (26x)
+→ src/transformers/configuration_auto.py (25x)
+```
+`dummy_pt_objects.py`'s 11x doesn't crack the top-3 from this side --
+it sits at rank 13/257, nearly 5x below the weakest of the three shown
+partners. The link is only visible by querying *from*
+`dummy_pt_objects.py`'s own entry, which requires already suspecting
+it matters -- a chicken-and-egg problem, and since `dummy_pt_objects.py`
+is touched in 1/144 trials, essentially nobody ever queries from that
+side. 11 shared commits is also genuinely weaker in absolute terms than
+this project's clearer "strong, ignored" cases (`yt-dlp/45`'s 99x,
+`fastapi/9`'s 33x, `scrapy/48`'s 46-99x range) -- this entry's earlier
+"strong but ignored" framing overstated it by only checking one
+direction.
+
+**Correction after checking touch rate directly, 2026-08-04: this is
+not a touch-vs-kept case at all.** `dummy_pt_objects.py` is read or
+looked up in exactly **1 of 144 trials** (DeepSeek, `tool_required`) --
+and even that one trial doesn't keep it. Every other model x mechanism
+cell is a flat 0/9 or 0/12. So the accurate description isn't "the
+signal was seen and discounted" (this list's usual commitment-gap
+shape, #9/#10/#15/#18/#21/#22/#23/#24/#26/#27/#29/#30) -- it's that the
+file is essentially never engaged with at all, closer to
+`gpt-engineer/12`'s `file_selector.py`/`files_dict.py` total
+non-exploration (#28). Models reading `__init__.py` in the majority of
+trials apparently don't act on its co-change context naming
+`dummy_pt_objects.py` as the #1 partner, rather than reading it and
+rejecting it. One anomaly worth flagging separately: a single Ministral
+trial (`context`) *keeps* `dummy_pt_objects.py` in its final answer
+with **zero** recorded touch of it anywhere in the transcript -- a
+name-only guess (plausibly from a directory listing or the passively
+injected map text) rather than a reasoned inclusion, not a genuine
+counter-example to the non-exploration finding.
+
+**The intuitively "obvious" pairing turns out to be the weakest
+link, not the strongest**: a developer reasoning by symmetry would
+expect `dummy_pt_objects.py` and `dummy_tf_objects.py` (mirror-image
+dummy stubs for the two frameworks, usually added together for a new
+model) to co-change heavily -- instead they're each other's *least*
+prominent partner (rank dead-last both directions, 1 shared commit).
+Historical co-edit patterns don't track conceptual symmetry the way a
+human's mental model of "these two files obviously go together" would
+predict.
+
+**Practical implication**: when auditing any co-change-ignored claim
+going forward, check the full set of a file's potential ground-truth
+partners *and both query directions* before calling a link "strong and
+ignored" -- a low aggregate find-rate can conflate "the map had
+nothing to offer" (unfixable, two of the four links here), "the map's
+signal is real but only visible from a direction nobody queries"
+(failure point #7's truncation mechanism, this issue's `__init__.py`
+link), and "the map had a strong, correctly-delivered signal that got
+ignored anyway" (the recurring pattern documented elsewhere in this
+list, e.g. `yt-dlp/45`, `fastapi/9`) within the same
+file, and the fix each half calls for is different.
+
+---
+
+## 34. Final `submit_answer` calls occasionally contain malformed, non-path "filenames" -- a real, dataset-wide, low-rate formatting failure concentrated in gpt-oss-120B and gated conditions
+
+**Type:** model/harness interaction bug (confirmed, rare) -- an even
+more severe variant of failure point #9 (submission disconnected from
+stated reasoning): here the disconnect isn't between two different
+plausible files, it's between coherent reasoning and outright garbage.
+
+**Evidence:** `transformers/5`, `gpt-oss-120B`, `structural_required`/
+rep2 (flagged directly by the user while reviewing trials). The
+transcript shows genuinely productive exploration -- reads `__init__.py`,
+`modeling_dpr.py`, `modeling_tf_auto.py`, and `dummy_tf_objects.py`,
+touching 3 of the 5 real ground-truth files -- and its own final
+reasoning text is a correctly-annotated candidate list (`["src/
+transformers/modeling_tf_dpr.py", // new TensorFlow implementation of
+DPR (must be added), "src/transformers/__init__.py", // import the new
+TF-DPR classes...`, using JavaScript-style `//` comments inside what
+needed to be valid JSON). The actual recorded `submit_answer` call,
+however, is:
+```json
+{"files": ["BERT", "BERT", "."]}
+```
+No relationship to the reasoning that immediately preceded it.
+
+**Checked whether this is a one-off**: scanned all 6,480 trials across
+every issue in this project for final answers containing non-path,
+non-`.py`-suffixed, implausibly-short strings (excluding the
+`['[]']` empty-answer parsing quirk and legitimate short filenames like
+`pyproject.toml`, both of which are benign and not part of this
+pattern). Found **8 confirmed instances** (0.12% of all trials) -- rare,
+but real and reproducible, not a single fluke:
+
+| Issue | Model | Condition | Malformed output |
+|---|---|---|---|
+| `gpt-engineer/9` | gpt-oss | freq | `["GPT doesn't need any modifications"]` |
+| `yt-dlp/45` | DeepSeek | temporal_frequency | `['cookies']` |
+| `yt-dlp/45` | DeepSeek | all_tools_required | `['cookies']` |
+| `scikit-learn/49` | gpt-oss | temporal_cochange | raw whitespace garbage |
+| `thefuck/5` | gpt-oss | temporal_frequency | `['text']` |
+| `pandas/38` | DeepSeek | structural_required | `['pivot_table']` |
+| `rich/1` | gpt-oss | structural_required | `['user-provided-not-found']` |
+| `transformers/5` | gpt-oss | structural_required | `['BERT', 'BERT', '.']` |
+
+**Two real, non-random skews in this small set**: gpt-oss-120B accounts
+for 5 of 8 (DeepSeek the other 3; Ministral and Nemotron, zero), and 5
+of 8 sit under `_required`/gated conditions specifically. Checked
+`rich/1` directly to rule out a harness-injected placeholder leaking
+into the recorded data -- it's genuinely the model's own tool call,
+`submit_answer(files=["user-provided-not-found"])`, reading like an
+attempt to say "the referenced thing wasn't found" formatted as if it
+were a literal filename, rather than an empty answer or an explanation.
+
+**Likely mechanism**: when a model is forced into producing a
+`submit_answer` call (especially under the required-tool gate, where
+the harness's own tiered tool-choice fallback is documented elsewhere
+in this project's history as needing a fix once already) without a
+confident real answer ready, it occasionally emits a natural-language
+fragment, a bare word, or a placeholder string as a "filename" instead
+of either a genuine file path or an honest empty list. This is a
+harness/prompting robustness gap, not a localization reasoning failure
+-- worth a defensive fix at the scoring/parsing layer (reject or flag
+predictions that don't look like plausible file paths, rather than
+silently scoring them as simple wrong guesses) independent of anything
+about maps.
+
+---
+
+## 35. Ministral-3B alone generates malformed tool-call names in ~1 of every 20 trials -- a confound on top of, not just alongside, its usual weakest-model ranking
+
+**Type:** model/harness interaction bug (confirmed, systemic) --
+distinct from entry #34's malformed-*final-answer* pattern: this is a
+malformed *tool call* problem, occurring throughout a trial rather than
+only at submission, and it's exclusive to one model rather than spread
+across several.
+
+**Evidence:** first spotted directly by the user in `transformers/5`,
+`Ministral-3B`, `structural` (Study 2, tool_free) -- all 3 reps never
+touch a single ground-truth file. Checked each individually:
+- **rep1**: never calls a tool at all. Reasons purely from the issue
+  text's own casually-written bare filenames (`__init__.py`,
+  `convert_pytorch_checkpoint_to_tf2.py`, no `src/transformers/`
+  prefix), and submits those exact bare strings. A real `submit_answer`
+  call is made, but every path is wrong (missing the real prefix), so
+  `final_files_predicted_scorable` ends up empty despite a genuine
+  submission having happened.
+- **rep2**: every tool call has the form `list_files("modeling_tf_dpr.py")`
+  or `lookup_structure("modeling_tf_dpr.py")` as the literal *name*
+  string, with empty `{}` arguments -- Python-call syntax jammed into
+  the name field instead of using the separate `arguments` field. All
+  ~26 tool calls in the trial fail with `"Error: unknown tool '...'"`.
+- **rep3**: same underlying bug, different manifestation --
+  `list_files{"path": "transformers"}` as the name, again with empty
+  arguments. Same total-failure result.
+
+**Confirmed this is not a one-off**: scanned all 1,620 Ministral-3B
+trials across every issue in this project for any tool-call name
+containing `(`, `{`, or `"` (characters that can never legitimately
+appear in a real tool name). **84/1,620 trials (5.2%) affected.**
+Checked the same scan against the other three models: **0/1,620 for
+gpt-oss-120B, DeepSeek-V4-Flash, and Nemotron-3-Super each** -- this is
+exclusively a Ministral-3B phenomenon, not a shared harness bug.
+
+**Clusters by delivery mechanism, not randomly**:
+
+| Mechanism | Malformed-name rate |
+|---|---:|
+| baseline | 7.4% (10/135) |
+| context | **2.5%** (10/405) |
+| tool_free | **7.4%** (40/540) |
+| tool_required | 4.4% (24/540) |
+
+By exact condition, the two richest tool surfaces are the worst --
+`all_tools` and `structural` (Study 2, voluntary) both sit at 9.6% --
+while the simplest, most constrained conditions are the best: `freq`
+(context-only, 0.7%) and `temporal_frequency_required`/`ast_compact`
+(1.5% each). Context conditions (no tool-calling decision beyond
+`read_file`/`search`/`list_files`) are consistently the safest;
+`tool_free` conditions, which offer the broadest menu of optional
+tools including multiple `lookup_*` variants, are consistently the
+worst; `tool_required` sits in between, plausibly because the gate's
+single forced call is a narrower, more constrained target than
+`tool_free`'s freely-chosen mix. The pattern reads as "more tool-name
+surface area to get wrong -> more malformation," not as a mechanism
+this project's existing map/gate framing was designed to explain.
+
+**Why this matters beyond one model's score**: when a malformed-name
+trial occurs, every subsequent tool call in it typically repeats the
+same broken pattern (confirmed directly in rep2/rep3 above) -- the
+entire trial's exploration is wasted, not just one call. Since
+Ministral is already this project's most consistent low-scorer across
+many issues, any claim that Ministral is "weakest at localization"
+should be read with this confound in mind: some non-trivial fraction of
+its measured weakness (at least 5.2% of trials, likely more once
+partial/single-call malformations too subtle for this exact-character
+scan are counted) is a tool-calling format bug, not evidence about its
+reasoning or map-usage ability specifically.
+
+---
+
+## 36. Baseline underperforms even on files named verbatim in the issue body -- for three of four models, any map or tool condition recovers them, not a specific type
+
+**Type:** map/tool design benefit (map-agnostic) -- a fourth instance
+of failure point #16's "presence changes framing, not new information"
+pattern, but the cleanest yet: it holds for 3 of 4 models
+simultaneously on the same issue, and splits cleanly against a
+same-issue control (two sibling files already at or near ceiling from
+baseline alone).
+
+**Evidence:** `transformers/5` -- the issue body itself names 3 of the
+5 scorable ground-truth files verbatim in one sentence (`__init__.py`,
+`convert_pytorch_checkpoint_to_tf2.py`, `utils/dummy_tf_objects.py`),
+plus `modeling_tf_dpr.py` (not scorable ground truth, but the file the
+reporter says they already wrote). Split the 5 files by baseline
+(no map, no tools) kept-rate:
+
+| File | Named in issue body? | Baseline kept rate (all 4 models) |
+|---|---|---|
+| `__init__.py` | yes | 11/12 (92%) |
+| `modeling_tf_auto.py` | no (implied -- needs sweeping in for TF-Auto support) | 8/12 (67%) |
+| `convert_pytorch_checkpoint_to_tf2.py` | **yes** | 5/12 (42%) |
+| `utils/dummy_tf_objects.py` | **yes** | 5/12 (42%) |
+| `utils/dummy_pt_objects.py` | no | 0/12 (0%) |
+
+The two under-performing *named* files split further by model. Checked
+`data/issue_case_study_notes.csv`-style touch/kept tables per model,
+baseline through `tool_required`, for both:
+
+| Model | `convert_pytorch...py` baseline kept | ...context | ...tool_free | ...tool_required |
+|---|---:|---:|---:|---:|
+| Ministral-3B | 0/3 | 3/9 | 7/12 | 6/12 |
+| gpt-oss-120B | 1/3 | 4/9 | 5/12 | 3/12 |
+| Nemotron-3-Super | 2/3 | 5/9 | 4/12 | 6/12 |
+| DeepSeek-V4-Flash | **2/3** | 9/9 | 12/12 | 10/12 |
+
+(`dummy_tf_objects.py` shows the same shape: Ministral 0/3→2/9→3/12,
+gpt-oss 1/3→5/9→6/12, Nemotron 2/3→4/9→5/12, DeepSeek 2/3→9/9→11/12.)
+
+**Three of four models jump substantially the moment any map or tool
+condition is present** -- context alone is enough; it doesn't need to
+be a specific map type, and it doesn't need to be a tool the model
+actually calls (context conditions require no tool-calling decision at
+all). DeepSeek is the exception, already near-ceiling at baseline for
+both files. This mirrors, at a smaller scale, `localstack/19`'s entry
+#16 finding (map presence anchoring interpretation toward "this is a
+code task"), but here the effect is sharper because the correct
+filenames are already sitting in the prompt in plain text -- recovering
+them shouldn't need any information a map or tool could add. The
+paired `touched` counts (mostly low or zero at baseline, rising with
+condition) suggest models aren't confidently echoing the issue body's
+own quoted filenames without some form of external validation first --
+practically, a name floating in a casually-worded feature request
+doesn't get trusted as a real repo path until either the model reads it
+directly or a map lists it independently.
+
+**Practical implication**: this is a case where a map's real value
+isn't retrieval (the information was already in the prompt) but
+confidence -- corroborating a filename the model already has reason to
+suspect is real. A cheap, targeted intervention worth testing: a
+system-prompt instruction to treat any `backtick`-quoted or
+code-formatted path mentioned in the issue body as a candidate file
+worth including even without independent confirmation, rather than
+requiring a map/tool source to "count" it as validated.
+
+---
+
+## 37. A ground-truth file made unreachable by three independent mechanisms at once -- pruned out, positionally buried, and historically disconnected
+
+**Type:** map/tool design limitation (structural blind spot + genuine
+absence + positional burial, combined) -- distinct from every prior
+"unreachable file" entry in this list because all three failure
+mechanisms stack on the same file simultaneously, rather than one
+mechanism explaining the miss on its own.
+
+**Evidence:** `pandas/38` (ground truth, scorable: `pivot.py`,
+`util/_exceptions.py` -- a warning-stacklevel utility file, PR-linked,
+not obviously connected to pivoting at all). `pivot.py` found in
+128/144 (89%); `_exceptions.py` found in **0/144**, and confirmed
+touched (read/looked up) in 0/144 too -- total non-exploration, not a
+touch-vs-kept case, same shape as `gpt-engineer/12`'s `file_selector.py`/
+`files_dict.py` (#28) and half of `transformers/5`'s `dummy_pt_objects.py`
+(#33). Checked all three map types directly for why:
+
+| Map type | `_exceptions.py` status |
+|---|---|
+| Structural | `pruned_out` -- never made the token budget at all |
+| Frequency | `found`, but rank 200/294 (68% through the list) |
+| Co-change | `found`, but rank 289/294 (98.3% through -- second-to-last file in the whole list) |
+| Co-change (relationship) | `pivot.py`↔`_exceptions.py`: **0 shared commits, ever**, `never_cochanged` in both directions |
+
+**No single fix closes this gap.** Even lengthening co-change's
+delivered partner list (the standard fix conjecture for #6/#7-style
+truncation cases elsewhere in this list) does nothing here, since the
+underlying relationship the map would need to surface simply isn't in
+the git history to find -- the two files have never been edited
+together, not once, in this repo's entire commit history covered by
+the co-change map. Frequency and co-change *do* technically list the
+file, but so deep into a long tail (68% and 98% through) that reaching
+it requires reading past hundreds of other files first -- practically
+equivalent to not being listed, for any model with a finite attention/
+budget. Structural's blind spot (#1.3.1-style zero-AST-content
+exclusion is not the mechanism here, since `_exceptions.py` does
+contain real functions -- this one is pure token-budget pruning, the
+`pruned_out` category, not `never_included`).
+
+**Practical implication:** this is the cleanest example yet of a file
+that no *content* change to any current map type would fix -- the
+problem isn't truncation, wrong ranking, or a structural blind spot in
+isolation (each of which has a targeted fix conjecture elsewhere in
+this list), it's that this specific file's relevance to this specific
+issue is a *semantic* fact (both files need a coordinated warning-
+stacklevel fix) with no historical or structural echo in the codebase
+at all. Worth citing as the boundary case for "how far map-based
+retrieval alone can go" -- some ground-truth files require
+understanding *why* a fix needs a file, not just where it has
+historically co-occurred with other changed files.
+
+---
+
+## 38. A forced final-answer call can ignore its own tool-choice constraint -- a third flavor of non-compliant submission, and evidence the failure is commitment, not discovery
+
+**Type:** model/harness interaction bug (confirmed) + model behavioral
+trait -- distinct from entry #34 (garbled non-path strings inside an
+otherwise-compliant `submit_answer` call) and entry #35 (Ministral's
+malformed tool-call *names*): here the forced call is well-formed, but
+the model uses it to call a *different* tool entirely, ignoring the
+constraint rather than mangling the resulting content.
+
+**Evidence:** `pandas/38`, DeepSeek-V4-Flash. DeepSeek hits `max_turns`
+in 27/36 trials (75%) on this issue -- checked whether this is
+map/condition-specific and found it isn't: it happens in every one of
+the 12 conditions, including `none` (baseline, 3/3), confirming it's a
+model trait (chasing full mechanistic understanding of the bug rather
+than stopping once enough is known), not something any map causes or
+fixes -- a third documented instance of this DeepSeek pattern on a
+pandas issue specifically, after `pandas/26` (#31) and `pandas/44`
+(#18).
+
+Within that turn-exhaustion, one condition stood out: `cochange` scores
+F1=0.0 in all 3/3 reps, while `none` and `temporal_frequency` (both
+also near-100% `max_turns`) still salvage a real partial answer
+(F1≈0.5-0.67) via the forced-final-answer mechanism. **Checked the raw
+API response logs directly, not just the aggregate scores**, for the
+actual forced "final_answer"-labeled call in each condition:
+
+- `none`/rep1, `temporal_frequency`/rep1: the forced call returns
+  `submit_answer(['pivot.py', 'frame.py'])` -- compliant, produces a
+  real (partial-credit) answer.
+- `cochange`/rep1, 2, 3 (all three reps checked): the forced call
+  instead returns **`read_file`** on an unrelated internals file
+  (`apply.py`, `frame.py`) -- the model simply keeps exploring rather
+  than submitting, even under the constraint meant to force a final
+  answer. With no compliant call to recover a prediction from, the
+  trial ends with an empty submission.
+
+**This sharpens, rather than softens, the turn-exhaustion story.**
+Checked how close each `cochange` trial actually was to a correct
+answer: all 3 reps read `pivot.py` (the correct, primary fix file) as
+their literal **first action, turn 1** -- not a late discovery. One rep
+(rep2) even re-searched `pivot.py` again on turn 29, one turn before
+the trial ended. The following ~28-29 turns in every rep were spent
+drilling into unrelated call-chain internals (`apply.py`, `groupby.py`,
+`generic.py`), never converging back to a submission, and never once
+touching the unreachable second file (`_exceptions.py`, see #37) either
+-- the extra exploration bought nothing, for either file. This is not
+"ran out of time before finding the answer" -- the answer was found and
+read immediately, and every subsequent turn moved further from
+submitting it, not closer.
+
+**Practical implication:** two separate, stackable fixes worth testing,
+neither map-content-related. (1) A harness-level fix for the compliance
+gap itself -- if a forced tool_choice is meant to guarantee a specific
+tool call (`submit_answer`), the harness should validate the returned
+call's tool name and retry/escalate rather than silently accepting
+whatever tool the model chose (mirrors Study 3's own submit-gate
+validation logic, just applied to the *forced*-answer path instead of
+the voluntary one). (2) A prompt-level nudge for the underlying
+disposition -- an explicit instruction that once a file plausibly
+answering the issue has been found and read, further exploration should
+justify itself against the turn budget already spent, rather than
+defaulting to continued investigation. Same class of fix already
+conjectured for `pandas/26` (#31) and `pandas/44` (#18); this issue is
+the third data point for it.
+
+---
+
 ### Notes on use
 
 - Failure points are not mutually exclusive — a single trial can exhibit
@@ -1597,14 +2021,65 @@ actually support that mechanism.
 - "Type" tags exist to separate what a better map/tool could plausibly fix
   from what's a model-side reasoning issue, since those need different
   remedies in any recommendations section.
-- Fourteen issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
+- Twenty-two issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
   `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`,
   `pandas/44`, `scrapy/48`, `transformers/27`, `gpt-engineer/11`,
-  `rich/12`, `keras/5`, `thefuck/10`, `stable-diffusion-webui/5`,
-  `gpt-engineer/12`, `yt-dlp/45`, `fastapi/9`, `pandas/26`);
+  `rich/12`, `keras/5`, `stable-diffusion-webui/5`,
+  `gpt-engineer/12`, `yt-dlp/45`, `fastapi/9`, `pandas/26`, `transformers/5`,
+  `pandas/38`);
   intentionally kept broad and issue-specific rather than prematurely
   generalized — revisit once a handful more issues are logged here to
-  see which patterns recur. `pandas/26` (entry #31) is a distinct
+  see which patterns recur. `transformers/5` (entries #33, #34, #35, #36)
+  is the most heavily-instrumented single issue in this list so far —
+  it refines the co-change-ignored family by checking one file's *entire*
+  set of potential ground-truth links at once rather than a single pair
+  in isolation (#33); surfaces two independent, dataset-wide-confirmed
+  malformed-output bugs, one gpt-oss/`_required`-concentrated (#34) and
+  one Ministral-exclusive (#35, first spotted on this issue's own
+  Ministral/`structural`/tool_free trials, all 3 reps stuck at 0%
+  ground-truth touch); and shows the cleanest multi-model instance yet
+  of failure point #16's map-presence-as-framing effect, on files whose
+  names are already sitting verbatim in the issue body (#36) — worth
+  the same full-set-of-links check (#33) and the same
+  named-in-body-vs-baseline-kept-rate check (#36) on any future issue
+  where one ground-truth file's find-rate is a clear outlier among its
+  siblings. `pandas/38` (entries #37, #38) is the first issue where a
+  ground-truth file's unreachability was traced to three independent
+  mechanisms stacking simultaneously — structural pruning, positional
+  burial (68-98% through the frequency/co-change lists), and a
+  genuinely zero-count co-change relationship — worth checking all
+  three explicitly (not just "is it in the map at all") on any future
+  0%-find file before concluding a fix would need a different map type
+  (#37). It's also a third confirmed instance of DeepSeek's
+  chase-full-understanding turn-exhaustion pattern (after `pandas/26`
+  #31, `pandas/44` #18), and — the sharper addition — a third distinct
+  flavor of non-compliant forced final answer (after #34's garbled
+  strings, #35's malformed tool-call names): DeepSeek's forced
+  `submit_answer` call returned a `read_file` call instead, in 3/3
+  `cochange` reps specifically, verified against the raw API response
+  logs, not just the aggregate score (#38). Notably, all three of those
+  reps had already read the correct primary file on turn 1 — direct
+  evidence the failure is a commitment gap, not a discovery gap, even
+  under severe turn exhaustion. As of this session, `scripts/case_study_analysis.py` (saved
+  2026-08-04) is the canonical, validated script for the wrong/right
+  file breakdown, model x map-type grid, search-term extraction,
+  touch-vs-kept, and turn-count sections repeated across every entry in
+  this list — prefer it over new ad-hoc inline scripts going forward;
+  see its docstring for why (it caught and corrected a real
+  discrepancy against an earlier session's disposable inline count).
+  Entry #34's dataset-wide garbage-`submit_answer` scan (8/6480 trials,
+  gpt-oss-120B and `_required` conditions both over-represented) is a
+  harness/model-interaction finding independent of any specific issue
+  — worth re-running if this project's harness or tool-choice fallback
+  logic changes, to confirm the rate hasn't grown. Entry #35 is a
+  larger, model-specific confound in the same family — 5.2% of
+  Ministral-3B's 1,620 trials contain a malformed tool-call name (0%
+  for every other model), clustered in `tool_free`/baseline conditions
+  and rare in `context` — any cross-model comparison involving
+  Ministral anywhere in this list should be read with this in mind,
+  since it inflates apparent localization weakness with a separate
+  tool-calling format bug.
+  `pandas/26` (entry #31) is a distinct
   finding worth remembering when interpreting any other Cython-heavy
   repo in this dataset (`pandas` especially): `scorable_files()`'s
   `.py`-only scope means a model correctly identifying real logic in a
