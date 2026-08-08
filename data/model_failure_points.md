@@ -1894,22 +1894,26 @@ requiring a map/tool source to "count" it as validated.
 
 ---
 
-## 37. A ground-truth file made unreachable by three independent mechanisms at once -- pruned out, positionally buried, and historically disconnected
+## 37. A ground-truth file made unreachable by three independent mechanisms at once -- pruned out, positionally buried, and a relationship the fix itself creates, not one any pre-fix signal could have anticipated
 
 **Type:** map/tool design limitation (structural blind spot + genuine
 absence + positional burial, combined) -- distinct from every prior
 "unreachable file" entry in this list because all three failure
 mechanisms stack on the same file simultaneously, rather than one
-mechanism explaining the miss on its own.
+mechanism explaining the miss on its own. Also distinct in a second
+way, confirmed by reading the actual fix commit directly (2026-08-06,
+not just inferred from ground truth): this isn't a case of a real,
+pre-existing relationship the maps failed to surface -- the
+relationship the models would have needed to find *did not exist until
+the fix commit created it*.
 
 **Evidence:** `pandas/38` (ground truth, scorable: `pivot.py`,
-`util/_exceptions.py` -- a warning-stacklevel utility file, PR-linked,
-not obviously connected to pivoting at all). `pivot.py` found in
-128/144 (89%); `_exceptions.py` found in **0/144**, and confirmed
-touched (read/looked up) in 0/144 too -- total non-exploration, not a
-touch-vs-kept case, same shape as `gpt-engineer/12`'s `file_selector.py`/
-`files_dict.py` (#28) and half of `transformers/5`'s `dummy_pt_objects.py`
-(#33). Checked all three map types directly for why:
+`util/_exceptions.py`). `pivot.py` found in 128/144 (89%);
+`_exceptions.py` found in **0/144**, and confirmed touched (read/looked
+up) in 0/144 too -- total non-exploration, not a touch-vs-kept case,
+same shape as `gpt-engineer/12`'s `file_selector.py`/`files_dict.py`
+(#28) and half of `transformers/5`'s `dummy_pt_objects.py` (#33).
+Checked all three map types directly for why:
 
 | Map type | `_exceptions.py` status |
 |---|---|
@@ -1918,32 +1922,70 @@ touch-vs-kept case, same shape as `gpt-engineer/12`'s `file_selector.py`/
 | Co-change | `found`, but rank 289/294 (98.3% through -- second-to-last file in the whole list) |
 | Co-change (relationship) | `pivot.py`↔`_exceptions.py`: **0 shared commits, ever**, `never_cochanged` in both directions |
 
-**No single fix closes this gap.** Even lengthening co-change's
-delivered partner list (the standard fix conjecture for #6/#7-style
-truncation cases elsewhere in this list) does nothing here, since the
-underlying relationship the map would need to surface simply isn't in
-the git history to find -- the two files have never been edited
-together, not once, in this repo's entire commit history covered by
-the co-change map. Frequency and co-change *do* technically list the
-file, but so deep into a long tail (68% and 98% through) that reaching
-it requires reading past hundreds of other files first -- practically
-equivalent to not being listed, for any model with a finite attention/
-budget. Structural's blind spot (#1.3.1-style zero-AST-content
-exclusion is not the mechanism here, since `_exceptions.py` does
-contain real functions -- this one is pure token-budget pruning, the
-`pruned_out` category, not `never_included`).
+**Checked the real PR directly (#49615, commit `ab89c53f48`) to
+understand the actual connection, not just its absence.** `_exceptions.py`
+is pandas' small toolkit for rewriting exception/warning *messages*
+specifically (pre-fix, it held exactly two functions: `rewrite_exception`,
+which find/replaces text in a caught exception's message and re-raises;
+and `find_stack_level`, used to attribute a warning's stacklevel
+correctly). The fix adds a third, `rewrite_warning()` -- a direct sibling
+of the existing `rewrite_exception`, same pattern applied to
+`warnings.warn()` output instead of a raised exception. `pivot.py` is
+the *only* caller anywhere in the codebase: it wraps the exact line that
+triggers the confusing `FutureWarning` (`grouped.agg(aggfunc)`) in
+`rewrite_warning(...)`, replacing the generic `numeric_only` deprecation
+message with a `pivot_table`-specific one. **Checked both directions of
+the import graph, before and after the fix**: `pivot.py` had zero
+imports from `_exceptions.py` at `base_commit` (confirmed directly --
+no reference at all), and `_exceptions.py` never references `pivot.py`,
+before or after. The `from pandas.util._exceptions import rewrite_warning`
+line, and the function it imports, are both introduced by this exact
+commit -- there is no earlier state in which the connection existed for
+any signal to have captured.
 
-**Practical implication:** this is the cleanest example yet of a file
-that no *content* change to any current map type would fix -- the
-problem isn't truncation, wrong ranking, or a structural blind spot in
-isolation (each of which has a targeted fix conjecture elsewhere in
-this list), it's that this specific file's relevance to this specific
-issue is a *semantic* fact (both files need a coordinated warning-
-stacklevel fix) with no historical or structural echo in the codebase
-at all. Worth citing as the boundary case for "how far map-based
-retrieval alone can go" -- some ground-truth files require
-understanding *why* a fix needs a file, not just where it has
-historically co-occurred with other changed files.
+**This rules out even a smarter, not-yet-implemented map type, not just
+the three studied here.** `scrapy/48` (#21) conjectured a call/import-
+graph signal as a fourth map type worth building. Checked whether it
+would have helped here: no -- since no import existed pre-fix in either
+direction, an import-graph map computed from the codebase's state before
+the fix would have shown nothing to find, for the identical reason
+co-change shows nothing (both are backward-looking over a relationship
+that doesn't yet exist).
+
+**The real fix is also a completely different mechanism than every
+model hypothesized**, worth noting since it bears directly on #38's
+DeepSeek trace on this same issue: no model's exploration (including the
+~29-turn dive into `groupby.py`/`generic.py`/`apply.py`'s internal
+aggregation-dispatch chain) was ever chasing the right kind of fix. Every
+model investigated *threading a `numeric_only` parameter through*
+`pivot_table` -- a reasonable reading of the issue's own request, but not
+what the maintainers actually did. The real fix doesn't expose the
+parameter at all; it intercepts and rewrites the warning message. No
+amount of additional turns tracing the aggregation call chain would have
+led anywhere near `_exceptions.py`, because that file has nothing to do
+with the mechanism every model was (reasonably) investigating.
+
+**No single fix closes this gap.** Frequency and co-change *do*
+technically list `_exceptions.py`, but so deep into a long tail (68% and
+98% through) that reaching it requires reading past hundreds of other
+files first -- practically equivalent to not being listed, for any model
+with a finite attention/budget. Structural's blind spot is pure
+token-budget pruning here (`pruned_out`), not the zero-AST-content
+exclusion mechanism (`_exceptions.py` does contain real functions).
+
+**Practical implication:** the cleanest example yet of a file that no
+*content* change to any current or plausible future map type would
+fix -- not because of a truncation, ranking, or structural limitation in
+isolation (each has a targeted fix conjecture elsewhere in this list),
+but because the file's relevance to this issue is a fact the fix commit
+itself creates, not one reflected anywhere in the codebase's prior
+state. The only thing that could plausibly have pointed a model there is
+the domain-convention reasoning a human reviewer would use -- noticing
+`_exceptions.py`'s existing `rewrite_exception` pattern and inferring a
+warnings-side sibling might belong nearby -- which is a conceptual leap,
+not a retrievable signal. Worth citing as the boundary case for "how far
+map-based retrieval alone can go," including hypothetical richer map
+types, not just the three actually studied here.
 
 ---
 
@@ -2014,6 +2056,476 @@ the third data point for it.
 
 ---
 
+## 39. Map/tool presence roughly triples wrong-file inclusion on a single-file ground truth -- negative in every condition tested, across all three studies, the single worst-performing row in Study 1's own ranking
+
+**Type:** map/tool design harm (confirmed, dataset-extreme) -- distinct
+from every "map presence helps via framing" entry in this list (#16,
+#36): here presence measurably *hurts*, consistently, and the
+magnitude is large enough to stand out from the rest of the dataset,
+not just a single condition's noisy dip.
+
+**Evidence:** `gpt-engineer/9` (single-file ground truth: `ai.py`).
+Checked `data/issue_map_effect_ranking.csv` / `_study2.csv` /
+`_study3.csv` directly: **all 11 non-baseline conditions tested across
+all three studies show a negative pooled_mean_delta_f1** -- no
+exceptions. Study 1's `temporal_cochange` (Δ=−0.222) is the single
+worst-performing (issue, condition) row in the *entire* Study 1 ranking
+table (rank 0 of 135); `structural` (Δ=−0.195) is second-worst. Study
+2's `temporal_cochange` (Δ=−0.347) is an even larger-magnitude drop.
+Study 3's `all_tools_required` (Δ=−0.194) is the largest drop of that
+study's four gated conditions.
+
+**Mechanism, checked directly rather than inferred from the ranking
+alone:** `main.py` (the CLI entry point, a plausible-looking but wrong
+guess) is included in the final answer at 17% under baseline, rising to
+42-58% under every map type (Structural 47%, Frequency 42%, Co-change
+50%, All tools 58%) and, checked separately, every delivery mechanism
+(context 53%, tool_free 42%, tool_required 52%) -- roughly a 2.5-3x
+jump that's flat across both axes, not concentrated in one map type or
+one mechanism.
+
+**A genuine, strong co-change relationship exists here -- initially
+looked causal, checked directly, does not hold up.** `ai.py`'s
+untruncated co-change list has `main.py` as its #1 partner (12x, out of
+28 partners) -- a real, strong, delivered-in-full signal (not truncated
+away the way most of this list's co-change findings involve). The
+obvious hypothesis: models are reading this relationship and
+over-applying it. **Checked whether trials that padded with `main.py`
+actually used the co-change tool**: for gpt-oss, only 2/20 tool-based
+padding trials ever called `lookup_cochange` at all; for DeepSeek,
+6/17 (35%, still a minority). Most of the over-inclusion happens
+without the co-change tool ever being touched -- ruling out a
+co-change-specific causal story. The flat rate across all four map
+*types* (including `freq`/`structural`, which have no co-change
+relationship to `main.py` to leverage) independently confirms this: a
+genuinely co-change-driven effect would show co-change standing out
+from the others, and it doesn't. Best-supported reading: `main.py` is
+independently a plausible guess on its own (real CLI entry point for
+the `--azure` flag the issue references), and *any* map/tool presence
+raises confidence in already-plausible-looking files generally -- the
+same family as #16/#36's presence-as-framing effect, but here the
+"boosted" file happens to be wrong rather than right.
+
+**A second wrong-file attractor, `token_usage.py` (31/144 wrong-guess
+hits), is unrelated to any map effect** -- its inclusion rate is flat-
+to-declining under every map type (33% baseline vs. 17-29% under maps)
+and traces directly to `ai.py`'s own source, which imports and uses
+`TokenUsageLog` throughout the class -- models reading `ai.py` in full
+see the import and plausibly, over-cautiously, tag it along. Worth
+separating from the `main.py` finding since the two wrong files have
+different causes despite superficially similar symptoms.
+
+**A sharp, model-specific decisiveness split explains most of the
+per-model variance**: Ministral-3B submits `ai.py` *alone* in 31/36
+trials (86%, F1=0.898 -- the best score of any model on this issue, a
+reversal of its usual weakest-model role in this project) and never
+once includes `token_usage.py`. DeepSeek-V4-Flash submits `ai.py` alone
+in **0/36** trials -- always pads with at least one wrong file
+(F1=0.445). gpt-oss and Nemotron sit in between (5/36 and 12/36 exact,
+respectively). This split holds regardless of mechanism: checked
+DeepSeek's mean files-predicted by mechanism specifically (baseline
+2.00, context 2.00, tool_free 1.50, tool_required 2.00) -- Study 3's
+submit-gate, which reliably narrows answer breadth for single-file
+ground truth elsewhere in this list (#18, #23, #24), does **not**
+reduce DeepSeek's padding on this issue at all.
+
+**The real fix bears no resemblance to what any model hypothesized.**
+Checked the actual merged PR (#1170) directly: the true fix is a
+one-line change to a default `OPENAI_API_VERSION` string in `ai.py` --
+unrelated to the issue's own "deployment name mixing with model name"
+framing, which is a real but incidental symptom, not the bug. No
+model's search trajectory (in this case-study's earlier turn-by-turn
+trace) was ever chasing the right mechanism.
+
+**Practical implication:** a genuine counter-example to treating "richer
+map/tool signal" as an unambiguous good, worth citing alongside
+`keras/5`-style false positives as the other direction of the same
+caution -- here the effect is real (not noise, not a discovery
+artifact) but actively harmful, and it stems from correctly-delivered,
+strong signal being over-applied by models that already have a
+decisiveness problem, not from any map defect. Fix conjecture: for
+single-file (or otherwise narrow) ground truth specifically, a
+prompt-level caution against including a merely well-connected file
+without independent evidence it's actually implicated -- distinguishing
+"this file often changes alongside the true fix" from "this file is
+part of the fix" -- since the current framing appears to blur the two
+for models already prone to hedging. An expanded-replication check
+(all 12 conditions x 4 models x 12 extra reps, isolated from the main
+dataset) was launched 2026-08-06/08 to confirm this effect holds beyond
+n=3/cell; see `scripts/run_replication_check.py`.
+
+---
+
+## 40. A ground-truth file positioned reasonably in every map type, still found 0/144 times -- the bottleneck is conceptual irrelevance, not delivery
+
+**Type:** map/tool design limitation (distinct category) -- unlike
+every other "unreachable file" entry in this list (#28, #37), this one
+is not caused by truncation, pruning, positional burial, or a
+non-existent relationship at generation time. The file is genuinely
+available, at a reasonable position, in every map type tested -- and
+still never touched. The limitation is that no map, current or
+hypothetical, encodes conceptual/semantic relevance to an issue's own
+text, and this file's inclusion has none.
+
+**Evidence:** `scikit-learn/45` (ground truth, scorable:
+`sklearn/_min_dependencies.py`, `sklearn/decomposition/_truncated_svd.py`;
+issue is an RFC to raise scikit-learn's minimum supported scipy
+version, quoting `SCIPY_MIN_VERSION = '1.0.0'` directly in the body).
+`_min_dependencies.py` found in 138/144 (96%) -- near-trivial, the
+constant name is quoted verbatim in the issue. `_truncated_svd.py`
+found in **0/144**, and confirmed touched 0/144 too -- total
+non-exploration.
+
+**Checked map position directly, expecting a burial/pruning story like
+#37's -- found the opposite:**
+
+| Map type | `_truncated_svd.py` status |
+|---|---|
+| Structural | `found`, rank 342/1517 (22.5% through) |
+| Frequency | `found`, rank 106/237 (44.7% through) |
+| Co-change | `found`, rank 58/237 (24.5% through) |
+
+None of these are burial-level positions the way `pandas/38`'s
+`_exceptions.py` was (68-98% through, or pruned out entirely). This
+file is genuinely available to any model that reads far enough into
+any of the three maps.
+
+**Checked the real PR (#20069) directly to understand why it's
+included as ground truth at all.** It's a 122-file, 40+-commit
+infrastructure rollout (CI configs across CircleCI/Travis/Azure
+Pipelines, Python version support matrix) -- `_min_dependencies.py` is
+the direct, intentional target (one line, exactly the issue's own
+request). `_truncated_svd.py`'s 15-line diff is a **docstring doctest
+fix** -- updated example output numbers, collateral damage from some
+dependency version bump elsewhere in the same mega-PR silently changing
+scipy's RNG output in a doctest. No logic change, no relationship to
+the "raise the minimum scipy version" request beyond both landing in
+the same enormous PR. Confirmed via co-change data: `_min_dependencies.py`
+and `_truncated_svd.py` have **zero shared commits, ever** -- this
+exact fix commit is the only time they've ever changed together, and
+even then only coincidentally (bundled in the same PR, not causally
+linked).
+
+**Practical implication:** distinct from #37's "the relationship
+doesn't exist yet" boundary case -- here there IS a relationship (both
+files changed in the same real commit), and the map delivers the file
+findably, but the relationship itself is conceptually arbitrary from
+the issue's perspective. No search strategy grounded in the issue's own
+content (`scipy_min_version`, `linprog`, `interior-point` -- all
+genuinely on-target, confirmed in every model's search vocabulary)
+would ever lead to a docstring-only file in an unrelated module. Worth
+treating this ground-truth file similarly to this project's other
+"lighter-weight" cases (`yt-dlp/41`, `fastapi/20`) despite being
+PR-linked with a real code diff -- the diff is real, but its bundling
+into scorable ground truth for *this* issue is closer to an artifact of
+PR-granularity ground-truth extraction than a fact about what the issue
+required. Ceiling analysis: since only one of two GT files is ever
+findable, max possible F1 here is 0.667; gpt-oss and Nemotron both land
+exactly there (clean ceiling hits), while Ministral (0.5926) and
+DeepSeek (0.6297) fall slightly short from a handful of empty/off-target
+submissions, not padding.
+
+---
+
+## 41. Wholesale frequency-map injection roughly halves an otherwise-near-perfect answer rate for one model specifically -- the map's own ranking, not the issue text, drives the drop (statistically confirmed, n=15)
+
+**Type:** map/tool design harm (confirmed, condition-isolated) -- a
+second entry demonstrating maps actively hurting (after #39), but a
+cleaner, more surgical case: here the harm is isolated to exactly one
+(model, condition) cell against a clean, fully-passing control every
+other cell in this project would predict, not a broad multi-condition
+effect.
+
+**Evidence:** `scikit-learn/45` (ground truth includes
+`sklearn/_min_dependencies.py`, whose target constant
+`SCIPY_MIN_VERSION = '1.0.0'` is quoted verbatim in the issue body --
+see #40 for the issue's other ground-truth file). Checked Ministral-3B's
+hit rate on `_min_dependencies.py` by exact condition (not pooled map-
+type group): `ast_compact` 3/3, **`freq` 0/3**, `cochange` 2/3,
+`temporal_frequency` 3/3, `temporal_frequency_required` 3/3. The miss
+is isolated to the single wholesale frequency-context condition -- every
+other delivery of the same or different map data succeeds. Every other
+model, in this exact same `freq` condition, succeeds 3/3 (checked
+directly: gpt-oss, DeepSeek, Nemotron all submit `_min_dependencies.py`
+alone, every rep) -- ruling out the map content itself being
+unworkable; this is a Ministral-specific, `freq`-context-specific
+interaction.
+
+**Traced all 3 transcripts turn-by-turn.** Every trial's opening
+reasoning latches onto the issue body's *elaboration* paragraph (about
+`scipy.optimize.linprog`'s `"interior-point"` solver replacing
+`"simplex"`) and never once searches for `min_version`,
+`MIN_VERSION`, or anything resembling the actual quoted constant name
+-- despite it being the single most literal, search-hunt-free
+identifier available anywhere in the issue text. Checked the actual
+injected `freq_map_pruned_55k.txt` directly: `sklearn/linear_model/*`
+files dominate the top of the frequency-ranked list (`_coordinate_
+descent.py` 35 edits, `_ridge.py` 32, `_base.py` 29, `_logistic.py`
+25 -- all in roughly the top 20% by rank), while `_min_dependencies.py`
+sits at rank 219/237, **91.9% through the list**, with only 3 edits.
+All three trials spend their entire turn budget chasing
+`scipy.optimize` usage through exactly that prominently-ranked
+linear_model cluster (`glm.py`, `_base.py`, `_coordinate_descent.py`,
+`utils/optimize.py`, `_huber.py`, `_logistic.py`, `_nca.py`) -- never
+random flailing, but methodically following the map's own ordering
+into a plausible-looking dead end.
+
+**Why this is specifically a *delivery-mechanism* failure, not a
+frequency-*data* failure**: the identical underlying frequency data,
+delivered as a tool (`temporal_frequency`/`temporal_frequency_required`)
+instead of wholesale context, produces 3/3 correct in both conditions.
+The wholesale map dumps the entire ranked list into the prompt at once
+with the real answer buried at the tail; the tool version only returns
+whatever's explicitly queried, so a model that searches the issue's own
+vocabulary first never encounters the misleading ordering at all. Every
+other model in this dataset appears to do exactly that (search first,
+consult map second); Ministral-3B here appears to read the passively-
+injected ranked list itself as the primary cue for where to look, ahead
+of the issue's own text -- the mirror image of #16/#36's presence-
+boosts-a-correct-guess pattern, but for a wrong direction instead of a
+right one, and isolated to one model.
+
+**This case was selected (2026-08-08) as a targeted expanded-
+replication candidate specifically for demonstrating map-as-context
+harm** -- unlike #39's broad, all-conditions effect on `gpt-engineer/9`,
+this is a single clean cell with a strong built-in control (every other
+model/condition combination succeeds), making it a strong candidate for
+isolating and confirming a genuine active-harm mechanism at higher n.
+Deliberately picked *because* the frequency map's own ranking is poorly
+aligned with this issue's true relevance (buries the answer at 91.9%
+while surfacing an unrelated prominent cluster) -- a targeted stress
+test of whether a low-quality map signal can override otherwise-
+reliable baseline behavior, not a general claim about frequency maps.
+Scope: Ministral-3B only, `none` (baseline) and `freq` (context)
+conditions only, expanded reps via `scripts/run_replication_check.py`.
+
+**Update, 2026-08-08 -- expanded to n=15/cell (original 3 + 12 new
+reps), results confirm the effect but revise its shape.** Combined:
+`none` **15/15 (100%)**, `freq` **8/15 (53%)** -- not a deterministic
+0/3-style failure as the original n=3 implied, but a real, large,
+statistically confirmed drop in success rate. Fisher's exact test (the
+correct choice here over chi-square or McNemar's: two independent
+proportions, not paired observations, and one cell is a literal zero --
+chi-square's asymptotic approximation is unreliable at that boundary)
+on the 2x2 table [15,0 / 8,7]: **two-sided p=0.0063**, one-sided
+(baseline > freq) p=0.0032. Report the two-sided value as the headline
+number -- the directional hypothesis was partly derived from the same
+original n=3 pilot now folded into this larger sample, so treating
+"freq hurts" as fully pre-specified would be generous to the finding.
+Also revises the mechanism: the 5 new misses (rep4, 7, 8, 14 of the 12
+extra) don't all repeat the original 3 reps' exact `linear_model`
+derailment path -- they wander into different unrelated clusters
+(`gaussian_process`, `neural_network`, `ensemble`) -- consistent with
+"the map's poor ranking creates a general pull toward *some* prominent-
+but-wrong file," not "there's one specific wrong answer the map always
+produces." Revised headline framing: **`freq` context injection roughly
+halves Ministral's success rate on this issue** (100%->53%), not
+"eliminates it" -- see the cross-cutting note in "Notes on use" below
+for how this and `thefuck/20` together bear on this project's broader
+conclusion about map usage requiring external discernment the models
+don't reliably have themselves.
+
+---
+
+## 42. A traceback whose every named frame is wrong -- the real (scorable) answer is a same-pattern sibling the traceback never mentions at all, and success tracks pattern-generalization discipline, not map condition
+
+**Type:** model reasoning/search-strategy issue (map-agnostic) -- a
+second confirmed generalization-task-disguised-as-localization case
+after `transformers/27` (#22), but with a more severe version of the
+same trap: here every traceback-named file is not just insufficient,
+it's actively *outside the scored package scope entirely*, so
+confidently trusting the traceback caps a trial's score at zero
+regardless of how much further exploration follows.
+
+**Evidence:** `stable-diffusion-webui/13` (`ModuleNotFoundError: No
+module named 'pytorch_lightning.utilities.distributed'`). Traced the
+full traceback directly: the outermost frame is
+`modules/launch_utils.py:340`, which calls into `modules/shared.py:18`
+(`from ldm.models.diffusion.ddpm import LatentDiffusion`), which
+cascades into `repositories/stable-diffusion-stability-ai/ldm/models/
+diffusion/ddpm.py:20` -- a **vendored, out-of-scope submodule**
+(outside this repo's defined `modules/` package scope, confirmed via
+`PACKAGE_MAP`) -- where the actual broken import line lives. Both
+traceback-named in-scope frames (`launch_utils.py` 8 hits,
+`shared.py` 11 hits) are this issue's two dominant wrong guesses --
+not coincidental plausible-sibling guesses, but literal, exact
+traceback frames. The scorable ground truth,
+`modules/models/diffusion/ddpm_edit.py`, is **never mentioned in the
+traceback at all** -- it's a separate, in-scope file that happens to
+contain the identical copy-pasted broken import line
+(`from pytorch_lightning.utilities.distributed import rank_zero_only`),
+found in 99/144 trials (69%) but only by models that search for the
+*pattern* rather than trust the crash trace's own file path.
+
+**A second, distinct evidence issue worth flagging up front**: checked
+the underlying dataset annotation (`loc_way: 'comment'`, no linked PR)
+and, going further than a prior case, checked the actual repo history
+directly -- the broken import line is **still unchanged at HEAD**, and
+`requirements_versions.txt` still pins `pytorch_lightning==1.9.4`
+unchanged throughout. No evidence this was ever actually fixed
+upstream the way the ground truth implies. Same weak-evidence category
+as `yt-dlp/41`/`fastapi/20` (#14/#15) -- a suggested location from an
+issue comment, not a verified accepted patch -- but here confirmed via
+direct git-history inspection rather than the pickle's own `loc_way`
+field alone, a stronger check than this project has previously applied
+to this category of issue.
+
+**Model split tracks pattern-generalization discipline, not map
+condition.** gpt-oss (F1=0.9722) and DeepSeek (0.8843) both work
+near-ceiling; Ministral (0.3056) and Nemotron (0.4815) do much worse.
+Search vocabulary is identical and on-target across every model and
+every condition (`rank_zero_only`, `pytorch_lightning`, `distributed`)
+-- traced a winning gpt-oss trial directly: it searches the broken
+symbol itself, finds *all three* files containing it (the vendored
+file, the scorable file, and the raw-but-unscorable
+`extensions-builtin/LDSR/sd_hijack_ddpm_v1.py`), reads all three, and
+correctly submits only the in-scope one. Traced a losing Ministral
+trial directly: it finds the vendored file first via the same kind of
+search, **submits it alone, and never generalizes the search further**
+-- a real bug, found accurately, scored zero because it's the wrong
+copy of a duplicated pattern. Checked dataset-wide: **5/144 trials
+submit only the vendored out-of-scope file** as their entire answer --
+a small but real, reproducible instance of this specific trap. Given
+search terms are identical across every map condition, this is not a
+map-driven split at all -- it's whether a model treats "I found *a*
+file matching the error" as sufficient, or continues to check for
+duplicated instances of the same pattern before committing.
+
+**Practical implication**: distinct fix target from most of this
+list's map-content conjectures, since no map/tool signal is missing or
+underused here -- every model has equally good search vocabulary
+available. The lever is a search-discipline instruction: after finding
+a file that plausibly explains a traceback, explicitly check whether
+the same broken pattern recurs elsewhere in-scope before submitting,
+rather than treating traceback-frame-found as answer-found. Same class
+of fix as `transformers/27`'s (#22) generalization gap, but that
+issue's version required generalizing a *confirmed fix pattern*
+forward across 12 files with no traceback anchor at all; this one only
+requires checking whether an *already-open* file (found via ordinary
+traceback-following) has duplicates -- a lower bar that gpt-oss/
+DeepSeek already clear routinely, making Ministral/Nemotron's failure
+here more clearly a discipline gap than a capability ceiling.
+
+---
+
+## 43. Ground truth encodes a fix that was merged, then reverted by the maintainer four days later -- and one of its three files has zero pre-fix textual anchor for any map or search strategy to find
+
+**Type:** data-integrity nuance (confirmed) + map/tool design limitation
+(one file, structural) -- a new category distinct from every prior
+ground-truth caveat in this list. `yt-dlp/41`/`fastapi/20` (#14/#15)
+and `stable-diffusion-webui/13` (#42) involve no real accepted fix at
+all (`loc_way: 'comment'`); `pandas/38` (#37) involves a real,
+permanent fix whose file relationship the map couldn't have seen
+because the fix creates it. This is a third, new shape: a real,
+PR-linked, *merged* fix (`loc_way: 'pr'`) that was subsequently
+**reverted** by the maintainer, and never reinstated in that form.
+
+**Evidence:** `requests/12` ("Not possible to specify max_retries in
+v1.X?", ground truth `sessions.py`/`adapters.py`/`api.py`). Checked the
+real PR (#1219, commit `796d3225`, 2013-02-27) directly: it threads a
+`max_retries` keyword through `api.py`'s docstring → `Session.request`/
+`resolve_redirects` (`sessions.py`) → `HTTPAdapter.send`
+(`adapters.py`). Checked the surrounding history and found the
+maintainer reverted it four days later (`23d85222`, "Revert
+'...adding a max_retries argument'", bare message, no rationale given)
+-- and it was never reinstated in this form anywhere in the repo's
+subsequent history. **Six weeks later**, a different contributor
+(`36dcce1a`, 2013-04-12) delivered the same user-facing capability via
+a completely different, simpler design: `max_retries` as an
+`HTTPAdapter.__init__()` constructor argument, touching **only
+`adapters.py`** -- no threading through `sessions.py`/`api.py` at all.
+Best-supported read: the original PR was reverted for a design
+objection (an invasive per-request kwarg threaded through three layers,
+vs. the adapter-mounting pattern already idiomatic in this codebase),
+not because the feature itself was rejected -- the ground truth this
+project scores against reflects the **rejected** design, not the
+permanent one.
+
+**A second, independent finding on the same issue**: `api.py` is found
+in only 19/144 trials (13%), far below `adapters.py` (122/144, 85%)
+and `sessions.py` (117/144, 81%). Checked why directly -- at
+`base_commit`, `api.py` has **zero pre-existing occurrences of
+`max_retries`** anywhere in the file; the fix's only change there is a
+single new docstring line. Same shape as `thefuck/10`'s `conf.py`/
+`const.py` (#26): a new-feature ground-truth file with nothing
+code-level "wrong" pre-fix for any search strategy or map type to
+anchor to.
+
+**A third, structural observation**: zero wrong-file guesses across
+all 144 trials -- every single prediction fell within the 3-file
+ground truth. Models under-predict (miss `api.py`) rather than
+substitute a plausible-but-wrong file, the same shape as
+`gpt-engineer/12` (#28).
+
+**Practical implication**: worth a methods-section caveat distinct from
+the existing "no real fix" caveat -- a PR being merged and `loc_way`
+being `'pr'` doesn't guarantee the ground truth reflects the codebase's
+*permanent* state, only a state that was true at some point in history.
+Worth a brief audit of how many of the 45 selected issues' fix commits
+were later reverted or superseded, if time permits, since this
+project's provenance checks (the `base_commit` self-reference audit,
+entry #17) checked for a different kind of history problem and
+wouldn't have caught this one.
+
+---
+
+## 44. A touch-vs-kept gap for one model, and a real content-gradient for another -- but the gradient didn't survive a first expanded-replication rep, illustrating exactly why more reps were warranted before trusting it
+
+**Type:** model reasoning issue (gpt-oss) + open, actively-being-tested
+question (DeepSeek) -- two separate model-specific findings on the same
+issue, one resolved, one deliberately left open pending more data.
+
+**Evidence (gpt-oss touch-vs-kept gap):** `requests/12`. gpt-oss's
+`adapters.py` inclusion rate looked map-type-graded at first pass
+(pooled group: Structural 6/9 → Frequency 5/9 → Co-change 3/9 →
+All-tools 3/6) -- checked at the exact-condition level and this doesn't
+hold: gpt-oss sits at 1/3 or 2/3 in nearly every condition **including
+baseline** (1/3), with only one condition (`temporal_frequency`, 3/3)
+standing out, plausibly n=3 noise rather than a real map effect. Traced
+three missed trials directly: gpt-oss **reads `adapters.py` in full**
+in every one, then answers via a natural `end_turn` (never calling
+`submit_answer`), and its own end-of-turn content narrows to just
+`sessions.py`. A genuine touch-vs-kept commitment gap, model-specific
+and largely condition-independent -- corrected from an initial,
+overstated co-change-specific framing before logging.
+
+**Evidence (DeepSeek content-gradient, open question):** the same
+issue's `api.py` shows a striking condition-level pattern for DeepSeek
+at the original n=3: `none` 0.8/0.8/0.8, `freq` 0.8/0.8/0.8 (no lift),
+`ast_compact` 1.0/1.0/0.8 (partial), `cochange` 1.0/1.0/1.0 (full) --
+tracking exactly which conditions deliver the specific relationship
+needed (checked the real delivered co-change map: `sessions.py`'s
+top-3 partners are `models.py` 42x, **`api.py` 24x**, `utils.py` 14x --
+prominent, not truncated away; `freq` carries no relational info at
+all). Confirmed via transcript trace this is a touch-vs-kept gap, not a
+discovery gap (`api.py` is read even at baseline) -- and confirmed no
+transcript in any condition ever narrates using map/cochange content
+explicitly. This was the most promising candidate found so far in this
+project for genuinely *content*-mediated map use (contrast #16/#36's
+presence-only effects), since the one condition carrying the specific
+relevant relationship is the one that reliably fixes the miss and the
+one that doesn't, doesn't.
+
+**The first new expanded-replication rep already complicates this**,
+which is worth recording as the reason this stays an open finding
+rather than a confirmed one. Launched an expanded check (2026-08-08,
+DeepSeek-V4-Flash only, `none`/`freq`/`ast_compact`/`cochange`, 12 extra
+reps via `scripts/run_replication_check.py`) specifically to test
+whether the gradient holds at higher n. The first new rep (rep4) came
+back **F1=0.5, `['requests/adapters.py']` alone, uniformly across all
+four conditions** -- not just failing to replicate the gradient, but a
+more severe miss than any of the original 3 reps in any condition
+(dropping `sessions.py` too, not just `api.py`). One rep is not enough
+to conclude the original pattern was noise (the full 48-trial run is
+still in progress as of 2026-08-08), but it's a direct, concrete
+illustration of exactly the risk this project's n=3-by-default design
+carries, and why the "run more reps before trusting a clean-looking
+condition split" instinct behind this whole replication-check program
+is justified -- see `keras/5`'s fuller debunking for the more extreme
+version of the same lesson.
+
+---
+
 ### Notes on use
 
 - Failure points are not mutually exclusive — a single trial can exhibit
@@ -2021,15 +2533,63 @@ the third data point for it.
 - "Type" tags exist to separate what a better map/tool could plausibly fix
   from what's a model-side reasoning issue, since those need different
   remedies in any recommendations section.
-- Twenty-two issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
+- **Framing note (2026-08-08), worth reading before any of the entries
+  below get generalized into a broader claim**: this list is evidence
+  that maps *can change* model behavior — not that they do so
+  consistently, or that the change is reliably helpful or harmful. Two
+  entries in particular are worth reading as a matched pair rather than
+  in isolation, since they involve the same underlying model trait
+  producing opposite outcomes: `thefuck/20` (Ministral the *only* model
+  to ever solve that issue, 3/144 trials, all Ministral — hypothesis:
+  its noisier, less confident search wanders past a traceback's crash
+  site into the real fix file, where every more-confident model stops
+  short) and entry #41 (`scikit-learn/45`, Ministral's otherwise-
+  deterministic 100% baseline success rate roughly halved by `freq`
+  context injection specifically, statistically confirmed at n=15,
+  Fisher's exact p=0.0063 — traced to the same higher-variance
+  disposition, here manifesting as susceptibility to a misleading map
+  ranking rather than beneficial search noise). Same trait, opposite
+  valence, depending on whether the "atypical" pull happens to point
+  toward or away from the right answer. Two data points is a pattern
+  worth watching, not yet a confirmed general finding — but it's a
+  clean illustration of the project's likely core conclusion: these
+  maps are not consistently helpful *or* harmful on their own, and the
+  models themselves show little reliable capacity to discern when a
+  given map's signal should be trusted versus overridden for a given
+  issue. That discernment — when a map is worth consulting, and when
+  its content should be set aside in favor of the issue's own text —
+  appears to remain a human-engineering judgment call, not something
+  these models reliably supply on their own, at least within this
+  project's scope (4 models, 45 issues, 12 conditions).
+- Twenty-six issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
   `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`,
   `pandas/44`, `scrapy/48`, `transformers/27`, `gpt-engineer/11`,
   `rich/12`, `keras/5`, `stable-diffusion-webui/5`,
   `gpt-engineer/12`, `yt-dlp/45`, `fastapi/9`, `pandas/26`, `transformers/5`,
-  `pandas/38`);
+  `pandas/38`, `gpt-engineer/9`, `scikit-learn/45`, `stable-diffusion-webui/13`,
+  `requests/12`);
   intentionally kept broad and issue-specific rather than prematurely
   generalized — revisit once a handful more issues are logged here to
-  see which patterns recur. `transformers/5` (entries #33, #34, #35, #36)
+  see which patterns recur. `scikit-learn/45` (entries #40, #41)
+  produced two distinct findings: a ground-truth file positioned
+  reasonably (never buried, never pruned) in every map type yet still
+  found 0/144 times, because its inclusion is conceptually arbitrary —
+  a docstring fix incidentally bundled into an unrelated 122-file
+  infrastructure PR, not something any map (or issue-grounded search
+  strategy) could plausibly connect (#40); and a second, cleaner
+  instance of active map-as-context harm after `gpt-engineer/9` (#39) —
+  Ministral-3B alone, isolated to the wholesale `freq` condition alone
+  (3/3 misses, vs. 3/3 hits for every other model in that exact
+  condition and 3/3 hits for Ministral itself under the tool-based
+  delivery of the identical frequency data), traced directly to the
+  map's own edit-frequency ranking burying the real answer at 91.9%
+  through the list while prominently surfacing an unrelated file
+  cluster the model spends its full budget chasing instead — selected
+  as a targeted expanded-replication candidate (Ministral only,
+  baseline vs. `freq`, launched 2026-08-08) specifically because its
+  clean single-cell isolation and strong built-in control make it a
+  stronger active-harm demonstration than `gpt-engineer/9`'s broader
+  effect (#41). `transformers/5` (entries #33, #34, #35, #36)
   is the most heavily-instrumented single issue in this list so far —
   it refines the co-change-ignored family by checking one file's *entire*
   set of potential ground-truth links at once rather than a single pair
@@ -2047,10 +2607,16 @@ the third data point for it.
   ground-truth file's unreachability was traced to three independent
   mechanisms stacking simultaneously — structural pruning, positional
   burial (68-98% through the frequency/co-change lists), and a
-  genuinely zero-count co-change relationship — worth checking all
-  three explicitly (not just "is it in the map at all") on any future
-  0%-find file before concluding a fix would need a different map type
-  (#37). It's also a third confirmed instance of DeepSeek's
+  co-change relationship that was genuinely zero not because the files
+  are unrelated but because the fix commit itself creates the only
+  connection between them (checked the real PR directly: a brand-new
+  function in `_exceptions.py` with `pivot.py` as its sole caller, no
+  import in either direction beforehand) — worth checking all three
+  explicitly (not just "is it in the map at all"), and worth checking
+  whether a 0%-find file's relevance is being *created* by the fix
+  itself before concluding any richer map type, current or
+  hypothetical, would have helped (#37). It's also a third confirmed
+  instance of DeepSeek's
   chase-full-understanding turn-exhaustion pattern (after `pandas/26`
   #31, `pandas/44` #18), and — the sharper addition — a third distinct
   flavor of non-compliant forced final answer (after #34's garbled
@@ -2060,7 +2626,27 @@ the third data point for it.
   logs, not just the aggregate score (#38). Notably, all three of those
   reps had already read the correct primary file on turn 1 — direct
   evidence the failure is a commitment gap, not a discovery gap, even
-  under severe turn exhaustion. As of this session, `scripts/case_study_analysis.py` (saved
+  under severe turn exhaustion. `gpt-engineer/9` (entry #39) is the
+  first issue in this list where map/tool presence measurably *hurts*
+  rather than helps, and by a wide margin — negative
+  `pooled_mean_delta_f1` in all 11 non-baseline conditions tested
+  across all three studies, with Study 1's `temporal_cochange` the
+  single worst-performing (issue, condition) row in that study's entire
+  135-row ranking table. Initially looked like a co-change-driven
+  over-application (the wrong-file attractor `main.py` genuinely is
+  `ai.py`'s #1 co-change partner, undiluted by truncation), but checked
+  directly and ruled out: most padding trials never call
+  `lookup_cochange` at all, and the inflation is equally flat across
+  every map type and every delivery mechanism — a general
+  presence-boosts-confidence effect (same family as #16/#36) landing on
+  a wrong file rather than the right one, not a co-change-specific
+  mechanism. Worth the same caution as `keras/5`'s false-positive
+  correction, in the opposite direction: don't accept a large,
+  consistent *negative* delta's apparent mechanism at face value either
+  — check what tool calls the padding trials actually made before
+  attributing it to a specific map type. An expanded-replication check
+  (all 12 conditions, isolated from the main dataset) is in progress as
+  of 2026-08-08 to confirm the effect holds beyond n=3/cell. As of this session, `scripts/case_study_analysis.py` (saved
   2026-08-04) is the canonical, validated script for the wrong/right
   file breakdown, model x map-type grid, search-term extraction,
   touch-vs-kept, and turn-count sections repeated across every entry in
@@ -2172,7 +2758,20 @@ the third data point for it.
   (find all instances of a confirmed pattern) rather than a localization
   failure (find the one relevant file) — and should be read as its own
   category, not pooled with the others when looking for cross-issue
-  trends. `gpt-engineer/11` (entry #23) now holds the record for both the
+  trends. `stable-diffusion-webui/13` (entry #42) is a second, related
+  generalization-failure case, worth reading alongside #22 rather than
+  with the localization-failure majority: every traceback-named frame
+  (`launch_utils.py`, `shared.py`, both this issue's dominant wrong
+  guesses) is genuinely accurate but falls outside the scored package
+  scope, and the real answer is a same-pattern sibling the traceback
+  never names at all — success here tracks whether a model checks for
+  duplicate instances of a found pattern before submitting, not map
+  condition (search vocabulary is identical across every condition and
+  every model). A second, independently-confirmed instance of the
+  no-real-accepted-fix category (#14/#15) too — checked the actual repo
+  history directly this time (import line unchanged at HEAD, dependency
+  pin unchanged) rather than relying on the dataset's own `loc_way`
+  annotation alone. `gpt-engineer/11` (entry #23) now holds the record for both the
   widest per-model success-rate split (0% to 100%) and the sharpest
   touch-vs-kept gap (72% touch / 0% keep, gpt-oss-120B) found in this
   project, and is the clearest evidence yet that Study 3's submit-gate
