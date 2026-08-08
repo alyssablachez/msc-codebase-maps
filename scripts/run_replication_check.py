@@ -79,6 +79,30 @@ baseline-vs-map delta_f1 at the standard n=3 reps/cell:
                     single winner vs. baseline, since the gradient
                     across conditions (not just the cochange/baseline
                     gap) is the actual thing being tested.
+  - flask/18       -- added 2026-08-08. Entry #46, this project's
+                    strongest positive map-effect finding to date --
+                    unlike every other target here, this is a
+                    directly-traced, call-by-call causal mechanism, not
+                    an inferred behavioral correlation: lookup_structure
+                    (src/flask/app.py) returns "logger(self) L655" in
+                    its very first (unpaginated) page of results, and
+                    Nemotron-3-Super's next action in 5 of 6 traced
+                    tool-based trials is read_file(app.py, offset=650)
+                    -- landing exactly on that returned line number.
+                    Checked at the exact-condition level: Nemotron's
+                    app.py hit rate is baseline (`none`) 0/3, and a
+                    clean 3/3 across all three "structural" delivery
+                    conditions (`ast_compact` context, `structural`
+                    tool_free, `structural_required` tool_required) --
+                    every other map type sits at 0-2/3, mixed and
+                    lower. Scope: 4 conditions (`none`, `ast_compact`,
+                    `structural`, `structural_required`) x 1 model
+                    (Nemotron-3-Super only, via TARGET_ISSUES_MODELS)
+                    -- deliberately spans all three structural delivery
+                    mechanisms plus baseline, since the finding is that
+                    the *structural* signal itself is causal regardless
+                    of how it's delivered, not that one specific
+                    condition is.
 
 Purpose (per conversation 2026-08-04): more reps can settle whether a
 delta_f1 is real (a genuine causal effect of map/tool presence on
@@ -244,12 +268,21 @@ ALL_CONDITIONS = list(CONDITIONS.keys())
 # context conditions plus baseline are included (not just one winner)
 # specifically so the freq/ast_compact/cochange gradient itself -- not
 # just a single condition vs. baseline -- can be checked at higher n.
+#
+# flask/18 (added 2026-08-08) tests reproducibility of entry #46's
+# directly-traced tool-content-driven mechanism (lookup_structure
+# returning app.py's logger property at line 655, Nemotron immediately
+# reading that exact offset). Spans all three "structural" delivery
+# mechanisms plus baseline, since the finding is that the structural
+# signal itself is causal regardless of delivery, not one specific
+# condition.
 TARGET_ISSUES_CONDITIONS = {
     ("keras", 5): ["none", "freq", "temporal_frequency", "all_tools_required"],
     ("localstack", 19): ["none", "ast_compact", "temporal_frequency", "all_tools_required"],
     ("gpt-engineer", 9): ALL_CONDITIONS,
     ("scikit-learn", 45): ["none", "freq"],
     ("requests", 12): ["none", "freq", "ast_compact", "cochange"],
+    ("flask", 18): ["none", "ast_compact", "structural", "structural_required"],
 }
 
 # Per-issue model restriction -- defaults to all 4 (MODELS) when an
@@ -258,13 +291,16 @@ TARGET_ISSUES_CONDITIONS = {
 # freq context (every other model already confirmed 3/3 correct in that
 # exact condition at n=3) -- running the other 3 models here would just
 # re-confirm a result that isn't in question and burn budget for
-# nothing. requests/12's finding (entry pending) is specifically about
+# nothing. requests/12's finding (entry #44) is specifically about
 # DeepSeek-V4-Flash's touch-vs-kept behavior on requests/api.py -- the
 # other 3 models weren't part of the observed pattern and aren't in
-# scope here.
+# scope here. flask/18's finding (entry #46) is specifically about
+# Nemotron-3-Super's tool-content-driven reads of app.py -- the other 3
+# models weren't part of the observed pattern.
 TARGET_ISSUES_MODELS = {
     ("scikit-learn", 45): ["mistral/ministral-3b-latest"],
     ("requests", 12): ["deepseek/deepseek-v4-flash"],
+    ("flask", 18): ["deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B"],
 }
 
 MAX_RETRIES   = 2
