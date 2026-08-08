@@ -1,5 +1,5 @@
 """
-Expanded-replication check for two issues flagged in
+Expanded-replication check for issues flagged in
 data/model_failure_points.md's case-study notes as showing a large
 baseline-vs-map delta_f1 at the standard n=3 reps/cell:
 
@@ -8,12 +8,77 @@ baseline-vs-map delta_f1 at the standard n=3 reps/cell:
                     inspection of the best-looking cells found no
                     content-mediated map/tool usage (see the notes column
                     of data/issue_case_study_notes.csv, keras/5 row) --
-                    the leading candidate false positive.
+                    the leading candidate false positive. 4 conditions
+                    (baseline + each study's single strongest-delta
+                    condition).
   - localstack/19 -- entry #16 in model_failure_points.md, a *verified*
                     presence-mediated effect (baseline explores the right
                     files but submits doc/README.md; any map condition
                     flips the final answer) -- included as a comparison
-                    case, not because it's in doubt.
+                    case, not because it's in doubt. Same 4-condition
+                    scope as keras/5.
+  - gpt-engineer/9 -- added 2026-08-06. Negative pooled_mean_delta_f1 in
+                    11/11 tested (non-baseline) conditions across all
+                    three studies -- the single worst-performing row in
+                    Study 1's entire ranking table. Partially-verified
+                    mechanism: any map/tool presence roughly triples
+                    main.py's wrong-file inclusion rate (17%->42-58%,
+                    single-file ground truth), concentrated in
+                    gpt-oss/DeepSeek/Nemotron while Ministral stays
+                    unaffected -- checked directly that this is NOT
+                    primarily co-change-tool-driven (most padding
+                    trials never call lookup_cochange at all, even when
+                    available). Given the finding is "every condition
+                    hurts," not one standout condition, this issue gets
+                    ALL 12 conditions (baseline + all 11 others), not
+                    the 4-condition per-study-representative design used
+                    for the other two.
+  - scikit-learn/45 -- added 2026-08-08. Entry #41: Ministral-3B misses
+                    an otherwise-trivial single-file answer
+                    (`sklearn/_min_dependencies.py`, whose target
+                    constant is quoted verbatim in the issue body)
+                    3/3 under wholesale `freq` context injection --
+                    every other model gets it 3/3 in that exact
+                    condition, and Ministral itself gets it 3/3 under
+                    every other condition including the tool-based
+                    delivery of the identical frequency data. Traced to
+                    the injected frequency map's own edit-count ranking
+                    burying the real answer at 91.9% through the list
+                    while prominently surfacing an unrelated file
+                    cluster the model spends its full budget chasing
+                    instead. Narrowest scope of any target issue here:
+                    2 conditions (`none`, `freq`) x 1 model
+                    (Ministral-3B only, via TARGET_ISSUES_MODELS) --
+                    every other (model, condition) cell already has a
+                    clean, consistent n=3 result that isn't in
+                    question, so testing them again would just burn
+                    budget.
+  - requests/12    -- added 2026-08-08. DeepSeek-V4-Flash's only
+                    real known-open case in this list with any
+                    behavioral evidence toward *content*-mediated map
+                    use rather than pure presence/framing (contrast
+                    #16/#36): F1 by condition sits at exactly
+                    none=0.8/0.8/0.8, freq=0.8/0.8/0.8 (no lift),
+                    ast_compact=1.0/1.0/0.8 (partial), cochange=
+                    1.0/1.0/1.0 (full) -- a clean gradient matching
+                    which conditions actually deliver the specific
+                    relationship needed (sessions.py's real, delivered,
+                    rank-2/count-24x cochange partner is
+                    requests/api.py, the exact file baseline drops).
+                    Confirmed via transcript trace this is a touch-vs-
+                    kept gap, not a discovery gap (api.py is read even
+                    at baseline) -- and confirmed no transcript, in any
+                    condition, ever narrates using map/cochange content
+                    explicitly, so even a fully-confirmed result here
+                    stays "behaviorally consistent with content-driven
+                    use," not proof of a causal readout. Scope: 4
+                    conditions (`none`, `freq`, `ast_compact`,
+                    `cochange`) x 1 model (DeepSeek-V4-Flash only, via
+                    TARGET_ISSUES_MODELS) -- deliberately includes all
+                    3 context conditions plus baseline, not just a
+                    single winner vs. baseline, since the gradient
+                    across conditions (not just the cochange/baseline
+                    gap) is the actual thing being tested.
 
 Purpose (per conversation 2026-08-04): more reps can settle whether a
 delta_f1 is real (a genuine causal effect of map/tool presence on
@@ -24,10 +89,8 @@ pathway is operating; that still needs the transcripts, now checked
 systematically across the larger sample rather than a handful of
 cherry-picked best-looking cells.
 
-Deliberately hard-scoped to exactly these two (repo, issue_idx) pairs,
-a curated 4-condition subset per issue (baseline + each study's single
-strongest-delta condition, so the comparison is apples-to-apples across
-studies), and a SEPARATE results-base from the main study (default
+Deliberately hard-scoped to exactly these (repo, issue_idx) pairs, and a
+SEPARATE results-base from the main study (default
 .../replication_check_results, not .../results) -- explicit user
 instruction: "treat this as a separate test, not mix the data in with
 the rest." None of this project's existing analysis tooling
@@ -35,10 +98,11 @@ the rest." None of this project's existing analysis tooling
 case_study_analysis.py) points at this directory, so it cannot
 contaminate any existing table without a deliberate, separate step.
 
-(A wider 5-condition-per-issue variant -- all three Study 1 injection
-types plus all_tools_required, dropping each issue's Study 2 pick -- was
-tried and reverted 2026-08-05; back to the original one-condition-per-
-study design below.)
+(A wider 5-condition-per-issue variant for keras/5 and localstack/19 --
+all three Study 1 injection types plus all_tools_required, dropping
+each issue's Study 2 pick -- was tried and reverted 2026-08-05; those
+two issues are back to the original one-condition-per-study design.
+gpt-engineer/9 gets the full 12-condition treatment instead, per above.)
 
 The harness itself has no --logs-base flag -- its per-trial .jsonl
 transcript log (raw provider API responses, including per-turn token
@@ -76,6 +140,7 @@ Usage:
     # repo clone are unsafe, different repo clones are fine):
     python3 scripts/run_replication_check.py --repo keras --worker-id 1 &
     python3 scripts/run_replication_check.py --repo localstack --worker-id 2 &
+    python3 scripts/run_replication_check.py --repo gpt-engineer --worker-id 3 &
     wait
 """
 import argparse
@@ -134,24 +199,72 @@ CONDITIONS = {
     "ast_compact":       (os.path.join(HARNESS_DIR, "run_trial.py"), ["--map", "ast_compact"], ["compact_map_pruned_55k.txt"]),
     "freq":              (os.path.join(HARNESS_DIR, "run_trial.py"), ["--map", "freq"], ["freq_map_pruned_55k.txt"]),
     "cochange":          (os.path.join(HARNESS_DIR, "run_trial.py"), ["--map", "cochange"], ["cochange_map_pruned_55k.txt"]),
+
+    "structural":         (os.path.join(HARNESS_DIR, "run_trial_structural.py"), [], ["ast_index_full.json"]),
     "temporal_frequency": (os.path.join(HARNESS_DIR, "run_trial_temporal_frequency.py"), [], ["freq_index_full.json"]),
-    "all_tools_required": (os.path.join(HARNESS_DIR, "run_trial_all_tools_required.py"), [],
+    "temporal_cochange":  (os.path.join(HARNESS_DIR, "run_trial_temporal_cochange.py"), [], ["cochange_index_full.json"]),
+    "all_tools":          (os.path.join(HARNESS_DIR, "run_trial_all_tools.py"), [],
                             ["ast_index_full.json", "freq_index_full.json", "cochange_index_full.json"]),
+
+    "structural_required":         (os.path.join(HARNESS_DIR, "run_trial_structural_required.py"), [], ["ast_index_full.json"]),
+    "temporal_frequency_required": (os.path.join(HARNESS_DIR, "run_trial_temporal_frequency_required.py"), [], ["freq_index_full.json"]),
+    "temporal_cochange_required":  (os.path.join(HARNESS_DIR, "run_trial_temporal_cochange_required.py"), [], ["cochange_index_full.json"]),
+    "all_tools_required":          (os.path.join(HARNESS_DIR, "run_trial_all_tools_required.py"), [],
+                                     ["ast_index_full.json", "freq_index_full.json", "cochange_index_full.json"]),
 }
 
-# Per issue: baseline ("none") plus that study's single strongest
-# pooled_mean_delta_f1 condition, read directly from
-# data/issue_map_effect_ranking.csv / _study2.csv / _study3.csv
-# (2026-08-04) -- kept to 4 conditions/issue so the two issues are
-# directly comparable and the extra-rep budget stays bounded (2 issues
-# x 4 conditions x 4 models x 12 extra reps = 384 trials). Reverted back
-# to this design 2026-08-05 after briefly trying a wider 5-condition
-# variant (see module docstring). "cochange" stays in the CONDITIONS
-# table above even though no target issue currently uses it -- harmless
-# to leave available if the design changes again.
+ALL_CONDITIONS = list(CONDITIONS.keys())
+
+# Per issue: keras/5 and localstack/19 keep the original 4-condition
+# design (baseline + each study's single strongest pooled_mean_delta_f1
+# condition, read from data/issue_map_effect_ranking.csv / _study2.csv /
+# _study3.csv, 2026-08-04) -- reverted to this 2026-08-05 after briefly
+# trying a wider 5-condition variant (see module docstring).
+#
+# gpt-engineer/9 (added 2026-08-06) gets all 12 conditions instead: its
+# finding is "every condition hurts" (negative pooled_mean_delta_f1 in
+# 11/11 tested conditions across all three studies), not one standout
+# condition, so a single-representative-per-study design would
+# under-test the actual claim.
+#
+# scikit-learn/45 (added 2026-08-08) is narrower still: just 2
+# conditions (baseline, freq) -- see TARGET_ISSUES_MODELS below for why
+# it's also restricted to one model. The finding here (entry #41) is a
+# single clean (model, condition) cell actively harmed by wholesale
+# frequency-map injection specifically, with every other model in the
+# identical condition, and Ministral itself under every other condition
+# including the tool-based delivery of the SAME frequency data, already
+# confirmed at 3/3 -- baseline and freq are the only two cells that
+# need more reps to confirm the effect; every other cell already has a
+# clean, consistent n=3 result that doesn't need re-testing.
+#
+# requests/12 (added 2026-08-08) tests a different question than the
+# other four: not "is this delta real" but "does the pattern track
+# which conditions actually carry the relevant content." All 3 Study 1
+# context conditions plus baseline are included (not just one winner)
+# specifically so the freq/ast_compact/cochange gradient itself -- not
+# just a single condition vs. baseline -- can be checked at higher n.
 TARGET_ISSUES_CONDITIONS = {
     ("keras", 5): ["none", "freq", "temporal_frequency", "all_tools_required"],
     ("localstack", 19): ["none", "ast_compact", "temporal_frequency", "all_tools_required"],
+    ("gpt-engineer", 9): ALL_CONDITIONS,
+    ("scikit-learn", 45): ["none", "freq"],
+    ("requests", 12): ["none", "freq", "ast_compact", "cochange"],
+}
+
+# Per-issue model restriction -- defaults to all 4 (MODELS) when an
+# issue isn't listed here. scikit-learn/45's finding (entry #41) is
+# specifically that Ministral-3B, and only Ministral-3B, misses under
+# freq context (every other model already confirmed 3/3 correct in that
+# exact condition at n=3) -- running the other 3 models here would just
+# re-confirm a result that isn't in question and burn budget for
+# nothing. requests/12's finding (entry pending) is specifically about
+# DeepSeek-V4-Flash's touch-vs-kept behavior on requests/api.py -- the
+# other 3 models weren't part of the observed pattern and aren't in
+# scope here.
+TARGET_ISSUES_MODELS = {
+    ("scikit-learn", 45): ["mistral/ministral-3b-latest"],
+    ("requests", 12): ["deepseek/deepseek-v4-flash"],
 }
 
 MAX_RETRIES   = 2
@@ -220,10 +333,17 @@ def build_trial_list(args):
 
     all_issues = list(TARGET_ISSUES_CONDITIONS.keys())
     issues = all_issues if args.repo is None else [t for t in all_issues if t[0] == args.repo]
-    models = MODELS if args.model is None else [args.model]
     reps = REPS if args.rep is None else [args.rep]
 
     for repo, issue_idx in issues:
+        # Per-issue model restriction (see TARGET_ISSUES_MODELS), further
+        # narrowed by --model if given.
+        issue_models = TARGET_ISSUES_MODELS.get((repo, issue_idx), MODELS)
+        models = issue_models if args.model is None else [args.model] if args.model in issue_models else []
+        if not models and args.model is not None:
+            print(f"WARNING: --model {args.model} is not in scope for {repo}/{issue_idx} "
+                  f"(restricted to {issue_models}) -- skipping", file=sys.stderr)
+            continue
         for condition in TARGET_ISSUES_CONDITIONS[(repo, issue_idx)]:
             _, _, required_files = CONDITIONS[condition]
             missing = missing_files(args.maps_base, repo, issue_idx, required_files)
@@ -290,8 +410,9 @@ def main():
 
     total = len(trials)
     print("=" * 72)
-    print(f"REPLICATION CHECK: keras/5 (suspected false positive) vs "
-          f"localstack/19 (verified comparison case)  worker={args.worker_id}")
+    print(f"REPLICATION CHECK: keras/5 (suspected false positive), localstack/19 "
+          f"(verified comparison case), gpt-engineer/9 (all 12 conditions, "
+          f"11/11 negative)  worker={args.worker_id}")
     print(f"Target issues x conditions: {TARGET_ISSUES_CONDITIONS if args.repo is None else {k: v for k, v in TARGET_ISSUES_CONDITIONS.items() if k[0] == args.repo}}")
     print(f"Models: {MODELS if args.model is None else [args.model]}")
     print(f"Reps: {REPS if args.rep is None else [args.rep]} (extra, on top of existing rep1-3 "
