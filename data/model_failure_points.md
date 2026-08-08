@@ -2526,6 +2526,99 @@ version of the same lesson.
 
 ---
 
+## 45. A reporter's own diagnosis is exactly right, and the second ground-truth file is a pure docstring update with zero functional code change
+
+**Type:** ground-truth structure nuance (confirmed) -- a milder,
+non-reverted cousin of `requests/12`'s companion-file pattern (#43):
+here the second file is a real, permanent, intentional part of the
+merged fix, but still has nothing functionally "wrong" in it for a
+model to anchor to.
+
+**Evidence:** `flask/18` ("DispatcherMiddleware with different loggers
+per app in flask 1.0"). The reporter's own issue body states: *"I
+assume this caused by `app.logger` always having the name
+`flask.app`, maybe?"* -- checked the real PR (#3282, `df470aec`)
+directly and this guess is exactly correct. The actual functional fix
+is a **one-line change** in `logging.py`'s `create_logger()`:
+`logging.getLogger("flask.app")` → `logging.getLogger(app.name)`.
+`app.py`'s entire diff is a **docstring update** describing the new
+per-app-logger-name behavior -- zero functional code change. Same
+shape as `fastapi/9`'s `background.py` and `pandas/44`'s
+`core/indexing.py`: a real, intentional ground-truth file whose
+correctness is not something any code-level bug pattern points to.
+
+**File breakdown**: `logging.py` found in 131/144 (91%, near-trivial
+given the reporter names the mechanism directly). `app.py` found in
+only 55/144 (38%) -- reasonable, given nothing is functionally broken
+there. Wrong-file pollution is minimal (`blueprints.py` 2,
+`_compat.py`/`ctx.py` 1 each). Search vocabulary is on-target and
+near-identical across every model (`logger`, `create_logger`,
+`current_app`, `flask.app`) -- not a vocabulary gap.
+
+**Practical implication**: worth grouping with #43 as a recurring
+sub-category of this project's ground-truth taxonomy -- files that are
+correctly, intentionally part of a merged fix, but whose own diff
+carries no code-level signal a map or search strategy could surface.
+Distinct from #37/#40's "genuinely unreachable" files (no relationship
+for any map to find) and from #14/#15's "no real fix" files (no
+accepted patch at all) -- this is a third, milder category: a real
+diff exists, but it's prose, not logic, so success here tracks whether
+a model treats "this docstring should track a behavior change" as
+worth including, a softer standard than most of this project's
+ground-truth files require.
+
+---
+
+## 46. A confirmed, causally-traceable instance of a tool's specific returned content driving where a model looks -- not just presence
+
+**Type:** map/tool design benefit (confirmed, content-mediated) -- the
+rarest and strongest category of positive finding in this list.
+Distinct from every prior "map helps" entry (#16, #36, and the
+`requests/12` gradient in #44, which stays an open question): those
+are inferred from behavioral correlation across conditions, with no
+transcript ever explicitly narrating map use. This one is directly
+traceable, call by call: a specific tool response contains a specific
+line number, and the model's very next action reads that exact line.
+
+**Evidence:** `flask/18`, Nemotron-3-Super, the "structural" family of
+conditions specifically (`ast_compact` context, `structural` tool_free,
+`structural_required` tool_required). Checked the actual tool response
+directly: `lookup_structure(src/flask/app.py)` returns (within its
+*first* page, before any pagination) the line
+`logger(self) L655` -- the exact property definition whose docstring
+needed updating (see #45). Traced 6 tool-based trials (`structural` x3,
+`structural_required` x3): **5 of 6 call `lookup_structure(app.py)`
+first, and their immediate next action is `read_file(app.py,
+offset=650)`** -- landing right on the returned line number, not
+reading from the top or searching blindly. The one exception
+(`structural`/rep2) skips the tool and reads the whole file directly
+instead, and still succeeds, just less efficiently. This is the
+cleanest causal chain found in this project to date: tool call →
+specific content returned → immediate, precisely-targeted action using
+that content.
+
+**A clean, condition-isolated pattern, checked at the exact-condition
+level (not pooled)**: Nemotron's `app.py` hit rate is baseline (`none`)
+**0/3**, and **9/9 across all three "structural" delivery conditions**
+(`ast_compact` 3/3, `structural` 3/3, `structural_required` 3/3) --
+every other condition (`freq`, `cochange`, and their tool-based
+equivalents) sits at 0-2/3, mixed and lower. The signal that matters is
+specifically *structural* content, and it works identically whether
+delivered as passive context or an active tool call -- consistent with
+the mechanism being "the line number itself is useful," not anything
+specific to the tool-calling interaction.
+
+**Practical implication**: worth treating as this project's clearest
+existing evidence that map *content*, not just presence, can causally
+improve outcomes -- when the map format actually encodes something a
+model needs (a precise location) rather than a coarse relationship
+(edit counts, co-occurrence) that still requires inference to act on.
+Selected as a target for an expanded-replication check (2026-08-08) to
+test reproducibility at higher n -- see follow-up note once results are
+in.
+
+---
+
 ### Notes on use
 
 - Failure points are not mutually exclusive — a single trial can exhibit
@@ -2561,13 +2654,13 @@ version of the same lesson.
   appears to remain a human-engineering judgment call, not something
   these models reliably supply on their own, at least within this
   project's scope (4 models, 45 issues, 12 conditions).
-- Twenty-six issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
+- Twenty-seven issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
   `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`,
   `pandas/44`, `scrapy/48`, `transformers/27`, `gpt-engineer/11`,
   `rich/12`, `keras/5`, `stable-diffusion-webui/5`,
   `gpt-engineer/12`, `yt-dlp/45`, `fastapi/9`, `pandas/26`, `transformers/5`,
   `pandas/38`, `gpt-engineer/9`, `scikit-learn/45`, `stable-diffusion-webui/13`,
-  `requests/12`);
+  `requests/12`, `flask/18`);
   intentionally kept broad and issue-specific rather than prematurely
   generalized — revisit once a handful more issues are logged here to
   see which patterns recur. `scikit-learn/45` (entries #40, #41)
@@ -2771,7 +2864,29 @@ version of the same lesson.
   no-real-accepted-fix category (#14/#15) too — checked the actual repo
   history directly this time (import line unchanged at HEAD, dependency
   pin unchanged) rather than relying on the dataset's own `loc_way`
-  annotation alone. `gpt-engineer/11` (entry #23) now holds the record for both the
+  annotation alone. `requests/12` (entries #43, #44) adds a new
+  ground-truth-provenance category — a real, PR-linked, *merged* fix
+  that was reverted by the maintainer four days later in favor of a
+  simpler design six weeks on, meaning the ground truth here reflects a
+  rejected design, not a permanent one — plus two separate model
+  findings on the same issue: a resolved gpt-oss touch-vs-kept gap, and
+  an open DeepSeek content-gradient finding that a first expanded-
+  replication rep already complicated rather than confirmed, worth
+  citing as a concrete illustration of why this project's whole
+  replication-check program exists. `flask/18` (entries #45, #46) pairs
+  a milder, non-reverted version of #43's companion-file pattern (a
+  real, permanent, intentional ground-truth file that's pure prose, no
+  logic — group with #37/#40's genuinely-unreachable files and
+  #14/#15's no-real-fix files as a third distinct ground-truth
+  sub-category) with this project's strongest positive finding to date
+  — a directly-traceable, call-by-call instance of a tool's specific
+  returned content (a docstring's own line number) driving where a
+  model looks next, not just the tool's presence boosting confidence.
+  Worth reading #46 against every other "map helps" entry in this list
+  (#16, #36, #44's open question) as the one case with a real causal
+  chain in the transcript itself, not an inferred behavioral
+  correlation — currently the subject of its own expanded-replication
+  check to confirm reproducibility. `gpt-engineer/11` (entry #23) now holds the record for both the
   widest per-model success-rate split (0% to 100%) and the sharpest
   touch-vs-kept gap (72% touch / 0% keep, gpt-oss-120B) found in this
   project, and is the clearest evidence yet that Study 3's submit-gate

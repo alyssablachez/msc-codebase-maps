@@ -2962,3 +2962,42 @@ case-studied and logged this session; `data/issue_case_study_notes.csv`
 and `data/model_failure_points.md` both modified, not yet committed as
 of this entry.
 
+## 2026-08-08
+## Expanded-Replication Program: Six Issues Getting More Reps, Isolated from the Main Dataset
+
+Several case-study findings looked too clean at the standard n=3/cell
+to trust outright, so `scripts/run_replication_check.py` was built to
+push specific (issue, condition, model) cells to n=15 -- results write
+to `.../replication_check_results` and `_logs`, fully separate from
+the main study tree and untouched by any existing analysis script.
+Six targets so far:
+
+- **`keras/5`** -- top-ranked "most helped" issue in every study's
+  ranking table, but transcript inspection found no content-mediated
+  map use at all. 4 conditions (baseline + each study's strongest),
+  all 4 models.
+- **`localstack/19`** -- a verified comparison case (entry #16): maps
+  flip a wrong doc-file answer to the right source file without
+  changing exploration at all. Same 4-condition, 4-model scope as
+  `keras/5`.
+- **`gpt-engineer/9`** -- negative delta in 11/11 non-baseline
+  conditions across all three studies, the single worst row in Study
+  1's ranking table. All 12 conditions, 4 models, since the finding is
+  "every condition hurts," not one standout.
+- **`scikit-learn/45`** -- Ministral-3B alone misses an otherwise-100%
+  answer 3/3 under wholesale `freq` injection; now confirmed at n=15
+  (Fisher's exact p=0.0063). Narrowest scope: `none`/`freq` only,
+  Ministral only.
+- **`requests/12`** -- DeepSeek's `api.py` inclusion tracks exactly
+  which conditions deliver its real co-change link to the found file,
+  the strongest content-mediated candidate found so far. All 3 context
+  conditions + baseline, DeepSeek only; the first new rep already came
+  back worse than any original rep, so this stays open, not confirmed.
+- **`flask/18`** -- this project's first *directly traced* causal
+  case: `lookup_structure` returns `app.py`'s `logger` property at its
+  exact line number, and Nemotron reads that line next in 5/6 trials.
+  All 3 "structural" delivery mechanisms + baseline, Nemotron only; the
+  first new rep already broke from the original pattern on 2 of 4
+  conditions (baseline and `ast_compact`), so this needs the full run
+  before it can be called confirmed either.
+
