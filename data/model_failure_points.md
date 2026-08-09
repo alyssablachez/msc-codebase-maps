@@ -1846,6 +1846,19 @@ this specific shape (name recovers, content doesn't) on other flagged
 Ministral trials rather than assuming a corrected name always means a
 correct submission follows.
 
+**Most severe instance found so far, `scikit-learn/5`/`temporal_cochange`/
+rep1 (2026-08-09): total-trial failure, zero successful tool calls
+across all 30 turns.** Unlike every prior example, which shows at
+least some working calls before or after the malformed run, this trial
+hits `max_turns` with **every single tool call malformed**, from
+`list_files""` at turn 0 through a final `lookup_cochange{"path":
+"sklearn/decomposition/pca.py"}` at turn 29 -- note even the
+embedded path in that last one is wrong (`pca.py`, missing the leading
+underscore). The model never once successfully reads or searches
+anything for the entire trial; all 30 turns are pure wasted
+exploration. The clearest evidence yet that this bug can cost a trial
+its *entire* budget, not just degrade it.
+
 **A second, distinct failure mode on the same issue, worth keeping
 separate rather than folding in**: `localstack/9`/baseline/rep3 ends in
 1 turn with `content: None` and `tool_calls: []` on the model's very
@@ -2855,6 +2868,379 @@ map-related for improving this model's aggregate scores.
 
 ---
 
+## 51. gpt-oss sometimes auto-capitalizes the first path segment of its own submitted files -- a correct answer loses all credit to a single wrong letter, dataset-wide, exclusively for one model, and not tied to any one repo's naming convention
+
+**Type:** model/harness interaction bug (confirmed, model-exclusive,
+dataset-wide) -- a distinct, milder cousin of entry #34's garbled-
+non-path submissions: here the submitted string is a genuinely valid,
+correct-looking file path, not garbage, just wrong-cased. Scoring is
+case-sensitive, so it's still worth zero credit. **Corrected 2026-08-09
+from an initial, too-narrow framing** -- first spotted on `thefuck/5`
+and framed as specific to that repo's informal, swear-word-based name;
+checking `keras/9` surfaced the identical bug (`"Keras/utils/
+data_utils.py"`, capital K) on a repo with an entirely ordinary name,
+which prompted a proper dataset-wide check.
+
+**Evidence:** `thefuck/5` ("Fuck alias for fish", single-file ground
+truth `thefuck/shells.py`, found 129/144). gpt-oss-120B is the weakest
+model on this issue (F1=0.7778), atypical given its usual top-tier
+standing. Checked all 8 of its empty trials directly: 7 of 8 had
+already correctly read `shells.py` during exploration -- this is not a
+discovery failure. **5 of the 8 submit `"Thefuck/shells.py"`** --
+capital T -- instead of the correct lowercase `thefuck/shells.py`.
+
+**Dataset-wide check (2026-08-09) across every repo, not just
+`thefuck`**: scanned every gpt-oss trial for a submitted path whose
+first segment is a capitalized match of the trial's own repo name.
+
+| Repo | gpt-oss capitalization rate |
+|---|---:|
+| `thefuck` | 28/108 (26%) |
+| `keras` | 5/108 (5%) |
+| `pandas` | 3/144 (2%) |
+
+Real, confirmed on at least 3 unrelated repos -- `keras` and `pandas`
+are both ordinary, conventionally-named Python packages, ruling out
+"informal/swear-word name" as the actual mechanism. Checked the other
+3 models across the *entire* dataset (all 4,860 of their trials
+combined): **zero instances** -- still exclusively gpt-oss, just not
+exclusively `thefuck`. Best-supported explanation, revised: gpt-oss has
+a general tendency to capitalize the first segment of a file path when
+generating it from its own reasoning/memory rather than copying a
+literal string just read from a tool result -- something like a
+sentence-initial-capitalization habit bleeding into path generation --
+with the *rate* varying by repo (much higher for `thefuck`, plausibly
+because it's a real, recognizable English phrase more strongly primed
+for capitalization than `keras`/`pandas`) but the *mechanism* itself
+general, not repo-specific.
+
+**Full 45-issue dataset scan (all 1,620 gpt-oss trials), not just the 3
+repos already covered by case studies**: **36/1,620 (2.2%)** of every
+gpt-oss trial in the entire study shows this exact bug, and it's
+confined to precisely the same 3 repos found above -- `thefuck`
+(28/108), `keras` (5/108), `pandas` (3/144) -- **zero instances across
+the other 12 repos in the pool**. So the mechanism is general (not
+repo-naming-specific) but its *trigger rate* is highly repo-dependent
+for reasons not yet understood -- worth noting three of the highest-
+volume, oldest, most globally-recognizable open-source project names in
+this project's pool are exactly the three affected, which may or may
+not be coincidental.
+
+**Practical implication**: worth a defensive fix at the scoring layer
+independent of anything about maps or reasoning quality -- a
+case-insensitive path match (or a normalization step before comparison)
+would recover 2.2% of gpt-oss's trials dataset-wide, concentrated
+heavily in 3 specific repos, which currently reads as a localization
+failure but is actually a formatting quirk.
+
+---
+
+## 52. Correctly localizing down to the exact fix line, then reasoning your way out of submitting it -- diagnosing an external root cause as grounds for "no source change needed"
+
+**Type:** model reasoning issue (map-agnostic) -- a new category,
+distinct from every prior empty-submission pattern in this list. Not
+touch-vs-kept substitution (#7/#9/#10/#15/#18/#23/#28/#44/rich's #8
+instance -- those involve committing to a *different, wrong* file);
+not a malformed-submission or forced-answer-compliance artifact (#34,
+#35, #50 -- those are formatting/harness failures on an otherwise-
+intended answer). Here the model reasons its way to a *correct*
+answer, at the exact right line, and then deliberately withholds it.
+
+**Evidence:** `core/20` ("Problems sending push message with HTML5
+notify"). Issue quotes an exact traceback --
+`AttributeError: ...undefined symbol: EVP_CIPHER_CTX_reset` -- a
+dependency-version incompatibility (`pywebpush`'s `pyelliptic` OpenSSL
+bindings use a symbol removed on newer systems). Checked the real PR
+(#7310) directly: a one-line fix, bumping the pinned `pywebpush`
+version in `html5.py`'s `REQUIREMENTS` list (line 28). Single-file
+ground truth, found 133/144 (92%), **zero wrong-file guesses across
+the entire dataset**. Ministral-3B is the weak model (F1=0.75, 9/36
+empty, all via `stop_reason='submitted'` -- a deliberate choice, not a
+turn-cap or formatting failure).
+
+**Traced all 9 empty trials directly.** 8 of 9 had already read
+`html5.py`. Every one of the 9 correctly identifies the exact right
+location in its own final reasoning text -- *"The `REQUIREMENTS` list
+in `homeassistant/components/notify/html5.py`... specifies
+`pywebpush==0.6.1`"* -- and then talks itself out of submitting:
+*"the issue is due to a missing OpenSSL symbol... which is a hardware/
+environmental issue"*; *"it appears that the issue is not resolvable
+by modifying Home Assistant source code."* The model correctly
+diagnoses the *root cause* as external (an OS-level OpenSSL version
+mismatch) and over-generalizes that into "therefore no source file
+needs to change" -- missing that pinning a newer dependency version is
+exactly the standard, expected fix for this class of problem. It found
+the precise right line and still refused to submit it.
+
+**Practical implication**: distinct from every map/tool-content fix
+conjectured elsewhere in this list, since the model already had
+everything it needed -- the gap is a reasoning/policy one, not an
+information one. Worth a prompt-level fix specifically targeting this
+inference error: an explicit instruction that "the underlying cause
+being external (a dependency, OS, or environment issue) does not mean
+no source file needs to change -- version pins, compatibility shims,
+and requirement bumps are legitimate, common fixes and should still be
+reported." A narrower, more targeted intervention than this project's
+usual "don't stop exploring early" or "check for duplicate patterns"
+conjectures, since here more exploration wouldn't have helped at all
+-- the model had already arrived at the right answer.
+
+---
+
+## 53. Nemotron-3-Super alone produces a distinct malformed `submit_answer` shape -- the key, not just the content, is malformed, and the correct answer is buried inside it unrecovered
+
+**Type:** model/harness interaction bug (confirmed, dataset-wide,
+model-exclusive) -- a third addition to the malformed-submission
+family, alongside #34 (garbled non-path content, gpt-oss/DeepSeek) and
+#35 (malformed tool-call *names*, Ministral-exclusive). This one is
+distinct from both: the tool name is correct (`submit_answer`), the
+content is genuinely the right answer, but the JSON *key* itself is
+malformed.
+
+**Evidence:** `requests/13` ("Problem with missing cookies after
+redirect"). Single-file GT (`sessions.py`, found 136/144). Nemotron-3-
+Super is the weakest model here (F1=0.8333, atypical -- usually this
+project's fastest/most decisive), with 6/36 empty trials and **zero**
+wrong-file substitutions. Traced the raw final tool calls directly --
+4 of the 6 share this exact malformed shape:
+
+```json
+{"[\"files\"]": "[\"requests/sessions.py\"]"}
+```
+
+The correct file is genuinely present -- just as a stringified value
+under a key that is itself a stringified, bracket-and-quote-wrapped
+version of `"files"`, not the plain key the harness's parser expects.
+The answer is right there and never recovered.
+
+**Confirmed dataset-wide, not an issue-specific fluke**: scanned all
+6,480 trials for this exact malformed-key pattern -- **10 instances
+total, exclusively Nemotron-3-Super**, spanning 7 different issues
+(`requests/13` x4, `localstack/2`, `gpt-engineer/12`, `flask/18`,
+`flask/6`, `requests/7`, `scikit-learn/5`), zero from the other 3
+models. `flask/6`'s instance (`all_tools` rep1) was originally
+misread during that issue's own case study as a touch-vs-kept
+commitment gap -- corrected once this wider scan showed the raw
+`submit_answer` call was actually the same malformed key, not a
+deliberate non-submission (see the `flask/6` correction note in
+"Notes on use" below). One instance
+(`gpt-engineer/12`) is more revealing about the likely cause:
+
+```json
+{"[\"files\"]\n</parameter": "<parameter=[\"gpt_engineer/core/chat_to_files.py\"]"}
+```
+
+Literal `</parameter` / `<parameter=` fragments bleeding into the JSON
+-- consistent with Nemotron occasionally reverting to an XML-style
+tool-calling format (`<parameter name="...">`) that gets malformed-
+merged with the harness's expected JSON structure, plausibly a
+training/template artifact rather than random noise.
+
+**Practical implication**: same remedy category as #34/#35 -- a
+defensive parsing fix (attempt to recover a file list from a malformed
+`submit_answer` call before scoring it as empty, e.g. regex-extracting
+quoted path-like strings from the raw arguments text) would likely
+recover a meaningful fraction of Nemotron's otherwise-lost trials
+without touching map content at all. Worth a dataset-wide count of how
+many of Nemotron's other empty trials (beyond this specific 10-instance
+scan) share related-but-not-identical malformed-key variants, since
+this scan used one exact pattern and likely undercounts, the same
+caveat noted for #34/#35's own scans.
+
+---
+
+## 54. A forced "you must respond with a tool call" continuation can corrupt or lose an answer the model had already gotten right in plain text -- confirmed across two studies, three different corruption shapes
+
+**Type:** harness/model interaction bug (confirmed on 2 issues, 2
+studies) -- initially spotted as `rich/1`'s pair of gpt-oss misses
+(both in Study 3 `_required` conditions) and first framed as a
+Study-3-submit-gate-specific issue, but `scikit-learn/49` supplied a
+third instance in a **Study 2 tool_free condition** (not gated),
+showing the underlying trigger is broader than the submit-gate itself.
+
+**Evidence:** in every instance, the model's turn ends with plain-text
+content and *no tool call* -- effectively "answering" without
+submitting. The harness then forces (at least) one more turn. What
+happens next varies:
+
+- `rich/1`, gpt-oss, `structural_required` rep3 (Study 3): writes
+  `{"files": ["rich/console.py"]}` as plain text (already correct, no
+  tool call) at turn 6; the eventual final turn calls
+  `submit_answer({"files": ["user-provided-not-found"]})` -- a
+  fabricated placeholder string, not a real path at all.
+- `rich/1`, gpt-oss, `temporal_frequency_required` rep3 (Study 3):
+  writes `["rich/console.py"]` as plain text at turn 17; final turn
+  calls `submit_answer({"files": ["/rich/console.py"]})` -- the right
+  filename, but with a spurious leading slash that breaks the
+  exact-match.
+- `scikit-learn/49`, gpt-oss, `temporal_cochange` rep2 (**Study 2,
+  tool_free -- not gated**): writes the correct filename as text at
+  turn 11; final turn calls `submit_answer` with garbled
+  non-breaking-space content (`"The\xa0\xa0\xa0\xa0..."`) -- an exact
+  match to entry #34's shape, now traced to this specific trigger.
+- `scikit-learn/49`, Nemotron, `structural` rep3 (Study 1,
+  map-as-context): writes the correct filename as text at turn 7; the
+  forced continuation produces *nothing at all* -- empty content, no
+  tool call, submission stays empty. A second instance of this
+  specific "nothing at all" shape is `stable-diffusion-webui/0`'s lone
+  Nemotron miss (`ast_compact` rep1) -- same text-only correct answer,
+  same failure to ever produce a tool call.
+
+**Practical implication:** because this reproduces in a non-gated
+Study 2 condition, the mechanism looks like a general "no tool call
+detected, force one more turn" behavior in the harness itself, not
+something specific to Study 3's submit-gate. That reframes part of
+entry #34 (garbled `submit_answer` content) as potentially explained,
+at least in part, by this same trigger rather than being an
+independent per-model quirk. It also means some fraction of this
+project's "wrong" scores represent a model that *did* localize
+correctly and lost the answer to a low-information forced-continuation
+turn, not a genuine localization failure -- a real measurement
+concern worth sizing with a dataset-wide check for trials where a
+text-only (no-tool-call) turn immediately precedes an empty or
+malformed final submission.
+
+---
+
+## 55. A complete per-function line-number map can turn a trivial one-shot file read into a slow, multi-turn offset-chasing crawl -- shared by DeepSeek-V4-Flash and gpt-oss-120B, with gpt-oss compounding it via a second, distinct redundant-call pattern
+
+**Type:** map-content-driven behavioral shift (harmful), shared across
+2 of 4 models -- the map is accurate and the model still reaches the
+correct answer, but its own completeness measurably costs turns and
+tokens on single-file issues where a whole-file read would have been
+strictly better. Nemotron-3-Super appears structurally immune (see
+below); Ministral-3B's own high-ratio case traces to a different
+mechanism entirely (multi-file candidate confusion, logged separately
+as entry #56).
+
+**Evidence -- mechanism A, map-line-number offset-hopping, confirmed
+on both DeepSeek and gpt-oss:**
+
+`stable-diffusion-webui/0` (traceback-direct issue, single-file GT
+`modules/styles.py`). DeepSeek-V4-Flash across delivery mechanisms:
+
+| Condition | mean turns | mean input tokens | mechanism |
+|---|---:|---:|---|
+| `none` (baseline) | 3.7 | 60,311 | no map |
+| `structural` (Study 2, tool) | 4.3 | 77,787 | `lookup_structure` on demand |
+| `ast_compact` (Study 1, context) | **9.7** | **414,428** | full map injected every turn |
+
+All 3 `ast_compact` reps show the identical mechanism: rather than one
+`read_file("modules/styles.py")` call (what `none` does, converging in
+3 turns), DeepSeek uses the map's per-function line numbers
+(`get_style_paths(self) L158`, `save_styles(self, path=None) L195`,
+etc.) to issue a chain of narrow `read_file(offset=X, limit=Y)` calls,
+hopping between candidate functions one at a time (e.g. rep1:
+offsets 190→1→110→158→94→158; rep3: 190→120→88→160). Two of the three
+reps additionally burn 4-5 turns on a fruitless `search` for a
+`styles_filename`/`styles_file` config attribute the map's function
+list doesn't actually resolve.
+
+Confirmed as a shared, not DeepSeek-exclusive, mechanism via a
+dataset-wide ratio scan (`ast_compact` mean turns / `none` mean turns,
+all 4 models, single- and multi-file issues both checked):
+
+- **DeepSeek**, 3 traced instances: `stable-diffusion-webui/0` (2.64x),
+  `scikit-learn/5` (1.28x, offsets 31→106→460→394→473→60→570, plus
+  repeated fruitless searches for `"PR #16224"`), `flask/6` (1.23x,
+  offsets 758→835→783→780→839→842, plus near-duplicate regex retries
+  of the same search term).
+- **gpt-oss**, highest ratios of any model, 2 instances confirmed as
+  this same mechanism: `scikit-learn/5` (2.25x) -- all 3 reps hop
+  between `_pca.py` offsets (350→80→1→30→0→90→120 in rep1 alone),
+  indistinguishable in shape from DeepSeek's version of the same
+  trial; and `scrapy/20` (5.5→11.1 mean turns) -- despite this being
+  the single cleanest, easiest issue in the entire dataset (144/144
+  correct, zero wrong files, zero empty submissions across all 4
+  models), all 3 `ast_compact` reps still hop between
+  `scrapy/settings/__init__.py` offsets (1→300→130→40→120→240→230 in
+  rep1) plus near-duplicate `setdefault`/`settings.setdefault`/
+  `def setdefault` search retries -- a useful control case showing the
+  mechanism costs turns even with zero genuine reasoning difficulty to
+  confound it.
+- **Nemotron**, checked and ruled out: its only outlier
+  (`yt-dlp/23`, 1.50x) is minor duplicate *whole-file* reads (no
+  `offset` args at all -- Nemotron tends not to page), not systematic
+  line-number navigation. Structurally the fastest, most decisive
+  model in this project, and that holds under `ast_compact` too.
+- **`transformers/27`** (multi-file GT, 12 files) shows an elevated
+  DeepSeek ratio (1.86x) but traced differently and correctly
+  excluded: the model reads several *different* structurally-similar
+  files the map lists (t5, xlm_roberta, albert, camembert tokenizers),
+  legitimate multi-candidate investigation given the real ground truth
+  spans 12 files, not offset-hopping within one file.
+
+**Evidence -- mechanism B, gpt-oss-exclusive redundant identical
+tool calls:** `yt-dlp/23`, `ast_compact`, rep1 (ratio 3.08x, the
+single highest ratio found across all 4 models). gpt-oss re-issues
+the **literally identical** `read_file("yt_dlp/extractor/
+sportdeutschland.py", offset=1, limit=200)` call six separate times
+across a 20-turn trial, interleaved with many near-duplicate search
+variants (`permalinks`, `backend.sportdeutschland.tv`,
+`sportdeutschland.tv/api`...) hunting for one specific embedded string
+it never quite lands on. This is distinct from mechanism A -- not
+map-line-number navigation, but a failure to retain or trust its own
+prior tool results, repeatedly re-fetching content it already has.
+
+**Practical implication:** the map's *completeness*, not its
+accuracy, drives mechanism A -- handing the model a full per-function
+inventory for a small file invites a "verify every candidate
+individually" instinct (already documented as DeepSeek's general
+over-exploration trait, #18/#31/#38/#49) but channels it into
+offset-by-offset file navigation instead of broad search, and gpt-oss
+is susceptible to the identical shape. Token cost stays cheap in
+dollar terms (95%+ cache hit rate keeps DeepSeek's `total_cost` at
+$0.004-0.006 vs baseline's $0.003), so this is primarily a
+turn-count/latency cost, not a budget one -- though gpt-oss's
+mechanism B (redundant identical calls, no caching benefit from
+re-fetching the same content) likely costs more in both dimensions.
+Both mechanisms are plausibly specific to single-file issues, where a
+whole-file read is strictly cheaper than any repeated/windowed
+alternative. `structural`'s tool-based delivery avoids mechanism A
+entirely (the model requests structure only when it wants it, and can
+issue targeted regex searches to confirm exact lines rather than
+paging through offsets handed to it unprompted) -- worth checking
+whether Study 2/3's tool-based conditions also suppress mechanism B,
+since gpt-oss's redundant-call habit could plausibly persist
+regardless of map delivery mechanism.
+
+---
+
+## 56. Ministral-3B's own `ast_compact`-inflated-turns outlier is a different failure entirely -- map-driven confusion between structurally similar candidate files, not offset-hopping, and it produces a real wrong-file submission
+
+**Type:** map-content-driven behavioral shift (harmful), single
+confirmed instance -- distinct from entry #55's offset-hopping
+mechanism (which Ministral does not exhibit) and from entry #35's
+malformed-tool-call-name bug.
+
+**Evidence:** `gpt-engineer/12`, Ministral-3B, `ast_compact` (ratio
+2.20x, 5.0 -> 11.0 mean turns, the single highest `ast_compact`/`none`
+ratio found for Ministral in the dataset-wide scan). Rather than
+paging through offsets of one file, Ministral explores **several
+different, structurally similar files** the map surfaces as
+candidates: `gpt_engineer/core/chat_to_files.py`,
+`gpt_engineer/core/steps.py`, `gpt_engineer/core/default/steps.py`,
+`gpt_engineer/applications/cli/cli_agent.py`,
+`gpt_engineer/applications/cli/main.py`. In rep2, this ends badly: it
+submits `gpt_engineer/core/default/steps.py` instead of the correct
+`gpt_engineer/core/chat_to_files.py` -- a genuine, scored wrong-file
+mistake, not just wasted turns. reps 1 and 3 recover to the correct
+file despite similar multi-file exploration.
+
+**Practical implication:** unlike entry #55, the map here doesn't
+cause redundant re-reading of one location -- it surfaces multiple
+plausible-looking candidates (several files that structurally resemble
+each other, e.g. two different `steps.py`-named modules at different
+paths) and Ministral, this project's weakest model at holding a
+correct answer through to submission (see #35), sometimes commits to
+the wrong one under that expanded candidate set. Single instance so
+far -- worth checking whether Ministral's other `ast_compact` outliers
+share this "map broadens the candidate set, model commits to the wrong
+member of it" shape, as a Ministral-specific counterpart to #55's
+offset-hopping story.
+
+---
+
 ### Notes on use
 
 - Failure points are not mutually exclusive — a single trial can exhibit
@@ -2916,13 +3302,30 @@ map-related for improving this model's aggregate scores.
   isn't reliable at all; this involves ground truth that's fully
   reliable but scores a narrower, code-logic-only answer as
   incomplete.
-- Thirty-one issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
+- **Methodological note (2026-08-09): reporter-suggested wrong answers
+  can be invisible to the wrong-file breakdown when they land on an
+  excluded path.** `requests/7` ("Brittle test") is a case where the
+  reporter explicitly floats two candidate fixes -- rewrite the flaky
+  test, or fix `morsel_to_cookie` itself -- without diagnosing which is
+  right (it's the latter). 2/36 Ministral trials read `cookies.py`
+  correctly, reasoned about the real timezone bug correctly in their
+  own text, and then submitted `test_requests.py` anyway, taking the
+  reporter's own alternative at face value. Because test files are
+  excluded pre-scoring, `final_files_predicted_scorable` shows `[]`
+  for these trials and the standard wrong-file breakdown reports
+  "none" -- a defensible, reporter-suggested wrong answer is
+  indistinguishable from an empty submission unless the raw
+  `final_files_predicted` field is checked directly.
+- Forty-two issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
   `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`,
   `pandas/44`, `scrapy/48`, `transformers/27`, `gpt-engineer/11`,
   `rich/12`, `keras/5`, `stable-diffusion-webui/5`,
   `gpt-engineer/12`, `yt-dlp/45`, `fastapi/9`, `pandas/26`, `transformers/5`,
   `pandas/38`, `gpt-engineer/9`, `scikit-learn/45`, `stable-diffusion-webui/13`,
-  `requests/12`, `flask/18`, `scrapy/26`, `localstack/2`, `flask/3`, `localstack/9`);
+  `requests/12`, `flask/18`, `scrapy/26`, `localstack/2`, `flask/3`, `localstack/9`,
+  `thefuck/5`, `core/20`, `requests/13`, `core/16`, `keras/9`, `flask/6`,
+  `requests/7`, `rich/1`, `scikit-learn/49`, `scikit-learn/5`,
+  `stable-diffusion-webui/0`, `yt-dlp/23`);
   intentionally kept broad and issue-specific rather than prematurely
   generalized — revisit once a handful more issues are logged here to
   see which patterns recur. `scikit-learn/45` (entries #40, #41)
@@ -3158,7 +3561,28 @@ map-related for improving this model's aggregate scores.
   instance in `scrapy/48` (`scrapy/utils/url.py` touched in 59/144 trials,
   kept in 1) — not written up as its own entry since it adds no new
   mechanism, but strengthens the case that this is a general, recurring
-  model disposition rather than an issue-specific quirk. Entry #17
+  model disposition rather than an issue-specific quirk. A fifth instance
+  in `rich/8` (2026-08-09) is exclusively Ministral-3B — 9/36 trials touch
+  the correct `file_proxy.py` and still submit the issue-title-named
+  `live.py` instead, every one of the 9 confirmed to have read the
+  correct file first — same pattern, same non-entry treatment. A sixth
+  instance in `flask/6` (2026-08-09) is exclusively Nemotron-3-Super —
+  2/144 trials (`ast_compact`, `all_tools_required`) read
+  `scaffold.py` directly and still submit an empty file list — same
+  pattern, same non-entry treatment. (A third Nemotron miss on this
+  issue, `all_tools` rep1, was originally folded into this same count
+  but corrected 2026-08-09 after a wider dataset-wide scan showed it's
+  actually an instance of entry #53's malformed-`submit_answer`-key
+  bug, not a genuine touch-vs-kept choice — the raw call was
+  `{"[\"files\"]": "[\"src/flask/scaffold.py\"]"}`, indistinguishable
+  from a real non-submission until the raw tool call is checked
+  directly.) `flask/6`'s one remaining miss
+  (Ministral, `temporal_frequency` rep2) is a clean confirming instance
+  of entry #35 instead: turns 9-15 all call
+  `submit_answer{"files": ["src/flask/scaffold.py"]}` as the literal
+  tool *name* with empty `arguments: {}`, correctly naming the right
+  file in reasoning text every time, before giving up with a text-only
+  non-answer at turn 17. Entry #17
   additionally identified a
   second affected issue (`stable-diffusion-webui/5`) via a full audit of
   all 45 issues in `issue_selection_final.csv`, not from separate deep-dive
