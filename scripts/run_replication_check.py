@@ -103,6 +103,43 @@ baseline-vs-map delta_f1 at the standard n=3 reps/cell:
                     the *structural* signal itself is causal regardless
                     of how it's delivered, not that one specific
                     condition is.
+  - localstack/2   -- added 2026-08-09. A genuinely unexplained
+                    condition-level swing for DeepSeek-V4-Flash across
+                    all 12 conditions, checked and only partially
+                    resolved so far. A dataset-wide check (all 4
+                    models, all 6,480 trials) established the general
+                    mechanism: every max_turns trial gets one forced
+                    final-answer re-ask, and recovery is near-binary on
+                    whether the model complies (DeepSeek complies
+                    47% of the time dataset-wide; ~100% recovery when
+                    compliant, ~0% when not). That explains WHY
+                    max_turns trials swing between full recovery and
+                    total loss, but not WHY compliance itself varies so
+                    much by condition on this specific issue: `ast_compact`
+                    (structural context) avoids hitting max_turns
+                    altogether (0/3), directly explained by content --
+                    the injected map literally lists `check_content_md5
+                    (data, headers) L884`, the exact fix function, an
+                    almost one-to-one match to the issue's own title.
+                    `cochange` complies/recovers cleanly (3/3, f1=1.0
+                    every rep) despite hitting max_turns just as often
+                    as most other conditions (2/3) -- but checked
+                    directly and this is NOT explained by delivered
+                    content the way structural's is: cochange's own
+                    partner list for s3_listener.py (common.py 26x,
+                    generic_proxy.py 20x, aws_stack.py 18x) has no
+                    obvious thematic connection to the MD5 bug, and
+                    the file was already touched in every trial
+                    regardless of condition, so discovery isn't the
+                    difference either. `freq` gets neither benefit
+                    (max_turns 3/3, compliant only 1/3, and that one
+                    still pads with a wrong file). All 12 conditions
+                    requested specifically because the pattern doesn't
+                    resolve into a single clean story the way the other
+                    targets here do -- worth the full sweep to see
+                    whether a condition-level compliance-rate pattern
+                    holds up at n=15/cell or dissolves into noise once
+                    the sample is large enough to trust.
 
 Purpose (per conversation 2026-08-04): more reps can settle whether a
 delta_f1 is real (a genuine causal effect of map/tool presence on
@@ -276,6 +313,18 @@ ALL_CONDITIONS = list(CONDITIONS.keys())
 # mechanisms plus baseline, since the finding is that the structural
 # signal itself is causal regardless of delivery, not one specific
 # condition.
+#
+# localstack/2 (added 2026-08-09) gets ALL 12 conditions -- unlike
+# every other single-model target here, this one doesn't resolve into
+# one clean mechanism. ast_compact's advantage is content-explained
+# (the injected map directly names the fix function); cochange's
+# advantage is checked and NOT content-explained (its delivered partner
+# list has no thematic connection to the bug, and the file was already
+# touched regardless of condition); freq gets neither benefit. The full
+# sweep is specifically to see whether DeepSeek's per-condition forced-
+# answer compliance rate is a real, stable pattern at n=15/cell or
+# dissolves into noise -- deliberately not narrowed to a hypothesis
+# that isn't settled yet.
 TARGET_ISSUES_CONDITIONS = {
     ("keras", 5): ["none", "freq", "temporal_frequency", "all_tools_required"],
     ("localstack", 19): ["none", "ast_compact", "temporal_frequency", "all_tools_required"],
@@ -283,6 +332,7 @@ TARGET_ISSUES_CONDITIONS = {
     ("scikit-learn", 45): ["none", "freq"],
     ("requests", 12): ["none", "freq", "ast_compact", "cochange"],
     ("flask", 18): ["none", "ast_compact", "structural", "structural_required"],
+    ("localstack", 2): ALL_CONDITIONS,
 }
 
 # Per-issue model restriction -- defaults to all 4 (MODELS) when an
@@ -296,11 +346,15 @@ TARGET_ISSUES_CONDITIONS = {
 # other 3 models weren't part of the observed pattern and aren't in
 # scope here. flask/18's finding (entry #46) is specifically about
 # Nemotron-3-Super's tool-content-driven reads of app.py -- the other 3
-# models weren't part of the observed pattern.
+# models weren't part of the observed pattern. localstack/2's finding
+# is specifically about DeepSeek-V4-Flash's turn-exhaustion/compliance
+# behavior -- the other 3 models are already solid-to-perfect at n=3
+# on this issue (gpt-oss exact-match 36/36) and aren't in scope.
 TARGET_ISSUES_MODELS = {
     ("scikit-learn", 45): ["mistral/ministral-3b-latest"],
     ("requests", 12): ["deepseek/deepseek-v4-flash"],
     ("flask", 18): ["deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B"],
+    ("localstack", 2): ["deepseek/deepseek-v4-flash"],
 }
 
 MAX_RETRIES   = 2
