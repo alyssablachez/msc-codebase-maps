@@ -3001,3 +3001,56 @@ Six targets so far:
   conditions (baseline and `ast_compact`), so this needs the full run
   before it can be called confirmed either.
 
+## Five More Case Studies, and a Dataset-Wide Fix to How DeepSeek's Turn-Exhaustion Gets Read
+
+Worked `scrapy/26`, `localstack/2`, `flask/3`, and `localstack/9`,
+logging entries #47-50 plus updates to #35 and #49.
+
+- **`scrapy/26`** ("Feeds Enhancement: Item Filters"). DeepSeek pads
+  with a real, code-adjacent wrong file (`scrapy/utils/conf.py`) in
+  **36/36 trials, every condition, zero exceptions** -- a genuine
+  cross-reference in the actual fix diff, not a map artifact (#47).
+  Nemotron under `ast_compact` answers correctly in **1 turn with zero
+  tool calls**, explicitly citing "the codebase map" in its own
+  reasoning -- a rare, directly-narrated instance of context-condition
+  map use. The same signal delivered as a tool is paradoxically the
+  *slowest* condition on the issue (mean 8.7 turns vs. 1.3), with
+  Nemotron repeatedly re-querying the identical file before committing
+  despite reaching the same answer either way -- quantified with real
+  token figures (#48).
+- **`localstack/2`** ("Content-MD5... did not match"). DeepSeek's
+  weak score (F1=0.4722) breaks down sharply by delivery mechanism --
+  `tool_free` hits `max_turns` 100% of the time, worse than baseline
+  with nothing at all, while context delivery is DeepSeek's best
+  mechanism (#49). Investigating *why* led to the session's real find:
+  a **dataset-wide check of all 6,480 trials** (after catching and
+  fixing a parsing bug in the first pass -- the harness's forced-
+  final-answer tool call is shaped differently than normal turns) shows
+  every `max_turns` trial gets exactly one forced re-ask, and recovery
+  is almost perfectly binary on whether the model complies:
+  gpt-oss 100% compliant, DeepSeek 47%, Ministral 25%, Nemotron 19% --
+  compliance means near-certain recovery, non-compliance means near-
+  certain empty (#50). Checked `localstack/2`'s own conditions against
+  this: `ast_compact` avoids `max_turns` entirely because the injected
+  structural map literally names the fix function
+  (`check_content_md5() L884`); `cochange` complies/recovers cleanly
+  despite hitting `max_turns` just as often as other conditions, but
+  its own delivered content has no thematic link to the bug, so that
+  part stays unexplained. Added to the replication-check program at
+  **all 12 conditions**, DeepSeek only, specifically because the
+  pattern doesn't resolve into one clean story.
+- **`flask/3`** and **`localstack/9`** both independently confirm
+  entry #50's compliance mechanism on fresh issues (67% and 35%
+  DeepSeek compliance-when-forced respectively) -- logged as
+  confirming evidence, not new entries. `localstack/9` also produced a
+  genuinely new wrinkle for entry #35 (Ministral's malformed-tool-call-
+  name bug): one trial's tool *name* eventually self-corrects to a
+  valid `submit_answer`, but the *arguments* come back empty,
+  losing an answer the model had already reasoned to correctly in
+  prose -- the bug's damage isn't confined to the call that fails.
+
+### Status
+Thirty-one issues now case-studied. `data/issue_case_study_notes.csv`,
+`data/model_failure_points.md`, and `scripts/run_replication_check.py`
+all modified this session; committing together after this entry.
+

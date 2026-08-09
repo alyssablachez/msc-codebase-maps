@@ -1826,6 +1826,37 @@ partial/single-call malformations too subtle for this exact-character
 scan are counted) is a tool-calling format bug, not evidence about its
 reasoning or map-usage ability specifically.
 
+**New wrinkle, `localstack/9`/baseline/rep1 (2026-08-09): the recovery
+can be partial, and partial in a specific, costly way.** This trial
+shows the exact `list_files""` / `list_files{"path": ""}` /
+`search{"pattern": "HEAD", "path": ""}` pattern repeated 10 times in a
+row (28-turn trial, `stop_reason='submitted'`), with the model
+narrating its own confusion the whole way (*"It seems there was an
+issue with the syntax... It appears there is a persistent issue with
+the syntax of the tool calls..."*). It eventually abandons tools
+entirely and reasons from the issue text alone -- correctly naming
+`localstack/services/s3/s3_listener.py` in its own prose. The tool
+*name* on the final call does self-correct back to a valid
+`submit_answer` -- but the call's `arguments` are `{}`, missing the
+`files` key entirely. So the bug's damage isn't confined to "this one
+call fails": here it also cost the model its ability to carry a
+*already-correct* answer through to a structured submission, even
+after the name-formatting problem resolved itself. Worth checking for
+this specific shape (name recovers, content doesn't) on other flagged
+Ministral trials rather than assuming a corrected name always means a
+correct submission follows.
+
+**A second, distinct failure mode on the same issue, worth keeping
+separate rather than folding in**: `localstack/9`/baseline/rep3 ends in
+1 turn with `content: None` and `tool_calls: []` on the model's very
+first turn -- a genuinely blank response, not a malformed call of any
+kind, with an equally blank retry ending the trial immediately. No
+narration, no attempted tool call at all. Doesn't match this entry's
+pattern (there's no attempted-but-malformed call here) -- reads more
+like a raw provider-side empty-response glitch than the same
+reasoning/formatting bug. Not yet confirmed as a recurring pattern
+(n=1) -- flagged for awareness, not logged as its own entry.
+
 ---
 
 ## 36. Baseline underperforms even on files named verbatim in the issue body -- for three of four models, any map or tool condition recovers them, not a specific type
@@ -2619,6 +2650,211 @@ in.
 
 ---
 
+## 47. A dominant wrong guess is a real, code-adjacent function -- and one model pads with it in literally every trial, regardless of condition
+
+**Type:** model reasoning issue (map-agnostic, condition-independent) --
+a cleaner, more extreme version of the touch-vs-kept commitment family
+(#7, #9, #10, #15, #18, #23, #28, #44): here the "commitment" is
+inverted -- not failing to keep a correct file, but a fixed, 100%
+consistent habit of over-including a specific incorrect one.
+
+**Evidence:** `scrapy/26` ("Feeds Enhancement: Item Filters" -- a GSoC
+feature proposal quoting an exact proposed `ItemChecker` class and
+config keys `item_filter`/`item_classes`). Single-file, PR-linked
+ground truth (`feedexport.py`, found in 135/144, 94%). Dominant wrong
+guess: `scrapy/utils/conf.py` (43/144). Checked the real fix diff
+directly: `FeedExporter.__init__` already calls
+`feed_complete_default_values_from_settings(feed_options, self.settings)`
+-- a real, pre-existing function imported from `conf.py`, sitting in
+the exact code region the new filter-loading logic gets added next to.
+This is a genuine code-adjacency trap, not a map or vocabulary
+artifact -- confirmed by tracing a trial directly: the model reads
+`feedexport.py`, follows this real reference into `conf.py`, reads it
+in full, and keeps it.
+
+**The per-model split is not gradual, it's total.** Checked inclusion
+rate directly, not pooled: DeepSeek-V4-Flash includes `conf.py` in
+**36/36 trials (100%)** -- every rep, every one of the 12 conditions,
+zero exceptions -- while finding `feedexport.py` correctly in nearly
+all of them (near-100% recall). Ministral-3B 4/36, gpt-oss-120B 3/36,
+Nemotron-3-Super 0/36. DeepSeek's resulting F1 (0.6574) is driven
+almost entirely by a fixed ~0.5 precision penalty, not a discovery
+gap -- the same shape as its rigid ~2.0-files-predicted pattern on
+`gpt-engineer/9`, now at an even more extreme, perfectly consistent
+rate. Worth citing as further evidence that some of this project's
+per-model score differences reflect a fixed submission-breadth
+disposition unrelated to any map/tool condition, not a
+capability difference.
+
+---
+
+## 48. A quantified example of a common pattern across this project's case notes: map-as-context produces far fewer turns and far denser per-turn output than the same signal delivered as a tool
+
+**Type:** model behavior pattern (map-agnostic, delivery-mechanism-
+specific) -- logged as a concrete, fully-quantified illustration of a
+pattern this project's case-study notes have flagged qualitatively many
+times (e.g. `thefuck/20`, `keras/12`, `fastapi/20`, `fastapi/17`) without
+ever pinning it down with real token figures on a single clean example.
+
+**Evidence:** `scrapy/26`, Nemotron-3-Super, comparing the three
+"structural" delivery conditions plus baseline directly:
+
+| Condition | Mechanism | Mean turns | Mean input tok | Mean output tok | Output tok/turn |
+|---|---|---:|---:|---:|---:|
+| `none` | baseline | 5.7 | 23,045 | 9,539 | 1,683 |
+| `ast_compact` | context | **1.3** | 48,254 | 5,131 | **3,848** |
+| `structural` | tool_free | 8.7 | 57,273 | 14,053 | 1,621 |
+| `structural_required` | tool_required | 8.7 | 63,147 | 18,833 | 2,173 |
+
+Traced the `ast_compact` trials directly: in 2 of 3, Nemotron submits
+correctly in **turn 1 with zero tool calls at all**, and its reasoning
+text explicitly cites the source -- *"Based on the issue description
+and **the codebase map**... This file contains the `FeedExporter`
+class..."* -- a rare, directly-narrated instance of context-condition
+map use (most of this project's other findings on this axis, e.g. #25,
+have had to infer usage from behavior since citation is typically
+absent even when real).
+
+**The tool-based conditions reach the identical correct answer
+(F1=1.0 in every trial) far less efficiently**, and the inefficiency
+looks like reduced confidence, not extra genuine exploration: traced
+all 6 tool-based trials directly and found repeated, redundant calls to
+the *same* file -- `structural_required`/rep3 calls
+`lookup_structure(feedexport.py)` four separate times, several trials
+`read_file` the same file 2-3 times in a row -- fetching no new
+information, just re-confirming what a single call already returned.
+
+**Practical implication**: the mechanism, not the map type or content,
+appears to drive turn efficiency here. When structural information is
+passively pre-loaded, this model commits almost immediately with a
+single dense synthesis; when the identical information requires an
+active retrieval decision, it repeatedly re-verifies before committing,
+despite arriving at the same answer either way. Worth flagging for the
+thesis's efficiency-metric discussion as a case where turn count and
+token count move in *opposite* directions by design (fewer, longer
+turns vs. more, shorter ones) -- a pure turn-count comparison across
+mechanisms would misleadingly favor context delivery as "cheaper"
+without accounting for context's much higher per-call input-token cost
+(the map itself, resent every turn).
+
+---
+
+## 49. Voluntary tool access produces 100% turn exhaustion for one model on one issue -- worse than having no tools at all, while the same model's context delivery is its best mechanism
+
+**Type:** model/harness interaction issue (map-agnostic within-model,
+mechanism-specific) -- a sharper variant of the gate-vs-voluntary-access
+family (`rich/12` #24, `keras/5`'s DeepSeek gate finding). Those
+entries show a *required* gate underperforming voluntary access for
+multi-file ground truth; this is closer to the opposite emphasis --
+*voluntary* tool availability specifically producing the worst outcome
+of any mechanism, worse than no tools at all.
+
+**Evidence:** `localstack/2` ("The Content-MD5 you specified did not
+match what we received" -- an AWS SigV4 streaming-upload MD5
+mismatch). Single-file, PR-linked ground truth (`s3_listener.py`,
+found in 123/144, 85%). gpt-oss is perfect (36/36 exact); DeepSeek-V4-
+Flash is the clear outlier (F1=0.4722), and this is turn-exhaustion --
+the same "chase full mechanistic understanding" trait already logged
+three times on `pandas` issues (#18, #31, #38) -- but broken down by
+delivery mechanism here reveals something new:
+
+| Mechanism | `max_turns` rate | Empty rate | Mean F1 |
+|---|---|---|---|
+| baseline | 2/3 | 1/3 | 0.444 |
+| context (map injected) | 5/9 | 2/9 | **0.704** |
+| tool_free (voluntary tools) | **12/12** | **8/12** | **0.306** |
+| tool_required (gated) | 10/12 | 6/12 | 0.472 |
+
+`tool_free` is DeepSeek's worst mechanism on this issue by a wide
+margin -- 100% turn exhaustion, worse than plain baseline with nothing
+available at all. `context` is DeepSeek's *best* mechanism, clearly
+ahead of baseline. Distinct from the established gate-hurts-multi-file
+story (which compares required vs. voluntary and finds voluntary
+better): here the comparison that matters is voluntary-tool-access vs.
+nothing-or-passive-context, and voluntary access is the worst of the
+three.
+
+**Update, 2026-08-09 -- the underlying mechanism is now much better
+understood, see entry #50.** A dataset-wide check of every `max_turns`
+trial (all 4 models, 6,480 trials) established that recovery is
+near-binary on whether the model complies with the harness's forced
+final-answer re-ask -- not a fuzzy "cognitive cost of deciding," a
+sharp compliance/non-compliance split. That resolves *why* max_turns
+trials swing between full recovery and total loss in general, but
+checking this issue's own conditions specifically found the
+per-condition compliance-rate variation is only partly content-
+explained: `ast_compact` avoids `max_turns` entirely (0/3), directly
+because the injected structural map literally names the fix function
+(`check_content_md5(data, headers) L884`, an almost one-to-one match to
+the issue's own title -- same mechanism as `scrapy/26` #48 and
+`flask/18` #46). `cochange` complies/recovers cleanly (3/3, F1=1.0
+every rep) despite hitting `max_turns` just as often as most other
+conditions (2/3) -- checked directly and this is **not** explained by
+its delivered content: `s3_listener.py`'s co-change partners
+(`common.py` 26x, `generic_proxy.py` 20x, `aws_stack.py` 18x) have no
+thematic connection to the MD5 bug, and the target file was already
+touched in every trial regardless of condition, so discovery isn't the
+difference either. `freq` gets neither benefit (`max_turns` 3/3,
+compliant only 1/3). Honest read: one of the three context conditions
+here (`ast_compact`) has a verified causal story; the other two differ
+in outcome for reasons not traceable to their actual delivered
+content -- an expanded-replication check (all 12 conditions, DeepSeek
+only, n=15/cell) launched 2026-08-09 specifically because the pattern
+doesn't resolve into one clean story the way this project's other
+replication targets do.
+
+---
+
+## 50. Whether a `max_turns` trial recovers any answer at all is almost entirely determined by one binary event: does the model comply with the forced final-answer re-ask
+
+**Type:** model/harness interaction issue (dataset-wide, map-agnostic)
+-- the general mechanism underlying entry #49 and three prior
+DeepSeek-specific turn-exhaustion entries (#18, #31, #38), now
+characterized directly across the full dataset rather than inferred
+per-issue. Corrects an initial version of this check that had a real
+bug (mis-parsed the harness's forced-final-answer tool-call shape,
+which stores `{name, arguments}` flat rather than wrapped in
+`function` the way normal turns do -- caught by cross-checking a known
+trial directly before trusting the aggregate numbers).
+
+**Evidence:** every trial with `stop_reason == 'max_turns'` across all
+6,480 trials (all 3 studies, all 4 models) confirmed to get exactly one
+forced final-answer re-ask (100% coverage -- the harness's fallback
+always fires). Split by whether the model's last recorded turn actually
+calls `submit_answer`:
+
+| Model | `max_turns` trials | Complies | Recovery when compliant | Recovery when non-compliant |
+|---|---:|---:|---:|---:|
+| gpt-oss-120B | 41 | **100%** | 88% (5/41 malformed, matches #34) | -- |
+| DeepSeek-V4-Flash | 416 | 47% | ~100% | **~0%** (220/221 empty) |
+| Ministral-3B | 16 | 25% | 50% (matches #35's malformed names) | 0% (12/12 empty) |
+| Nemotron-3-Super | 95 | 19% | 100% | 0% (77/77 empty) |
+
+Compliance and recovery are almost perfectly correlated in both
+directions -- comply and you almost always get credit (modulated only
+by the already-documented malformed-submission bugs #34/#35);
+don't comply and the trial is essentially always empty. `flask/3`
+independently confirms this same split for DeepSeek on a fresh issue
+(30/36 trials hit `max_turns`; 20/30, 67%, comply and recover; 10/30
+don't and end empty) -- not logged as its own entry since it's
+confirmatory of this one, not a new pattern.
+
+**Practical implication**: this reframes how to read every DeepSeek
+turn-exhaustion finding in this list. The prior framing ("chases full
+mechanistic understanding") describes *why* DeepSeek reaches
+`max_turns` so often (416/1620 of its trials, by far the most of any
+model), but *whether* that costs it the answer entirely is a separate,
+almost-binary event downstream of that -- compliance with one specific
+forced re-ask. A harness-level fix targeting compliance specifically
+(e.g. retrying the forced call with an even more explicit instruction,
+or extracting a best-effort answer from the model's last exploratory
+turn when no tool call is offered) would likely recover a large
+fraction of DeepSeek's otherwise-lost trials without touching map
+content at all -- a different, more tractable lever than anything
+map-related for improving this model's aggregate scores.
+
+---
+
 ### Notes on use
 
 - Failure points are not mutually exclusive — a single trial can exhibit
@@ -2654,13 +2890,39 @@ in.
   appears to remain a human-engineering judgment call, not something
   these models reliably supply on their own, at least within this
   project's scope (4 models, 45 issues, 12 conditions).
-- Twenty-seven issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
+- **Methodological note (2026-08-08): a recurring "ancillary
+  ground-truth file" pattern worth naming as a scoring-design
+  consideration, not just an issue-specific quirk.** Four issues now
+  share the same shape: `fastapi/9`'s `background.py` (a single import
+  line), `pandas/44`'s `core/indexing.py` (a single import line),
+  `requests/12`'s `api.py` (a docstring-only addition, no functional
+  change), and `flask/18`'s `app.py` (a docstring-only addition, no
+  functional change). In each case the second (or third) ground-truth
+  file is a real, intentional, permanent part of the merged fix — but
+  carries zero functional necessity, and a model that finds *only* the
+  file with the actual logic change has, in every practical sense,
+  completely solved the reported problem. This means PR-derived ground
+  truth systematically conflates two different standards: "did you
+  replicate everything the maintainer's PR touched" vs. "did you solve
+  the problem" — and F1 scores against the former without
+  distinguishing it from the latter. Worth flagging as a soft,
+  somewhat arbitrary ceiling on achievable recall that's independent of
+  any map or tool condition — a scoring-design artifact, not a
+  localization-capability signal — and worth a methods-section
+  paragraph in the thesis rather than treating each instance as a
+  one-off. Distinct from `pandas/38`/`stable-diffusion-webui/13`'s
+  no-real-fix category (#14/#15, #37, #42) and `requests/12`'s
+  merged-then-reverted category (#43): those involve ground truth that
+  isn't reliable at all; this involves ground truth that's fully
+  reliable but scores a narrower, code-logic-only answer as
+  incomplete.
+- Thirty-one issues analyzed so far (`pandas/35`, `fastapi/17`, `thefuck/20`,
   `keras/12`, `yt-dlp/41`, `fastapi/20`, `localstack/19`, `thefuck/10`,
   `pandas/44`, `scrapy/48`, `transformers/27`, `gpt-engineer/11`,
   `rich/12`, `keras/5`, `stable-diffusion-webui/5`,
   `gpt-engineer/12`, `yt-dlp/45`, `fastapi/9`, `pandas/26`, `transformers/5`,
   `pandas/38`, `gpt-engineer/9`, `scikit-learn/45`, `stable-diffusion-webui/13`,
-  `requests/12`, `flask/18`);
+  `requests/12`, `flask/18`, `scrapy/26`, `localstack/2`, `flask/3`, `localstack/9`);
   intentionally kept broad and issue-specific rather than prematurely
   generalized — revisit once a handful more issues are logged here to
   see which patterns recur. `scikit-learn/45` (entries #40, #41)
