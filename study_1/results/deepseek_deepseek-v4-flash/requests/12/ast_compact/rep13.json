@@ -1,0 +1,293 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "requests",
+  "issue_idx": 12,
+  "tier": "small",
+  "role": "multi",
+  "map_type": "ast_compact",
+  "rep": 13,
+  "worker_id": 5,
+  "issue_title": "Not possible to specify max_retries in v1.X?",
+  "base_commit": "be62645dd56580dd7576032b348cf79d880851d8",
+  "metrics": {
+    "total_input_tokens": 80132,
+    "total_output_tokens": 7313,
+    "total_cached_tokens": 71296,
+    "total_cost": 0.003484,
+    "num_turns": 7,
+    "wall_time_seconds": 57.94,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "366c521b"
+  },
+  "final_files_predicted": [
+    "requests/adapters.py"
+  ],
+  "final_files_predicted_scorable": [
+    "requests/adapters.py"
+  ],
+  "ground_truth": [
+    "requests/sessions.py",
+    "requests/adapters.py",
+    "requests/api.py"
+  ],
+  "ground_truth_scorable": [
+    "requests/sessions.py",
+    "requests/adapters.py",
+    "requests/api.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 0.3333,
+    "f1": 0.5
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_Rog0wJEkHPwmB05Fq0HZ7353",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/adapters.py\"}"
+          }
+        },
+        {
+          "id": "call_01_IrdeVVrt9o0Ui2qYUkUK7328",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/sessions.py\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_Rog0wJEkHPwmB05Fq0HZ7353",
+      "name": "read_file",
+      "args": {
+        "path": "requests/adapters.py"
+      },
+      "result": "# -*- coding: utf-8 -*-\n\n\"\"\"\nrequests.adapters\n~~~~~~~~~~~~~~~~~\n\nThis module contains the transport adapters that Requests uses to define\nand maintain connections.\n\"\"\"\n\nimport socket\n\nfrom .models import Response\nfrom .packages.urllib3.poolmanager import PoolManager, ProxyManager\nfrom .packages.urllib3.response import HTTPResponse\nfrom .compat import urlparse, basestring, urldefrag, unquote\nfrom .utils import (DEFAULT_CA_BUNDLE_PATH, get_encoding_from_headers,\n                    prepend_scheme_if_needed, get_auth_from_url)\nfrom .structures import CaseInsensitiveDict\nfrom .packages.urllib3.exceptions import MaxRetryError\nfrom .packages.urllib3.exceptions import TimeoutError\nfrom .packages.urllib3.exceptions import SSLError as _SSLError\nfrom .packages.urllib3.exceptions import HTTPError as _HTTPError\nfrom .cookies import extract_cookies_to_jar\nfrom .exceptions import ConnectionError, Timeout, SSLError\nfrom .auth import _basic_auth_str\n\nDEFAULT_POOLSIZE = 10\nDEFAULT_RETRIES = 0\n\n\nclass BaseAdapter(object):\n    \"\"\"The Base Transport Adapter\"\"\"\n\n    def __init__(self):\n        super(BaseAdapter, self).__init__()\n\n    def send(self):\n        raise NotImplementedError\n\n    def close(self):\n        raise NotImplementedError\n\n\nclass HTTPAdapter(BaseAdapter):\n    \"\"\"Built-In HTTP Adapter for Urllib3.\"\"\"\n    def __init__(self, pool_connections=DEFAULT_POOLSIZE, pool_maxsize=DEFAULT_POOLSIZE):\n        self.max_retries = DEFAULT_RETRIES\n        self.config = {}\n\n        super(HTTPAdapter, self).__init__()\n\n        self.init_poolmanager(pool_connections, pool_maxsize)\n\n    def init_poolmanager(self, connections, maxsize):\n        self.poolmanager = PoolManager(num_pools=connections, maxsize=maxsize)\n\n    def cert_verify(self, conn, url, verify, cert):\n        if url.startswith('https') and verify:\n\n            cert_loc = None\n\n            # Allow self-specified cert location.\n            if verify is not True:\n                cert_loc = verify\n\n            if not cert_loc:\n                cert_loc = DEFAULT_CA_BUNDLE_PATH\n\n            if not cert_loc:\n                raise Exception(\"Could not find a suitable SSL CA certificate bundle.\")\n\n            conn.cert_reqs = 'CERT_REQUIRED'\n            conn.ca_certs = cert_loc\n        else:\n            conn.cert_reqs = 'CERT_NONE'\n            conn.ca_certs = None\n\n        if cert:\n            if not isinstance(cert, basestring):\n                conn.cert_file = cert[0]\n                conn.key_file = cert[1]\n            else:\n                conn.cert_file = cert\n\n    def build_response(self, req, resp):\n        response = Response()\n\n        # Fallback to None if there's no status_code, for whatever reason.\n        response.status_code = getattr(resp, 'status', None)\n\n        # Make headers case-insensitive.\n        response.headers = CaseInsensitiveDict(getattr(resp, 'headers', {}))\n\n        # Set encoding.\n        response.encoding = get_encoding_from_headers(response.headers)\n        response.raw = resp\n        response.reason = response.raw.reason\n\n        if isinstance(req.url, bytes):\n            response.url = req.url.decode('utf-8')\n        else:\n            response.url = req.url\n\n        # Add new cookies from the server.\n        extract_cookies_to_jar(response.cookies, req, resp)\n\n        # Give the Response some context.\n        response.request = req\n        response.connection = self\n\n        return response\n\n    def get_connection(self, url, proxies=None):\n        \"\"\"Returns a connection for the given URL.\"\"\"\n        proxies = proxies or {}\n        proxy = proxies.get(urlparse(url).scheme)\n\n        if proxy:\n            proxy = prepend_scheme_if_needed(proxy, urlparse(url).scheme)\n            conn = ProxyManager(self.poolmanager.connection_from_url(proxy))\n        else:\n            conn = self.poolmanager.connection_from_url(url)\n\n        return conn\n\n    def close(self):\n        \"\"\"Dispose of any internal state.\n\n        Currently, this just closes the PoolManager, which closes pooled\n        connections.\n        \"\"\"\n        self.poolmanager.clear()\n\n    def request_url(self, request, proxies):\n        \"\"\"Obtain the url to use when making the final request.\n\n        If the message is being sent through a proxy, the full URL has to be\n        used. Otherwise, we should only use the path portion of the URL.\"\"\"\n        proxies = proxies or {}\n        proxy = proxies.get(urlparse(request.url).scheme)\n\n        if proxy:\n            url, _ = urldefrag(request.url)\n        else:\n            url = request.path_url\n\n        return url\n\n    def add_headers(self, request, **kwargs):\n        \"\"\"Add any headers needed by the connection. Currently this adds a\n        Proxy-Authorization header.\"\"\"\n        proxies = kwargs.get('proxies', {})\n\n        if proxies is None:\n            proxies = {}\n\n        proxy = proxies.get(urlparse(request.url).scheme)\n        username, password = get_auth_from_url(proxy)\n\n        if username and password:\n            # Proxy auth usernames and passwords will be urlencoded, we need\n            # to decode them.\n            username = unquote(username)\n            password = unquote(password)\n            request.headers['Proxy-Authorization'] = _basic_auth_str(username,\n                                                                     password)\n\n    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):\n        \"\"\"Sends PreparedRequest object. Returns Response object.\"\"\"\n\n        conn = self.get_connection(request.url, proxies)\n\n        self.cert_verify(conn, request.url, verify, cert)\n        url = self.request_url(request, proxies)\n        self.add_headers(request, proxies=proxies)\n\n        chunked = not (request.body is None or 'Content-Length' in request.headers)\n\n        try:\n            if not chunked:\n                resp = conn.urlopen(\n                    method=request.method,\n                    url=url,\n                    body=request.body,\n                    headers=request.headers,\n                    redirect=False,\n                    assert_same_host=False,\n                    preload_content=False,\n                    decode_content=False,\n                    retries=self.max_retries,\n                    timeout=timeout\n                )\n\n            # Send the request.\n            else:\n                if hasattr(conn, 'proxy_pool'):\n                    conn = conn.proxy_pool\n\n                low_conn = conn._get_conn(timeout=timeout)\n                low_conn.putrequest(request.method, url, skip_accept_encoding=True)\n\n                for header, value in request.headers.items():\n                    low_conn.putheader(header, value)\n\n                low_conn.endheaders()\n\n                for i in request.body:\n                    low_conn.send(hex(len(i))[2:].encode('utf-8'))\n                    low_conn.send(b'\\r\\n')\n                    low_conn.send(i)\n                    low_conn.send(b'\\r\\n')\n                low_conn.send(b'0\\r\\n\\r\\n')\n\n                r = low_conn.getresponse()\n                resp = HTTPResponse.from_httplib(r,\n                    pool=conn,\n                    connection=low_conn,\n                    preload_content=False,\n                    decode_content=False\n                )\n\n        except socket.error as sockerr:\n            raise ConnectionError(sockerr)\n\n        except MaxRetryError as e:\n            raise ConnectionError(e)\n\n        except (_SSLError, _HTTPError) as e:\n            if isinstance(e, _SSLError):\n                raise SSLError(e)\n            elif isinstance(e, TimeoutError):\n                raise Timeout(e)\n            else:\n                raise\n\n        r = self.build_response(request, resp)\n\n        if not stream:\n            r.content\n\n        return r\n"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_01_IrdeVVrt9o0Ui2qYUkUK7328",
+      "name": "read_file",
+      "args": {
+        "path": "requests/sessions.py"
+      },
+      "result": "# -*- coding: utf-8 -*-\n\n\"\"\"\nrequests.session\n~~~~~~~~~~~~~~~~\n\nThis module provides a Session object to manage and persist settings across\nrequests (cookies, auth, proxies).\n\n\"\"\"\nimport os\nfrom datetime import datetime\n\nfrom .compat import cookielib\nfrom .cookies import cookiejar_from_dict\nfrom .models import Request, PreparedRequest\nfrom .hooks import default_hooks, dispatch_hook\nfrom .utils import from_key_val_list, default_headers\nfrom .exceptions import TooManyRedirects, InvalidSchema\n\nfrom .compat import urlparse, urljoin\nfrom .adapters import HTTPAdapter\n\nfrom .utils import requote_uri, get_environ_proxies, get_netrc_auth\n\nfrom .status_codes import codes\nREDIRECT_STATI = (\n    codes.moved, # 301\n    codes.found, # 302\n    codes.other, # 303\n    codes.temporary_moved, # 307\n)\nDEFAULT_REDIRECT_LIMIT = 30\n\n\ndef merge_kwargs(local_kwarg, default_kwarg):\n    \"\"\"Merges kwarg dictionaries.\n\n    If a local key in the dictionary is set to None, it will be removed.\n    \"\"\"\n\n    if default_kwarg is None:\n        return local_kwarg\n\n    if isinstance(local_kwarg, str):\n        return local_kwarg\n\n    if local_kwarg is None:\n        return default_kwarg\n\n    # Bypass if not a dictionary (e.g. timeout)\n    if not hasattr(default_kwarg, 'items'):\n        return local_kwarg\n\n    default_kwarg = from_key_val_list(default_kwarg)\n    local_kwarg = from_key_val_list(local_kwarg)\n\n    # Update new values in a case-insensitive way\n    def get_original_key(original_keys, new_key):\n        \"\"\"\n        Finds the key from original_keys that case-insensitive matches new_key.\n        \"\"\"\n        for original_key in original_keys:\n            if key.lower() == original_key.lower():\n                return original_key\n        return new_key\n\n    kwargs = default_kwarg.copy()\n    original_keys = kwargs.keys()\n    for key, value in local_kwarg.items():\n        kwargs[get_original_key(original_keys, key)] = value\n\n    # Remove keys that are set to None.\n    for (k, v) in local_kwarg.items():\n        if v is None:\n            del kwargs[k]\n\n    return kwargs\n\n\nclass SessionRedirectMixin(object):\n    def resolve_redirects(self, resp, req, stream=False, timeout=None,\n                          verify=True, cert=None, proxies=None):\n        \"\"\"Receives a Response. Returns a generator of Responses.\"\"\"\n\n        i = 0\n        prepared_request = PreparedRequest()\n        prepared_request.body = req.body\n        prepared_request.headers = req.headers.copy()\n        prepared_request.hooks = req.hooks\n        prepared_request.method = req.method\n        prepared_request.url = req.url\n        cookiejar = resp.cookies\n\n        # ((resp.status_code is codes.see_other))\n        while (('location' in resp.headers and resp.status_code in REDIRECT_STATI)):\n\n            resp.content  # Consume socket so it can be released\n\n            if i >= self.max_redirects:\n                raise TooManyRedirects('Exceeded %s redirects.' % self.max_redirects)\n\n            # Release the connection back into the pool.\n            resp.close()\n\n            url = resp.headers['location']\n            method = prepared_request.method\n\n            # Handle redirection without scheme (see: RFC 1808 Section 4)\n            if url.startswith('//'):\n                parsed_rurl = urlparse(resp.url)\n                url = '%s:%s' % (parsed_rurl.scheme, url)\n\n            # Facilitate non-RFC2616-compliant 'location' headers\n            # (e.g. '/path/to/resource' instead of 'http://domain.tld/path/to/resource')\n            if not urlparse(url).netloc:\n                # Compliant with RFC3986, we percent encode the url.\n                url = urljoin(resp.url, requote_uri(url))\n\n            prepared_request.url = url\n\n            # http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.4\n            if (resp.status_code == codes.see_other and\n                    prepared_request.method != 'HEAD'):\n                method = 'GET'\n\n            # Do what the browsers do, despite standards...\n            if (resp.status_code in (codes.moved, codes.found) and\n                    prepared_request.method == 'POST'):\n                method = 'GET'\n\n            prepared_request.method = method\n\n            if resp.status_code is not codes.temporary:\n                if 'Content-Length' in prepared_request.headers:\n                    del prepared_request.headers['Content-Length']\n\n                prepared_request.body = None\n\n            headers = prepared_request.headers\n            try:\n                del headers['Cookie']\n            except KeyError:\n                pass\n\n            prepared_request.prepare_cookies(cookiejar)\n\n            resp = self.send(\n                prepared_request,\n                stream=stream,\n                timeout=timeout,\n                verify=verify,\n                cert=cert,\n                proxies=proxies,\n                allow_redirects=False,\n            )\n\n            cookiejar.update(resp.cookies)\n\n            i += 1\n            yield resp\n\n        resp.cookies.update(cookiejar)\n\n\nclass Session(SessionRedirectMixin):\n    \"\"\"A Requests session.\n\n    Provides cookie persistience, connection-pooling, and configuration.\n\n    Basic Usage::\n\n      >>> import requests\n      >>> s = requests.Session()\n      >>> s.get('http://httpbin.org/get')\n      200\n    \"\"\"\n\n    def __init__(self):\n\n        #: A case-insensitive dictionary of headers to be sent on each\n        #: :class:`Request <Request>` sent from this\n        #: :class:`Session <Session>`.\n        self.headers = default_headers()\n\n        #: Default Authentication tuple or object to attach to\n        #: :class:`Request <Request>`.\n        self.auth = None\n\n        #: Dictionary mapping protocol to the URL of the proxy (e.g.\n        #: {'http': 'foo.bar:3128'}) to be used on each\n        #: :class:`Request <Request>`.\n        self.proxies = {}\n\n        #: Event-handling hooks.\n        self.hooks = default_hooks()\n\n        #: Dictionary of querystring data to attach to each\n        #: :class:`Request <Request>`. The dictionary values may be lists for\n        #: representing multivalued query parameters.\n        self.params = {}\n\n        #: Stream response content default.\n        self.stream = False\n\n        #: SSL Verification default.\n        self.verify = True\n\n        #: SSL certificate default.\n        self.cert = None\n\n        #: Maximum number of redirects to follow.\n        self.max_redirects = DEFAULT_REDIRECT_LIMIT\n\n        #: Should we trust the environment?\n        self.trust_env = True\n\n        # Set up a CookieJar to be used by default\n        self.cookies = cookiejar_from_dict({})\n\n        # Default connection adapters.\n        self.adapters = {}\n        self.mount('http://', HTTPAdapter())\n        self.mount('https://', HTTPAdapter())\n\n    def __enter__(self):\n        return self\n\n    def __exit__(self, *args):\n        self.close()\n\n    def request(self, method, url,\n        params=None,\n        data=None,\n        headers=None,\n        cookies=None,\n        files=None,\n        auth=None,\n        timeout=None,\n        allow_redirects=True,\n        proxies=None,\n        hooks=None,\n        stream=None,\n        verify=None,\n        cert=None):\n\n        cookies = cookies or {}\n        proxies = proxies or {}\n\n        # Bootstrap CookieJar.\n        if not isinstance(cookies, cookielib.CookieJar):\n            cookies = cookiejar_from_dict(cookies)\n\n        # Merge with session cookies\n        merged_cookies = self.cookies.copy()\n        merged_cookies.update(cookies)\n        cookies = merged_cookies\n\n        # Gather clues from the surrounding environment.\n        if self.trust_env:\n            # Set environment's proxies.\n            env_proxies = get_environ_proxies(url) or {}\n            for (k, v) in env_proxies.items():\n                proxies.setdefault(k, v)\n\n            # Set environment's basic authentication.\n            if not auth:\n                auth = get_netrc_auth(url)\n\n            # Look for configuration.\n            if not verify and verify is not False:\n                verify = os.environ.get('REQUESTS_CA_BUNDLE')\n\n            # Curl compatibility.\n            if not verify and verify is not False:\n                verify = os.environ.get('CURL_CA_BUNDLE')\n\n        # Merge all the kwargs.\n        params = merge_kwargs(params, self.params)\n        headers = merge_kwargs(headers, self.headers)\n        auth = merge_kwargs(auth, self.auth)\n        proxies = merge_kwargs(proxies, self.proxies)\n        hooks = merge_kwargs(hooks, self.hooks)\n        stream = merge_kwargs(stream, self.stream)\n        verify = merge_kwargs(verify, self.verify)\n        cert = merge_kwargs(cert, self.cert)\n\n        # Create the Request.\n        req = Request()\n        req.method = method.upper()\n        req.url = url\n        req.headers = headers\n        req.files = files\n        req.data = data\n        req.params = params\n        req.auth = auth\n        req.cookies = cookies\n        req.hooks = hooks\n\n        # Prepare the Request.\n        prep = req.prepare()\n\n        # Send the request.\n        send_kwargs = {\n            'stream': stream,\n            'timeout': timeout,\n            'verify': verify,\n            'cert': cert,\n            'proxies': proxies,\n            'allow_redirects': allow_redirects,\n            'req': req,\n        }\n        resp = self.send(prep, **send_kwargs)\n\n        # Persist cookies.\n        self.cookies.update(resp.cookies)\n\n        return resp\n\n    def get(self, url, **kwargs):\n        \"\"\"Sends a GET request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        kwargs.setdefault('allow_redirects', True)\n        return self.request('GET', url, **kwargs)\n\n    def options(self, url, **kwargs):\n        \"\"\"Sends a OPTIONS request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        kwargs.setdefault('allow_redirects', True)\n        return self.request('OPTIONS', url, **kwargs)\n\n    def head(self, url, **kwargs):\n        \"\"\"Sends a HEAD request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        kwargs.setdefault('allow_redirects', False)\n        return self.request('HEAD', url, **kwargs)\n\n    def post(self, url, data=None, **kwargs):\n        \"\"\"Sends a POST request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param data: (optional) Dictionary, bytes, or file-like object to send in the body of the :class:`Request`.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('POST', url, data=data, **kwargs)\n\n    def put(self, url, data=None, **kwargs):\n        \"\"\"Sends a PUT request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param data: (optional) Dictionary, bytes, or file-like object to send in the body of the :class:`Request`.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('PUT', url, data=data, **kwargs)\n\n    def patch(self, url, data=None, **kwargs):\n        \"\"\"Sends a PATCH request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param data: (optional) Dictionary, bytes, or file-like object to send in the body of the :class:`Request`.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('PATCH', url,  data=data, **kwargs)\n\n    def delete(self, url, **kwargs):\n        \"\"\"Sends a DELETE request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('DELETE', url, **kwargs)\n\n    def send(self, request, **kwargs):\n        \"\"\"Send a given PreparedRequest.\"\"\"\n        # It's possible that users might accidentally send a Request object.\n        # Guard against that specific failure case.\n        if getattr(request, 'prepare', None):\n            raise ValueError('You can only send PreparedRequests.')\n\n        # Set up variables needed for resolve_redirects and dispatching of\n        # hooks\n        allow_redirects = kwargs.pop('allow_redirects', True)\n        req = kwargs.pop('req', None)\n        stream = kwargs.get('stream', False)\n        timeout = kwargs.get('timeout')\n        verify = kwargs.get('verify')\n        cert = kwargs.get('cert')\n        proxies = kwargs.get('proxies')\n        hooks = request.hooks\n\n        # Get the appropriate adapter to use\n        adapter = self.get_adapter(url=request.url)\n\n        # Start time (approximately) of the request\n        start = datetime.utcnow()\n        # Send the request\n        r = adapter.send(request, **kwargs)\n        # Total elapsed time of the request (approximately)\n        r.elapsed = datetime.utcnow() - start\n\n        # Response manipulation hooks\n        r = dispatch_hook('response', hooks, r)\n\n        # Redirect resolving generator.\n        gen = self.resolve_redirects(r, request, stream=stream,\n                                     timeout=timeout, verify=verify, cert=cert,\n                                     proxies=proxies)\n\n        # Resolve redirects if allowed.\n        history = [resp for resp in gen] if allow_redirects else []\n\n        # Shuffle things around if there's history.\n        if history:\n            # Insert the first (original) request at the start\n            history.insert(0, r)\n            # Get the last request made\n            r = history.pop()\n            r.history = tuple(history)\n\n        return r\n\n    def get_adapter(self, url):\n        \"\"\"Returns the appropriate connnection adapter for the given URL.\"\"\"\n        for (prefix, adapter) in self.adapters.items():\n\n            if url.startswith(prefix):\n                return adapter\n\n        # Nothing matches :-/\n        raise InvalidSchema(\"No connection adapters were found for '%s'\" % url)\n\n    def close(self):\n        \"\"\"Closes all adapters and as such the session\"\"\"\n        for _, v in self.adapters.items():\n            v.close()\n\n    def mount(self, prefix, adapter):\n        \"\"\"Registers a connection adapter to a prefix.\"\"\"\n        self.adapters[prefix] = adapter\n\n    def __getstate__(self):\n        return dict((attr, getattr(self, attr, None)) for attr in self.__attrs__)\n\n    def __setstate__(self, state):\n        for attr, value in state.items():\n            setattr(self, attr, value)\n\n\ndef session():\n    \"\"\"Returns a :class:`Session` for context-management.\"\"\"\n\n    return Session()\n"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_saMkXwXIX3EIWC8OWLsz3437",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"max_retries\", \"path\": \"\"}"
+          }
+        },
+        {
+          "id": "call_01_tB9OgzVxhyEGUmj4jdqI7790",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"DEFAULT_RETRIES\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_saMkXwXIX3EIWC8OWLsz3437",
+      "name": "search",
+      "args": {
+        "pattern": "max_retries",
+        "path": ""
+      },
+      "result": "requests/adapters.py:48:        self.max_retries = DEFAULT_RETRIES\nrequests/adapters.py:191:                    retries=self.max_retries,"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_01_tB9OgzVxhyEGUmj4jdqI7790",
+      "name": "search",
+      "args": {
+        "pattern": "DEFAULT_RETRIES",
+        "path": ""
+      },
+      "result": "requests/adapters.py:29:DEFAULT_RETRIES = 0\nrequests/adapters.py:48:        self.max_retries = DEFAULT_RETRIES"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_HPSXvgytLEAgkJHeFeen1685",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/packages/urllib3/poolmanager.py\", \"limit\": 120}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_HPSXvgytLEAgkJHeFeen1685",
+      "name": "read_file",
+      "args": {
+        "path": "requests/packages/urllib3/poolmanager.py",
+        "limit": 120
+      },
+      "result": "[Lines 1\u2013120 of 182]\n# urllib3/poolmanager.py\n# Copyright 2008-2012 Andrey Petrov and contributors (see CONTRIBUTORS.txt)\n#\n# This module is part of urllib3 and is released under\n# the MIT License: http://www.opensource.org/licenses/mit-license.php\n\nimport logging\n\nfrom ._collections import RecentlyUsedContainer\nfrom .connectionpool import HTTPConnectionPool, HTTPSConnectionPool\nfrom .connectionpool import connection_from_url, port_by_scheme\nfrom .request import RequestMethods\nfrom .util import parse_url\n\n\n__all__ = ['PoolManager', 'ProxyManager', 'proxy_from_url']\n\n\npool_classes_by_scheme = {\n    'http': HTTPConnectionPool,\n    'https': HTTPSConnectionPool,\n}\n\nlog = logging.getLogger(__name__)\n\n\nclass PoolManager(RequestMethods):\n    \"\"\"\n    Allows for arbitrary requests while transparently keeping track of\n    necessary connection pools for you.\n\n    :param num_pools:\n        Number of connection pools to cache before discarding the least\n        recently used pool.\n\n    :param headers:\n        Headers to include with all requests, unless other headers are given\n        explicitly.\n\n    :param \\**connection_pool_kw:\n        Additional parameters are used to create fresh\n        :class:`urllib3.connectionpool.ConnectionPool` instances.\n\n    Example: ::\n\n        >>> manager = PoolManager(num_pools=2)\n        >>> r = manager.request('GET', 'http://google.com/')\n        >>> r = manager.request('GET', 'http://google.com/mail')\n        >>> r = manager.request('GET', 'http://yahoo.com/')\n        >>> len(manager.pools)\n        2\n\n    \"\"\"\n\n    def __init__(self, num_pools=10, headers=None, **connection_pool_kw):\n        RequestMethods.__init__(self, headers)\n        self.connection_pool_kw = connection_pool_kw\n        self.pools = RecentlyUsedContainer(num_pools,\n                                           dispose_func=lambda p: p.close())\n\n    def _new_pool(self, scheme, host, port):\n        \"\"\"\n        Create a new :class:`ConnectionPool` based on host, port and scheme.\n\n        This method is used to actually create the connection pools handed out\n        by :meth:`connection_from_url` and companion methods. It is intended\n        to be overridden for customization.\n        \"\"\"\n        pool_cls = pool_classes_by_scheme[scheme]\n        return pool_cls(host, port, **self.connection_pool_kw)\n\n    def clear(self):\n        \"\"\"\n        Empty our store of pools and direct them all to close.\n\n        This will not affect in-flight connections, but they will not be\n        re-used after completion.\n        \"\"\"\n        self.pools.clear()\n\n    def connection_from_host(self, host, port=None, scheme='http'):\n        \"\"\"\n        Get a :class:`ConnectionPool` based on the host, port, and scheme.\n\n        If ``port`` isn't given, it will be derived from the ``scheme`` using\n        ``urllib3.connectionpool.port_by_scheme``.\n        \"\"\"\n        scheme = scheme or 'http'\n        port = port or port_by_scheme.get(scheme, 80)\n\n        pool_key = (scheme, host, port)\n\n        # If the scheme, host, or port doesn't match existing open connections,\n        # open a new ConnectionPool.\n        pool = self.pools.get(pool_key)\n        if pool:\n            return pool\n\n        # Make a fresh ConnectionPool of the desired type\n        pool = self._new_pool(scheme, host, port)\n        self.pools[pool_key] = pool\n        return pool\n\n    def connection_from_url(self, url):\n        \"\"\"\n        Similar to :func:`urllib3.connectionpool.connection_from_url` but\n        doesn't pass any additional parameters to the\n        :class:`urllib3.connectionpool.ConnectionPool` constructor.\n\n        Additional parameters are taken from the :class:`.PoolManager`\n        constructor.\n        \"\"\"\n        u = parse_url(url)\n        return self.connection_from_host(u.host, port=u.port, scheme=u.scheme)\n\n    def urlopen(self, method, url, redirect=True, **kw):\n        \"\"\"\n        Same as :meth:`urllib3.connectionpool.HTTPConnectionPool.urlopen`\n        with custom cross-host redirect logic and only sends the request-uri\n        portion of the ``url``.\n"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_NkAeciO4Xbu4WesdhaN15112",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"path\": \"\", \"pattern\": \"retries\"}"
+          }
+        },
+        {
+          "id": "call_01_Qrg8z5bcLNmQIiIOLKoV4224",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"path\": \"\", \"pattern\": \"config=\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_NkAeciO4Xbu4WesdhaN15112",
+      "name": "search",
+      "args": {
+        "path": "",
+        "pattern": "retries"
+      },
+      "result": "requests/adapters.py:48:        self.max_retries = DEFAULT_RETRIES\nrequests/adapters.py:191:                    retries=self.max_retries,\nrequests/packages/urllib3/exceptions.py:39:    \"Raised when the maximum number of retries is exceeded.\"\nrequests/packages/urllib3/exceptions.py:44:        message = \"Max retries exceeded with url: %s\" % url\nrequests/packages/urllib3/exceptions.py:57:    def __init__(self, pool, url, retries=3):\nrequests/packages/urllib3/exceptions.py:62:        self.retries = retries\nrequests/packages/urllib3/connectionpool.py:325:    def urlopen(self, method, url, body=None, headers=None, retries=3,\nrequests/packages/urllib3/connectionpool.py:358:        :param retries:\nrequests/packages/urllib3/connectionpool.py:359:            Number of retries to allow before raising a MaxRetryError exception.\nrequests/packages/urllib3/connectionpool.py:395:        if retries < 0:\nrequests/packages/urllib3/connectionpool.py:410:            raise HostChangedError(self, url, retries - 1)\nrequests/packages/urllib3/connectionpool.py:464:            if retries == 0:\nrequests/packages/urllib3/connectionpool.py:477:                     \"broken by '%r': %s\" % (retries, err, url))\nrequests/packages/urllib3/connectionpool.py:478:            return self.urlopen(method, url, body, headers, retries - 1,\nrequests/packages/urllib3/connectionpool.py:490:                                retries - 1, redirect, assert_same_host,\nrequests/packages/urllib3/contrib/ntlmpool.py:112:    def urlopen(self, method, url, body=None, headers=None, retries=3,\nrequests/packages/urllib3/contrib/ntlmpool.py:118:                                                       headers, retries,\nrequests/packages/urllib3/poolmanager.py:143:        kw['retries'] = kw.get('retries', 3) - 1  # Persist retries countdown"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_01_Qrg8z5bcLNmQIiIOLKoV4224",
+      "name": "search",
+      "args": {
+        "path": "",
+        "pattern": "config="
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_U3XShe89ZQzS3NoiDpMt0900",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/packages/urllib3/connectionpool.py\", \"offset\": 140, \"limit\": 80}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_U3XShe89ZQzS3NoiDpMt0900",
+      "name": "read_file",
+      "args": {
+        "path": "requests/packages/urllib3/connectionpool.py",
+        "offset": 140,
+        "limit": 80
+      },
+      "result": "[Lines 140\u2013219 of 579]\n        into :class:`httplib.HTTPConnection`.\n\n    :param strict:\n        Causes BadStatusLine to be raised if the status line can't be parsed\n        as a valid HTTP/1.0 or 1.1 status line, passed into\n        :class:`httplib.HTTPConnection`.\n\n    :param timeout:\n        Socket timeout for each individual connection, can be a float. None\n        disables timeout.\n\n    :param maxsize:\n        Number of connections to save that can be reused. More than 1 is useful\n        in multithreaded situations. If ``block`` is set to false, more\n        connections will be created but they will not be saved once they've\n        been used.\n\n    :param block:\n        If set to True, no more than ``maxsize`` connections will be used at\n        a time. When no free connections are available, the call will block\n        until a connection has been released. This is a useful side effect for\n        particular multithreaded situations where one does not want to use more\n        than maxsize connections per host to prevent flooding.\n\n    :param headers:\n        Headers to include with all requests, unless other headers are given\n        explicitly.\n    \"\"\"\n\n    scheme = 'http'\n\n    def __init__(self, host, port=None, strict=False, timeout=None, maxsize=1,\n                 block=False, headers=None):\n        ConnectionPool.__init__(self, host, port)\n        RequestMethods.__init__(self, headers)\n\n        self.strict = strict\n        self.timeout = timeout\n        self.pool = self.QueueCls(maxsize)\n        self.block = block\n\n        # Fill the queue up so that doing get() on it will block properly\n        for _ in xrange(maxsize):\n            self.pool.put(None)\n\n        # These are mostly for testing and debugging purposes.\n        self.num_connections = 0\n        self.num_requests = 0\n\n    def _new_conn(self):\n        \"\"\"\n        Return a fresh :class:`httplib.HTTPConnection`.\n        \"\"\"\n        self.num_connections += 1\n        log.info(\"Starting new HTTP connection (%d): %s\" %\n                 (self.num_connections, self.host))\n        return HTTPConnection(host=self.host,\n                              port=self.port,\n                              strict=self.strict)\n\n    def _get_conn(self, timeout=None):\n        \"\"\"\n        Get a connection. Will return a pooled connection if one is available.\n\n        If no connections are available and :prop:`.block` is ``False``, then a\n        fresh connection is returned.\n\n        :param timeout:\n            Seconds to wait before giving up and raising\n            :class:`urllib3.exceptions.EmptyPoolError` if the pool is empty and\n            :prop:`.block` is ``True``.\n        \"\"\"\n        conn = None\n        try:\n            conn = self.pool.get(block=self.block, timeout=timeout)\n\n        except AttributeError: # self.pool is None\n            raise ClosedPoolError(self, \"Pool is closed.\")\n\n        except Empty:\n"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_TtccT1L9fIJm290AzVHx8299",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/packages/urllib3/connectionpool.py\", \"limit\": 140}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_TtccT1L9fIJm290AzVHx8299",
+      "name": "read_file",
+      "args": {
+        "path": "requests/packages/urllib3/connectionpool.py",
+        "limit": 140
+      },
+      "result": "[Lines 1\u2013140 of 579]\n# urllib3/connectionpool.py\n# Copyright 2008-2012 Andrey Petrov and contributors (see CONTRIBUTORS.txt)\n#\n# This module is part of urllib3 and is released under\n# the MIT License: http://www.opensource.org/licenses/mit-license.php\n\nimport logging\nimport socket\nimport errno\n\nfrom socket import error as SocketError, timeout as SocketTimeout\nfrom .util import resolve_cert_reqs, resolve_ssl_version\n\ntry: # Python 3\n    from http.client import HTTPConnection, HTTPException\n    from http.client import HTTP_PORT, HTTPS_PORT\nexcept ImportError:\n    from httplib import HTTPConnection, HTTPException\n    from httplib import HTTP_PORT, HTTPS_PORT\n\ntry: # Python 3\n    from queue import LifoQueue, Empty, Full\nexcept ImportError:\n    from Queue import LifoQueue, Empty, Full\n\n\ntry: # Compiled with SSL?\n    HTTPSConnection = object\n    BaseSSLError = None\n    ssl = None\n\n    try: # Python 3\n        from http.client import HTTPSConnection\n    except ImportError:\n        from httplib import HTTPSConnection\n\n    import ssl\n    BaseSSLError = ssl.SSLError\n\nexcept (ImportError, AttributeError): # Platform-specific: No SSL.\n    pass\n\n\nfrom .request import RequestMethods\nfrom .response import HTTPResponse\nfrom .util import get_host, is_connection_dropped, ssl_wrap_socket\nfrom .exceptions import (\n    ClosedPoolError,\n    EmptyPoolError,\n    HostChangedError,\n    MaxRetryError,\n    SSLError,\n    TimeoutError,\n)\n\nfrom .packages.ssl_match_hostname import match_hostname, CertificateError\nfrom .packages import six\n\n\nxrange = six.moves.xrange\n\nlog = logging.getLogger(__name__)\n\n_Default = object()\n\nport_by_scheme = {\n    'http': HTTP_PORT,\n    'https': HTTPS_PORT,\n}\n\n\n## Connection objects (extension of httplib)\n\nclass VerifiedHTTPSConnection(HTTPSConnection):\n    \"\"\"\n    Based on httplib.HTTPSConnection but wraps the socket with\n    SSL certification.\n    \"\"\"\n    cert_reqs = None\n    ca_certs = None\n    ssl_version = None\n\n    def set_cert(self, key_file=None, cert_file=None,\n                 cert_reqs=None, ca_certs=None):\n\n        self.key_file = key_file\n        self.cert_file = cert_file\n        self.cert_reqs = cert_reqs\n        self.ca_certs = ca_certs\n\n    def connect(self):\n        # Add certificate verification\n        sock = socket.create_connection((self.host, self.port), self.timeout)\n\n        resolved_cert_reqs = resolve_cert_reqs(self.cert_reqs)\n        resolved_ssl_version = resolve_ssl_version(self.ssl_version)\n\n        # Wrap socket using verification with the root certs in\n        # trusted_root_certs\n        self.sock = ssl_wrap_socket(sock, self.key_file, self.cert_file,\n                                    cert_reqs=resolved_cert_reqs,\n                                    ca_certs=self.ca_certs,\n                                    server_hostname=self.host,\n                                    ssl_version=resolved_ssl_version)\n\n        if resolved_cert_reqs != ssl.CERT_NONE:\n            match_hostname(self.sock.getpeercert(), self.host)\n\n\n## Pool objects\n\nclass ConnectionPool(object):\n    \"\"\"\n    Base class for all connection pools, such as\n    :class:`.HTTPConnectionPool` and :class:`.HTTPSConnectionPool`.\n    \"\"\"\n\n    scheme = None\n    QueueCls = LifoQueue\n\n    def __init__(self, host, port=None):\n        self.host = host\n        self.port = port\n\n    def __str__(self):\n        return '%s(host=%r, port=%r)' % (type(self).__name__,\n                                         self.host, self.port)\n\n\nclass HTTPConnectionPool(ConnectionPool, RequestMethods):\n    \"\"\"\n    Thread-safe connection pool for one host.\n\n    :param host:\n        Host used for this HTTP Connection (e.g. \"localhost\"), passed into\n        :class:`httplib.HTTPConnection`.\n\n    :param port:\n        Port used for this HTTP Connection (None is equivalent to 80), passed\n        into :class:`httplib.HTTPConnection`.\n"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "I've analyzed the issue. The user wants a way to configure `max_retries` in requests v1.0+. \n\nLooking at the code:\n\n1. **`requests/adapters.py`** \u2014 `HTTPAdapter.__init__` hardcodes `self.max_retries = DEFAULT_RETRIES` (line 48) with no way to override it. However, `HTTPAdapter.send` (line 191) already passes `retries=self.max_retries` to `conn.urlopen()`, so the retry value is already used at the urllib3 level \u2014 it's just not configurable.\n\n2. The vendored `urllib3` `ConnectionPool` constructor does **not** accept a `retries` kwarg (verified in `requests/packages/urllib3/connectionpool.py`), so retries must flow through the `urlopen` call, meaning the fix is to make `self.max_retries` configurable in the adapter constructor rather than pass it to `PoolManager`.\n\nThe fix for this issue (matching the historical requests resolution) is to add a `max_retries` parameter to `HTTPAdapter.__init__` so users can configure it via `HTTPAdapter(max_retries=10)` and mount it on a session. This only requires modifying `requests/adapters.py` \u2014 no changes to `sessions.py`, `api.py`, or the vendored urllib3 are needed.",
+      "tool_calls": [
+        {
+          "id": "call_00_Cipg0qSRdbL6DXk0aoEl6973",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"requests/adapters.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_Cipg0qSRdbL6DXk0aoEl6973",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "requests/adapters.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}

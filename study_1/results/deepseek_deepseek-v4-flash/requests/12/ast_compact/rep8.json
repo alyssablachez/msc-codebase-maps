@@ -1,0 +1,369 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "repo": "requests",
+  "issue_idx": 12,
+  "tier": "small",
+  "role": "multi",
+  "map_type": "ast_compact",
+  "rep": 8,
+  "worker_id": 5,
+  "issue_title": "Not possible to specify max_retries in v1.X?",
+  "base_commit": "be62645dd56580dd7576032b348cf79d880851d8",
+  "metrics": {
+    "total_input_tokens": 80082,
+    "total_output_tokens": 3064,
+    "total_cached_tokens": 72832,
+    "total_cost": 0.002077,
+    "num_turns": 9,
+    "wall_time_seconds": 27.27,
+    "stop_reason": "submitted",
+    "hit_turn_cap": false,
+    "submission_type": "submit_answer",
+    "trial_token": "bf586250"
+  },
+  "final_files_predicted": [
+    "requests/adapters.py"
+  ],
+  "final_files_predicted_scorable": [
+    "requests/adapters.py"
+  ],
+  "ground_truth": [
+    "requests/sessions.py",
+    "requests/adapters.py",
+    "requests/api.py"
+  ],
+  "ground_truth_scorable": [
+    "requests/sessions.py",
+    "requests/adapters.py",
+    "requests/api.py"
+  ],
+  "scores": {
+    "precision": 1.0,
+    "recall": 0.3333,
+    "f1": 0.5
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_yV2oDTvqjzjcAfu8rzEL5792",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/adapters.py\"}"
+          }
+        },
+        {
+          "id": "call_01_jyy2LqnTzvbhDS7wjzrg0461",
+          "type": "function",
+          "function": {
+            "name": "list_files",
+            "arguments": "{\"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_00_yV2oDTvqjzjcAfu8rzEL5792",
+      "name": "read_file",
+      "args": {
+        "path": "requests/adapters.py"
+      },
+      "result": "# -*- coding: utf-8 -*-\n\n\"\"\"\nrequests.adapters\n~~~~~~~~~~~~~~~~~\n\nThis module contains the transport adapters that Requests uses to define\nand maintain connections.\n\"\"\"\n\nimport socket\n\nfrom .models import Response\nfrom .packages.urllib3.poolmanager import PoolManager, ProxyManager\nfrom .packages.urllib3.response import HTTPResponse\nfrom .compat import urlparse, basestring, urldefrag, unquote\nfrom .utils import (DEFAULT_CA_BUNDLE_PATH, get_encoding_from_headers,\n                    prepend_scheme_if_needed, get_auth_from_url)\nfrom .structures import CaseInsensitiveDict\nfrom .packages.urllib3.exceptions import MaxRetryError\nfrom .packages.urllib3.exceptions import TimeoutError\nfrom .packages.urllib3.exceptions import SSLError as _SSLError\nfrom .packages.urllib3.exceptions import HTTPError as _HTTPError\nfrom .cookies import extract_cookies_to_jar\nfrom .exceptions import ConnectionError, Timeout, SSLError\nfrom .auth import _basic_auth_str\n\nDEFAULT_POOLSIZE = 10\nDEFAULT_RETRIES = 0\n\n\nclass BaseAdapter(object):\n    \"\"\"The Base Transport Adapter\"\"\"\n\n    def __init__(self):\n        super(BaseAdapter, self).__init__()\n\n    def send(self):\n        raise NotImplementedError\n\n    def close(self):\n        raise NotImplementedError\n\n\nclass HTTPAdapter(BaseAdapter):\n    \"\"\"Built-In HTTP Adapter for Urllib3.\"\"\"\n    def __init__(self, pool_connections=DEFAULT_POOLSIZE, pool_maxsize=DEFAULT_POOLSIZE):\n        self.max_retries = DEFAULT_RETRIES\n        self.config = {}\n\n        super(HTTPAdapter, self).__init__()\n\n        self.init_poolmanager(pool_connections, pool_maxsize)\n\n    def init_poolmanager(self, connections, maxsize):\n        self.poolmanager = PoolManager(num_pools=connections, maxsize=maxsize)\n\n    def cert_verify(self, conn, url, verify, cert):\n        if url.startswith('https') and verify:\n\n            cert_loc = None\n\n            # Allow self-specified cert location.\n            if verify is not True:\n                cert_loc = verify\n\n            if not cert_loc:\n                cert_loc = DEFAULT_CA_BUNDLE_PATH\n\n            if not cert_loc:\n                raise Exception(\"Could not find a suitable SSL CA certificate bundle.\")\n\n            conn.cert_reqs = 'CERT_REQUIRED'\n            conn.ca_certs = cert_loc\n        else:\n            conn.cert_reqs = 'CERT_NONE'\n            conn.ca_certs = None\n\n        if cert:\n            if not isinstance(cert, basestring):\n                conn.cert_file = cert[0]\n                conn.key_file = cert[1]\n            else:\n                conn.cert_file = cert\n\n    def build_response(self, req, resp):\n        response = Response()\n\n        # Fallback to None if there's no status_code, for whatever reason.\n        response.status_code = getattr(resp, 'status', None)\n\n        # Make headers case-insensitive.\n        response.headers = CaseInsensitiveDict(getattr(resp, 'headers', {}))\n\n        # Set encoding.\n        response.encoding = get_encoding_from_headers(response.headers)\n        response.raw = resp\n        response.reason = response.raw.reason\n\n        if isinstance(req.url, bytes):\n            response.url = req.url.decode('utf-8')\n        else:\n            response.url = req.url\n\n        # Add new cookies from the server.\n        extract_cookies_to_jar(response.cookies, req, resp)\n\n        # Give the Response some context.\n        response.request = req\n        response.connection = self\n\n        return response\n\n    def get_connection(self, url, proxies=None):\n        \"\"\"Returns a connection for the given URL.\"\"\"\n        proxies = proxies or {}\n        proxy = proxies.get(urlparse(url).scheme)\n\n        if proxy:\n            proxy = prepend_scheme_if_needed(proxy, urlparse(url).scheme)\n            conn = ProxyManager(self.poolmanager.connection_from_url(proxy))\n        else:\n            conn = self.poolmanager.connection_from_url(url)\n\n        return conn\n\n    def close(self):\n        \"\"\"Dispose of any internal state.\n\n        Currently, this just closes the PoolManager, which closes pooled\n        connections.\n        \"\"\"\n        self.poolmanager.clear()\n\n    def request_url(self, request, proxies):\n        \"\"\"Obtain the url to use when making the final request.\n\n        If the message is being sent through a proxy, the full URL has to be\n        used. Otherwise, we should only use the path portion of the URL.\"\"\"\n        proxies = proxies or {}\n        proxy = proxies.get(urlparse(request.url).scheme)\n\n        if proxy:\n            url, _ = urldefrag(request.url)\n        else:\n            url = request.path_url\n\n        return url\n\n    def add_headers(self, request, **kwargs):\n        \"\"\"Add any headers needed by the connection. Currently this adds a\n        Proxy-Authorization header.\"\"\"\n        proxies = kwargs.get('proxies', {})\n\n        if proxies is None:\n            proxies = {}\n\n        proxy = proxies.get(urlparse(request.url).scheme)\n        username, password = get_auth_from_url(proxy)\n\n        if username and password:\n            # Proxy auth usernames and passwords will be urlencoded, we need\n            # to decode them.\n            username = unquote(username)\n            password = unquote(password)\n            request.headers['Proxy-Authorization'] = _basic_auth_str(username,\n                                                                     password)\n\n    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):\n        \"\"\"Sends PreparedRequest object. Returns Response object.\"\"\"\n\n        conn = self.get_connection(request.url, proxies)\n\n        self.cert_verify(conn, request.url, verify, cert)\n        url = self.request_url(request, proxies)\n        self.add_headers(request, proxies=proxies)\n\n        chunked = not (request.body is None or 'Content-Length' in request.headers)\n\n        try:\n            if not chunked:\n                resp = conn.urlopen(\n                    method=request.method,\n                    url=url,\n                    body=request.body,\n                    headers=request.headers,\n                    redirect=False,\n                    assert_same_host=False,\n                    preload_content=False,\n                    decode_content=False,\n                    retries=self.max_retries,\n                    timeout=timeout\n                )\n\n            # Send the request.\n            else:\n                if hasattr(conn, 'proxy_pool'):\n                    conn = conn.proxy_pool\n\n                low_conn = conn._get_conn(timeout=timeout)\n                low_conn.putrequest(request.method, url, skip_accept_encoding=True)\n\n                for header, value in request.headers.items():\n                    low_conn.putheader(header, value)\n\n                low_conn.endheaders()\n\n                for i in request.body:\n                    low_conn.send(hex(len(i))[2:].encode('utf-8'))\n                    low_conn.send(b'\\r\\n')\n                    low_conn.send(i)\n                    low_conn.send(b'\\r\\n')\n                low_conn.send(b'0\\r\\n\\r\\n')\n\n                r = low_conn.getresponse()\n                resp = HTTPResponse.from_httplib(r,\n                    pool=conn,\n                    connection=low_conn,\n                    preload_content=False,\n                    decode_content=False\n                )\n\n        except socket.error as sockerr:\n            raise ConnectionError(sockerr)\n\n        except MaxRetryError as e:\n            raise ConnectionError(e)\n\n        except (_SSLError, _HTTPError) as e:\n            if isinstance(e, _SSLError):\n                raise SSLError(e)\n            elif isinstance(e, TimeoutError):\n                raise Timeout(e)\n            else:\n                raise\n\n        r = self.build_response(request, resp)\n\n        if not stream:\n            r.content\n\n        return r\n"
+    },
+    {
+      "turn": 0,
+      "role": "tool",
+      "tool_call_id": "call_01_jyy2LqnTzvbhDS7wjzrg0461",
+      "name": "list_files",
+      "args": {
+        "path": ""
+      },
+      "result": ".git\n.gitignore\n.travis.yml\nAUTHORS.rst\nHISTORY.rst\nLICENSE\nMANIFEST.in\nMakefile\nNOTICE\nREADME.rst\ndocs\next\nrequests\nrequirements.txt\nsetup.py\ntest_requests.py"
+    },
+    {
+      "turn": 1,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_BPJZqHMfXWNbIUvc3CX13025",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/packages/urllib3/poolmanager.py\"}"
+          }
+        },
+        {
+          "id": "call_01_A45PDqxWdrZhLbNDUNng5900",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"DEFAULT_RETRIES\", \"path\": \"\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_00_BPJZqHMfXWNbIUvc3CX13025",
+      "name": "read_file",
+      "args": {
+        "path": "requests/packages/urllib3/poolmanager.py"
+      },
+      "result": "# urllib3/poolmanager.py\n# Copyright 2008-2012 Andrey Petrov and contributors (see CONTRIBUTORS.txt)\n#\n# This module is part of urllib3 and is released under\n# the MIT License: http://www.opensource.org/licenses/mit-license.php\n\nimport logging\n\nfrom ._collections import RecentlyUsedContainer\nfrom .connectionpool import HTTPConnectionPool, HTTPSConnectionPool\nfrom .connectionpool import connection_from_url, port_by_scheme\nfrom .request import RequestMethods\nfrom .util import parse_url\n\n\n__all__ = ['PoolManager', 'ProxyManager', 'proxy_from_url']\n\n\npool_classes_by_scheme = {\n    'http': HTTPConnectionPool,\n    'https': HTTPSConnectionPool,\n}\n\nlog = logging.getLogger(__name__)\n\n\nclass PoolManager(RequestMethods):\n    \"\"\"\n    Allows for arbitrary requests while transparently keeping track of\n    necessary connection pools for you.\n\n    :param num_pools:\n        Number of connection pools to cache before discarding the least\n        recently used pool.\n\n    :param headers:\n        Headers to include with all requests, unless other headers are given\n        explicitly.\n\n    :param \\**connection_pool_kw:\n        Additional parameters are used to create fresh\n        :class:`urllib3.connectionpool.ConnectionPool` instances.\n\n    Example: ::\n\n        >>> manager = PoolManager(num_pools=2)\n        >>> r = manager.request('GET', 'http://google.com/')\n        >>> r = manager.request('GET', 'http://google.com/mail')\n        >>> r = manager.request('GET', 'http://yahoo.com/')\n        >>> len(manager.pools)\n        2\n\n    \"\"\"\n\n    def __init__(self, num_pools=10, headers=None, **connection_pool_kw):\n        RequestMethods.__init__(self, headers)\n        self.connection_pool_kw = connection_pool_kw\n        self.pools = RecentlyUsedContainer(num_pools,\n                                           dispose_func=lambda p: p.close())\n\n    def _new_pool(self, scheme, host, port):\n        \"\"\"\n        Create a new :class:`ConnectionPool` based on host, port and scheme.\n\n        This method is used to actually create the connection pools handed out\n        by :meth:`connection_from_url` and companion methods. It is intended\n        to be overridden for customization.\n        \"\"\"\n        pool_cls = pool_classes_by_scheme[scheme]\n        return pool_cls(host, port, **self.connection_pool_kw)\n\n    def clear(self):\n        \"\"\"\n        Empty our store of pools and direct them all to close.\n\n        This will not affect in-flight connections, but they will not be\n        re-used after completion.\n        \"\"\"\n        self.pools.clear()\n\n    def connection_from_host(self, host, port=None, scheme='http'):\n        \"\"\"\n        Get a :class:`ConnectionPool` based on the host, port, and scheme.\n\n        If ``port`` isn't given, it will be derived from the ``scheme`` using\n        ``urllib3.connectionpool.port_by_scheme``.\n        \"\"\"\n        scheme = scheme or 'http'\n        port = port or port_by_scheme.get(scheme, 80)\n\n        pool_key = (scheme, host, port)\n\n        # If the scheme, host, or port doesn't match existing open connections,\n        # open a new ConnectionPool.\n        pool = self.pools.get(pool_key)\n        if pool:\n            return pool\n\n        # Make a fresh ConnectionPool of the desired type\n        pool = self._new_pool(scheme, host, port)\n        self.pools[pool_key] = pool\n        return pool\n\n    def connection_from_url(self, url):\n        \"\"\"\n        Similar to :func:`urllib3.connectionpool.connection_from_url` but\n        doesn't pass any additional parameters to the\n        :class:`urllib3.connectionpool.ConnectionPool` constructor.\n\n        Additional parameters are taken from the :class:`.PoolManager`\n        constructor.\n        \"\"\"\n        u = parse_url(url)\n        return self.connection_from_host(u.host, port=u.port, scheme=u.scheme)\n\n    def urlopen(self, method, url, redirect=True, **kw):\n        \"\"\"\n        Same as :meth:`urllib3.connectionpool.HTTPConnectionPool.urlopen`\n        with custom cross-host redirect logic and only sends the request-uri\n        portion of the ``url``.\n\n        The given ``url`` parameter must be absolute, such that an appropriate\n        :class:`urllib3.connectionpool.ConnectionPool` can be chosen for it.\n        \"\"\"\n        u = parse_url(url)\n        conn = self.connection_from_host(u.host, port=u.port, scheme=u.scheme)\n\n        kw['assert_same_host'] = False\n        kw['redirect'] = False\n        if 'headers' not in kw:\n            kw['headers'] = self.headers\n\n        response = conn.urlopen(method, u.request_uri, **kw)\n\n        redirect_location = redirect and response.get_redirect_location()\n        if not redirect_location:\n            return response\n\n        if response.status == 303:\n            method = 'GET'\n\n        log.info(\"Redirecting %s -> %s\" % (url, redirect_location))\n        kw['retries'] = kw.get('retries', 3) - 1  # Persist retries countdown\n        return self.urlopen(method, redirect_location, **kw)\n\n\nclass ProxyManager(RequestMethods):\n    \"\"\"\n    Given a ConnectionPool to a proxy, the ProxyManager's ``urlopen`` method\n    will make requests to any url through the defined proxy. The ProxyManager\n    class will automatically set the 'Host' header if it is not provided.\n    \"\"\"\n\n    def __init__(self, proxy_pool):\n        self.proxy_pool = proxy_pool\n\n    def _set_proxy_headers(self, url, headers=None):\n        \"\"\"\n        Sets headers needed by proxies: specifically, the Accept and Host\n        headers. Only sets headers not provided by the user.\n        \"\"\"\n        headers_ = {'Accept': '*/*'}\n\n        host = parse_url(url).host\n        if host:\n            headers_['Host'] = host\n\n        if headers:\n            headers_.update(headers)\n\n        return headers_\n\n    def urlopen(self, method, url, **kw):\n        \"Same as HTTP(S)ConnectionPool.urlopen, ``url`` must be absolute.\"\n        kw['assert_same_host'] = False\n        kw['headers'] = self._set_proxy_headers(url, headers=kw.get('headers'))\n        return self.proxy_pool.urlopen(method, url, **kw)\n\n\ndef proxy_from_url(url, **pool_kw):\n    proxy_pool = connection_from_url(url, **pool_kw)\n    return ProxyManager(proxy_pool)\n"
+    },
+    {
+      "turn": 1,
+      "role": "tool",
+      "tool_call_id": "call_01_A45PDqxWdrZhLbNDUNng5900",
+      "name": "search",
+      "args": {
+        "pattern": "DEFAULT_RETRIES",
+        "path": ""
+      },
+      "result": "requests/adapters.py:29:DEFAULT_RETRIES = 0\nrequests/adapters.py:48:        self.max_retries = DEFAULT_RETRIES"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_tUyJHhMa8O9cJPgmq1EL9853",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/sessions.py\", \"offset\": 166, \"limit\": 100}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 2,
+      "role": "tool",
+      "tool_call_id": "call_00_tUyJHhMa8O9cJPgmq1EL9853",
+      "name": "read_file",
+      "args": {
+        "path": "requests/sessions.py",
+        "offset": 166,
+        "limit": 100
+      },
+      "result": "[Lines 166\u2013265 of 468]\nclass Session(SessionRedirectMixin):\n    \"\"\"A Requests session.\n\n    Provides cookie persistience, connection-pooling, and configuration.\n\n    Basic Usage::\n\n      >>> import requests\n      >>> s = requests.Session()\n      >>> s.get('http://httpbin.org/get')\n      200\n    \"\"\"\n\n    def __init__(self):\n\n        #: A case-insensitive dictionary of headers to be sent on each\n        #: :class:`Request <Request>` sent from this\n        #: :class:`Session <Session>`.\n        self.headers = default_headers()\n\n        #: Default Authentication tuple or object to attach to\n        #: :class:`Request <Request>`.\n        self.auth = None\n\n        #: Dictionary mapping protocol to the URL of the proxy (e.g.\n        #: {'http': 'foo.bar:3128'}) to be used on each\n        #: :class:`Request <Request>`.\n        self.proxies = {}\n\n        #: Event-handling hooks.\n        self.hooks = default_hooks()\n\n        #: Dictionary of querystring data to attach to each\n        #: :class:`Request <Request>`. The dictionary values may be lists for\n        #: representing multivalued query parameters.\n        self.params = {}\n\n        #: Stream response content default.\n        self.stream = False\n\n        #: SSL Verification default.\n        self.verify = True\n\n        #: SSL certificate default.\n        self.cert = None\n\n        #: Maximum number of redirects to follow.\n        self.max_redirects = DEFAULT_REDIRECT_LIMIT\n\n        #: Should we trust the environment?\n        self.trust_env = True\n\n        # Set up a CookieJar to be used by default\n        self.cookies = cookiejar_from_dict({})\n\n        # Default connection adapters.\n        self.adapters = {}\n        self.mount('http://', HTTPAdapter())\n        self.mount('https://', HTTPAdapter())\n\n    def __enter__(self):\n        return self\n\n    def __exit__(self, *args):\n        self.close()\n\n    def request(self, method, url,\n        params=None,\n        data=None,\n        headers=None,\n        cookies=None,\n        files=None,\n        auth=None,\n        timeout=None,\n        allow_redirects=True,\n        proxies=None,\n        hooks=None,\n        stream=None,\n        verify=None,\n        cert=None):\n\n        cookies = cookies or {}\n        proxies = proxies or {}\n\n        # Bootstrap CookieJar.\n        if not isinstance(cookies, cookielib.CookieJar):\n            cookies = cookiejar_from_dict(cookies)\n\n        # Merge with session cookies\n        merged_cookies = self.cookies.copy()\n        merged_cookies.update(cookies)\n        cookies = merged_cookies\n\n        # Gather clues from the surrounding environment.\n        if self.trust_env:\n            # Set environment's proxies.\n            env_proxies = get_environ_proxies(url) or {}\n            for (k, v) in env_proxies.items():\n                proxies.setdefault(k, v)\n\n"
+    },
+    {
+      "turn": 3,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_9ZcFm2vFFrFR6qyXaWpY1874",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"retries\", \"path\": \"requests/packages/urllib3/connectionpool.py\"}"
+          }
+        },
+        {
+          "id": "call_01_KHjuWg7vawicxdnq1DTu4635",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/sessions.py\", \"offset\": 380, \"limit\": 90}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_00_9ZcFm2vFFrFR6qyXaWpY1874",
+      "name": "search",
+      "args": {
+        "pattern": "retries",
+        "path": "requests/packages/urllib3/connectionpool.py"
+      },
+      "result": "325:    def urlopen(self, method, url, body=None, headers=None, retries=3,\n358:        :param retries:\n359:            Number of retries to allow before raising a MaxRetryError exception.\n395:        if retries < 0:\n410:            raise HostChangedError(self, url, retries - 1)\n464:            if retries == 0:\n477:                     \"broken by '%r': %s\" % (retries, err, url))\n478:            return self.urlopen(method, url, body, headers, retries - 1,\n490:                                retries - 1, redirect, assert_same_host,"
+    },
+    {
+      "turn": 3,
+      "role": "tool",
+      "tool_call_id": "call_01_KHjuWg7vawicxdnq1DTu4635",
+      "name": "read_file",
+      "args": {
+        "path": "requests/sessions.py",
+        "offset": 380,
+        "limit": 90
+      },
+      "result": "[Lines 380\u2013468 of 468]\n    def delete(self, url, **kwargs):\n        \"\"\"Sends a DELETE request. Returns :class:`Response` object.\n\n        :param url: URL for the new :class:`Request` object.\n        :param \\*\\*kwargs: Optional arguments that ``request`` takes.\n        \"\"\"\n\n        return self.request('DELETE', url, **kwargs)\n\n    def send(self, request, **kwargs):\n        \"\"\"Send a given PreparedRequest.\"\"\"\n        # It's possible that users might accidentally send a Request object.\n        # Guard against that specific failure case.\n        if getattr(request, 'prepare', None):\n            raise ValueError('You can only send PreparedRequests.')\n\n        # Set up variables needed for resolve_redirects and dispatching of\n        # hooks\n        allow_redirects = kwargs.pop('allow_redirects', True)\n        req = kwargs.pop('req', None)\n        stream = kwargs.get('stream', False)\n        timeout = kwargs.get('timeout')\n        verify = kwargs.get('verify')\n        cert = kwargs.get('cert')\n        proxies = kwargs.get('proxies')\n        hooks = request.hooks\n\n        # Get the appropriate adapter to use\n        adapter = self.get_adapter(url=request.url)\n\n        # Start time (approximately) of the request\n        start = datetime.utcnow()\n        # Send the request\n        r = adapter.send(request, **kwargs)\n        # Total elapsed time of the request (approximately)\n        r.elapsed = datetime.utcnow() - start\n\n        # Response manipulation hooks\n        r = dispatch_hook('response', hooks, r)\n\n        # Redirect resolving generator.\n        gen = self.resolve_redirects(r, request, stream=stream,\n                                     timeout=timeout, verify=verify, cert=cert,\n                                     proxies=proxies)\n\n        # Resolve redirects if allowed.\n        history = [resp for resp in gen] if allow_redirects else []\n\n        # Shuffle things around if there's history.\n        if history:\n            # Insert the first (original) request at the start\n            history.insert(0, r)\n            # Get the last request made\n            r = history.pop()\n            r.history = tuple(history)\n\n        return r\n\n    def get_adapter(self, url):\n        \"\"\"Returns the appropriate connnection adapter for the given URL.\"\"\"\n        for (prefix, adapter) in self.adapters.items():\n\n            if url.startswith(prefix):\n                return adapter\n\n        # Nothing matches :-/\n        raise InvalidSchema(\"No connection adapters were found for '%s'\" % url)\n\n    def close(self):\n        \"\"\"Closes all adapters and as such the session\"\"\"\n        for _, v in self.adapters.items():\n            v.close()\n\n    def mount(self, prefix, adapter):\n        \"\"\"Registers a connection adapter to a prefix.\"\"\"\n        self.adapters[prefix] = adapter\n\n    def __getstate__(self):\n        return dict((attr, getattr(self, attr, None)) for attr in self.__attrs__)\n\n    def __setstate__(self, state):\n        for attr, value in state.items():\n            setattr(self, attr, value)\n\n\ndef session():\n    \"\"\"Returns a :class:`Session` for context-management.\"\"\"\n\n    return Session()\n"
+    },
+    {
+      "turn": 4,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_tEDJBc6Qvff905csezN53204",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"max_retries|retries\", \"path\": \"requests\"}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 4,
+      "role": "tool",
+      "tool_call_id": "call_00_tEDJBc6Qvff905csezN53204",
+      "name": "search",
+      "args": {
+        "pattern": "max_retries|retries",
+        "path": "requests"
+      },
+      "result": "No matches found"
+    },
+    {
+      "turn": 5,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_uuhNhTt9Zdifg1VcPxxD9901",
+          "type": "function",
+          "function": {
+            "name": "search",
+            "arguments": "{\"pattern\": \"max_retries\", \"path\": \"requests/adapters.py\"}"
+          }
+        },
+        {
+          "id": "call_01_CzDK5Jwq7g06Jb5o2GGE4857",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/packages/urllib3/connectionpool.py\", \"offset\": 280, \"limit\": 80}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_00_uuhNhTt9Zdifg1VcPxxD9901",
+      "name": "search",
+      "args": {
+        "pattern": "max_retries",
+        "path": "requests/adapters.py"
+      },
+      "result": "48:        self.max_retries = DEFAULT_RETRIES\n191:                    retries=self.max_retries,"
+    },
+    {
+      "turn": 5,
+      "role": "tool",
+      "tool_call_id": "call_01_CzDK5Jwq7g06Jb5o2GGE4857",
+      "name": "read_file",
+      "args": {
+        "path": "requests/packages/urllib3/connectionpool.py",
+        "offset": 280,
+        "limit": 80
+      },
+      "result": "[Lines 280\u2013359 of 579]\n        try: # Python 2.7+, use buffering of HTTP responses\n            httplib_response = conn.getresponse(buffering=True)\n        except TypeError: # Python 2.6 and older\n            httplib_response = conn.getresponse()\n\n        # AppEngine doesn't have a version attr.\n        http_version = getattr(conn, '_http_vsn_str', 'HTTP/?')\n        log.debug(\"\\\"%s %s %s\\\" %s %s\" % (method, url, http_version,\n                                          httplib_response.status,\n                                          httplib_response.length))\n        return httplib_response\n\n    def close(self):\n        \"\"\"\n        Close all pooled connections and disable the pool.\n        \"\"\"\n        # Disable access to the pool\n        old_pool, self.pool = self.pool, None\n\n        try:\n            while True:\n                conn = old_pool.get(block=False)\n                if conn:\n                    conn.close()\n\n        except Empty:\n            pass # Done.\n\n    def is_same_host(self, url):\n        \"\"\"\n        Check if the given ``url`` is a member of the same host as this\n        connection pool.\n        \"\"\"\n        if url.startswith('/'):\n            return True\n\n        # TODO: Add optional support for socket.gethostbyname checking.\n        scheme, host, port = get_host(url)\n\n        if self.port and not port:\n            # Use explicit default port for comparison when none is given.\n            port = port_by_scheme.get(scheme)\n\n        return (scheme, host, port) == (self.scheme, self.host, self.port)\n\n    def urlopen(self, method, url, body=None, headers=None, retries=3,\n                redirect=True, assert_same_host=True, timeout=_Default,\n                pool_timeout=None, release_conn=None, **response_kw):\n        \"\"\"\n        Get a connection from the pool and perform an HTTP request. This is the\n        lowest level call for making a request, so you'll need to specify all\n        the raw details.\n\n        .. note::\n\n           More commonly, it's appropriate to use a convenience method provided\n           by :class:`.RequestMethods`, such as :meth:`request`.\n\n        .. note::\n\n           `release_conn` will only behave as expected if\n           `preload_content=False` because we want to make\n           `preload_content=False` the default behaviour someday soon without\n           breaking backwards compatibility.\n\n        :param method:\n            HTTP request method (such as GET, POST, PUT, etc.)\n\n        :param body:\n            Data to send in the request body (useful for creating\n            POST requests, see HTTPConnectionPool.post_url for\n            more convenience).\n\n        :param headers:\n            Dictionary of custom headers to send, such as User-Agent,\n            If-None-Match, etc. If None, pool headers are used. If provided,\n            these headers completely replace any pool-specific headers.\n\n        :param retries:\n            Number of retries to allow before raising a MaxRetryError exception.\n"
+    },
+    {
+      "turn": 6,
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_00_VrPa6rb4OaX4FKJkmO0v5228",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/packages/urllib3/connectionpool.py\", \"offset\": 60, \"limit\": 120}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 6,
+      "role": "tool",
+      "tool_call_id": "call_00_VrPa6rb4OaX4FKJkmO0v5228",
+      "name": "read_file",
+      "args": {
+        "path": "requests/packages/urllib3/connectionpool.py",
+        "offset": 60,
+        "limit": 120
+      },
+      "result": "[Lines 60\u2013179 of 579]\nxrange = six.moves.xrange\n\nlog = logging.getLogger(__name__)\n\n_Default = object()\n\nport_by_scheme = {\n    'http': HTTP_PORT,\n    'https': HTTPS_PORT,\n}\n\n\n## Connection objects (extension of httplib)\n\nclass VerifiedHTTPSConnection(HTTPSConnection):\n    \"\"\"\n    Based on httplib.HTTPSConnection but wraps the socket with\n    SSL certification.\n    \"\"\"\n    cert_reqs = None\n    ca_certs = None\n    ssl_version = None\n\n    def set_cert(self, key_file=None, cert_file=None,\n                 cert_reqs=None, ca_certs=None):\n\n        self.key_file = key_file\n        self.cert_file = cert_file\n        self.cert_reqs = cert_reqs\n        self.ca_certs = ca_certs\n\n    def connect(self):\n        # Add certificate verification\n        sock = socket.create_connection((self.host, self.port), self.timeout)\n\n        resolved_cert_reqs = resolve_cert_reqs(self.cert_reqs)\n        resolved_ssl_version = resolve_ssl_version(self.ssl_version)\n\n        # Wrap socket using verification with the root certs in\n        # trusted_root_certs\n        self.sock = ssl_wrap_socket(sock, self.key_file, self.cert_file,\n                                    cert_reqs=resolved_cert_reqs,\n                                    ca_certs=self.ca_certs,\n                                    server_hostname=self.host,\n                                    ssl_version=resolved_ssl_version)\n\n        if resolved_cert_reqs != ssl.CERT_NONE:\n            match_hostname(self.sock.getpeercert(), self.host)\n\n\n## Pool objects\n\nclass ConnectionPool(object):\n    \"\"\"\n    Base class for all connection pools, such as\n    :class:`.HTTPConnectionPool` and :class:`.HTTPSConnectionPool`.\n    \"\"\"\n\n    scheme = None\n    QueueCls = LifoQueue\n\n    def __init__(self, host, port=None):\n        self.host = host\n        self.port = port\n\n    def __str__(self):\n        return '%s(host=%r, port=%r)' % (type(self).__name__,\n                                         self.host, self.port)\n\n\nclass HTTPConnectionPool(ConnectionPool, RequestMethods):\n    \"\"\"\n    Thread-safe connection pool for one host.\n\n    :param host:\n        Host used for this HTTP Connection (e.g. \"localhost\"), passed into\n        :class:`httplib.HTTPConnection`.\n\n    :param port:\n        Port used for this HTTP Connection (None is equivalent to 80), passed\n        into :class:`httplib.HTTPConnection`.\n\n    :param strict:\n        Causes BadStatusLine to be raised if the status line can't be parsed\n        as a valid HTTP/1.0 or 1.1 status line, passed into\n        :class:`httplib.HTTPConnection`.\n\n    :param timeout:\n        Socket timeout for each individual connection, can be a float. None\n        disables timeout.\n\n    :param maxsize:\n        Number of connections to save that can be reused. More than 1 is useful\n        in multithreaded situations. If ``block`` is set to false, more\n        connections will be created but they will not be saved once they've\n        been used.\n\n    :param block:\n        If set to True, no more than ``maxsize`` connections will be used at\n        a time. When no free connections are available, the call will block\n        until a connection has been released. This is a useful side effect for\n        particular multithreaded situations where one does not want to use more\n        than maxsize connections per host to prevent flooding.\n\n    :param headers:\n        Headers to include with all requests, unless other headers are given\n        explicitly.\n    \"\"\"\n\n    scheme = 'http'\n\n    def __init__(self, host, port=None, strict=False, timeout=None, maxsize=1,\n                 block=False, headers=None):\n        ConnectionPool.__init__(self, host, port)\n        RequestMethods.__init__(self, headers)\n\n        self.strict = strict\n        self.timeout = timeout\n        self.pool = self.QueueCls(maxsize)\n        self.block = block\n"
+    },
+    {
+      "turn": 7,
+      "role": "assistant",
+      "content": "I now have a clear picture of the issue. Let me verify the exact code that needs changing in `requests/adapters.py`.",
+      "tool_calls": [
+        {
+          "id": "call_00_WbNENZPexnzsHftruHyV2932",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"requests/adapters.py\", \"offset\": 44, \"limit\": 12}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 7,
+      "role": "tool",
+      "tool_call_id": "call_00_WbNENZPexnzsHftruHyV2932",
+      "name": "read_file",
+      "args": {
+        "path": "requests/adapters.py",
+        "offset": 44,
+        "limit": 12
+      },
+      "result": "[Lines 44\u201355 of 242]\n\nclass HTTPAdapter(BaseAdapter):\n    \"\"\"Built-In HTTP Adapter for Urllib3.\"\"\"\n    def __init__(self, pool_connections=DEFAULT_POOLSIZE, pool_maxsize=DEFAULT_POOLSIZE):\n        self.max_retries = DEFAULT_RETRIES\n        self.config = {}\n\n        super(HTTPAdapter, self).__init__()\n\n        self.init_poolmanager(pool_connections, pool_maxsize)\n\n    def init_poolmanager(self, connections, maxsize):\n"
+    },
+    {
+      "turn": 8,
+      "role": "assistant",
+      "content": "I've confirmed the issue. In `requests/adapters.py`, `HTTPAdapter.__init__` hardcodes `self.max_retries = DEFAULT_RETRIES` with no parameter to override it. The `send` method already passes `retries=self.max_retries` to `conn.urlopen` (line 191), so the fix is simply to add a `max_retries` parameter to `HTTPAdapter.__init__` so users can configure it (e.g., via `HTTPAdapter(max_retries=10)` when mounting an adapter on a session). This restores the pre-v1.0 capability.",
+      "tool_calls": [
+        {
+          "id": "call_00_rKPnAvuoKCb4OC1ZOFQI8976",
+          "type": "function",
+          "function": {
+            "name": "submit_answer",
+            "arguments": "{\"files\": [\"requests/adapters.py\"]}"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "turn": 8,
+      "role": "tool",
+      "tool_call_id": "call_00_rKPnAvuoKCb4OC1ZOFQI8976",
+      "name": "submit_answer",
+      "args": {
+        "files": [
+          "requests/adapters.py"
+        ]
+      },
+      "result": "Answer submitted."
+    }
+  ]
+}
