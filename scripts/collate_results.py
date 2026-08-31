@@ -2,8 +2,29 @@
 Collate all trial results into a unified DataFrame and produce summary statistics.
 
 Outputs:
-  results_all.csv              — one row per trial
-  results_summary_tables.txt   — all summary tables (labelled sections)
+  study_0/results_all.csv              — one row per trial
+  study_0/results_summary_tables.txt   — all summary tables (labelled sections)
+
+Paths point at study_0/ -- the 2026-07-12 archival moved results/, logs/,
+and this script's original outputs there, but the script itself was never
+updated to match (it originally pointed at repo-root results/, from before
+the multi-repo harness rewrite existed).
+
+Cost columns (cached_tokens, cost_usd, cost_usd_uncached): Study 0's raw
+per-trial JSON has no total_cached_tokens field at all (that's a Study 1+
+harness addition), so cached_tokens is reconstructed here from the matching
+raw_responses_*.jsonl log in study_0/logs/ -- summing each turn's
+usage.prompt_tokens_details.cached_tokens, the same way total_input_tokens
+in the trial JSON is itself a sum of each turn's usage.prompt_tokens
+(confirmed by direct comparison: summing prompt_tokens across a trial's log
+reproduces its metrics.total_input_tokens exactly). cost_usd/
+cost_usd_uncached are recomputed from models/model_costs.xlsx via the same
+compute_actual_cost() formula as scripts/compile_results.py (Study 1) --
+cost_usd_uncached is the same trial priced as if no caching discount
+applied (cached_tokens forced to 0), for measuring caching's actual saving.
+Verified against the already-existing study_0/results_all.csv (built by an
+earlier, undocumented one-off run of this same logic) before this script
+existed in its current form: exact match on a spot-checked row.
 
 Usage:
     python3 scripts/collate_results.py
@@ -18,9 +39,13 @@ import sys
 import pandas as pd
 
 _ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RESULTS_DIR = os.path.join(_ROOT, "results")
-OUT_CSV     = os.path.join(_ROOT, "results_all.csv")
-OUT_TABLES  = os.path.join(_ROOT, "results_summary_tables.txt")
+STUDY0_DIR  = os.path.join(_ROOT, "study_0")
+RESULTS_DIR = os.path.join(STUDY0_DIR, "results")
+LOGS_DIR    = os.path.join(STUDY0_DIR, "logs")
+OUT_CSV     = os.path.join(STUDY0_DIR, "results_all.csv")
+OUT_TABLES  = os.path.join(STUDY0_DIR, "results_summary_tables.txt")
+OUT_STATS   = os.path.join(STUDY0_DIR, "results_summary_stats.csv")
+MODEL_COSTS_XLSX = os.path.join(_ROOT, "models", "model_costs.xlsx")
 
 # ── model metadata ────────────────────────────────────────────────────────────
 
@@ -64,7 +89,109 @@ PAIR_NAMES = {
     6: "GLM-4.7",
 }
 
+# folder -> exact row name in models/model_costs.xlsx's "Model" column
+MODEL_TO_PRICE_ROW = {
+    "deepinfra_Qwen_Qwen3-VL-30B-A3B-Instruct":            "Qwen3-VL-30B-A3B-Instruct",
+    "deepinfra_Qwen_Qwen3-VL-235B-A22B-Instruct":          "Qwen3-VL-235B-A22B-Instruct",
+    "fireworks_ai_accounts_fireworks_models_gpt-oss-20b":  "gpt-oss-20b",
+    "fireworks_ai_accounts_fireworks_models_gpt-oss-120b": "gpt-oss-120b",
+    "mistral_ministral-3b-latest":                         "ministral-3b",
+    "mistral_ministral-14b-latest":                        "ministral-14b",
+    "deepseek_deepseek-v4-flash":                          "deepseek-v4-flash",
+    "deepseek_deepseek-v4-pro":                            "deepseek-v4-pro",
+    "deepinfra_nvidia_Nemotron-3-Nano-30B-A3B":            "Nemotron-3-Nano-30B-A3B",
+    "deepinfra_nvidia_NVIDIA-Nemotron-3-Super-120B-A12B":  "Nemotron-3-Super-120B-A12B",
+    "deepinfra_zai-org_GLM-4.7-Flash":                     "GLM-4.7-Flash",
+    "deepinfra_zai-org_GLM-4.7":                           "GLM-4.7",
+}
+
 FILE_PAT = re.compile(r"^task_(\d+)_(none|ast|ast_compact)_rep(\d+)\.json$")
+
+
+# ── cost recomputation (models/model_costs.xlsx) ────────────────────────────────
+
+def load_price_lookup():
+    """{price_row_name: {"input": $/1M, "cached": $/1M, "output": $/1M}}.
+
+    Falls back to the input-token rate when the sheet has no cached-price
+    entry (NaN) -- assumes no caching discount rather than guessing one.
+    Same logic as scripts/compile_results.py's load_price_lookup(), ported
+    here rather than imported since the two scripts key by different model
+    identifiers (this one by folder name, that one by litellm model string).
+    """
+    prices = pd.read_excel(MODEL_COSTS_XLSX)
+    by_name = prices.set_index("Model")[["Input Tokens", "Cached Tokens", "Output Tokens"]].to_dict("index")
+    lookup = {}
+    for folder, price_row_name in MODEL_TO_PRICE_ROW.items():
+        if price_row_name not in by_name:
+            raise KeyError(f"'{price_row_name}' (needed for {folder}) not found in {MODEL_COSTS_XLSX}")
+        row = by_name[price_row_name]
+        cached_price = row["Cached Tokens"]
+        lookup[folder] = {
+            "input":  row["Input Tokens"],
+            "cached": cached_price if pd.notna(cached_price) else row["Input Tokens"],
+            "output": row["Output Tokens"],
+        }
+    return lookup
+
+
+def compute_actual_cost(price_lookup, folder, input_tokens, cached_tokens, output_tokens):
+    """USD cost recomputed from models/model_costs.xlsx, in $/1M tokens.
+    total_input_tokens (the raw usage.prompt_tokens sum) includes any cached
+    tokens as a subset, not in addition to them, so the uncached portion is
+    the difference, not the full input count."""
+    p = price_lookup[folder]
+    cached = cached_tokens or 0
+    uncached_input = input_tokens - cached
+    cost = (uncached_input * p["input"] + cached * p["cached"] + output_tokens * p["output"]) / 1e6
+    return round(cost, 6)
+
+
+def sum_cached_tokens(folder, task_idx, map_type, rep):
+    """Sum usage.prompt_tokens_details.cached_tokens across the turns of a
+    trial's raw response log.
+
+    The log file is append-only across retries: run_batch.py's retry logic
+    (up to 2 retries, 30s backoff) re-runs a failed trial into the SAME log
+    path rather than truncating it first, so a log with a crashed first
+    attempt contains multiple complete "turn_0 ... final_answer" sequences
+    back to back -- only the last one corresponds to the attempt that
+    actually produced the saved result JSON. Detected by treating a
+    recurrence of the "turn_0" label as the start of a new attempt and
+    keeping only lines from the last such marker onward. Verified against
+    metrics.total_input_tokens/total_output_tokens (which are only ever the
+    successful attempt's own totals): summing prompt_tokens/
+    completion_tokens over just the last block reproduces those exactly,
+    summing the whole file does not (confirmed on a multi-attempt log where
+    naively summing the whole file overcounted cached_tokens by ~3x).
+
+    Returns 0 (with a warning) if the log is missing rather than raising,
+    since a handful of early trials predate consistent logging -- matches
+    load_results()'s existing warn-and-continue convention for missing/
+    unreadable files."""
+    log_path = os.path.join(LOGS_DIR, f"raw_responses_{folder}_{task_idx}_{map_type}_rep{rep}.jsonl")
+    if not os.path.isfile(log_path):
+        print(f"WARNING: no log file for cached-token reconstruction: {log_path}", file=sys.stderr)
+        return 0
+    try:
+        with open(log_path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+    except Exception as e:
+        print(f"WARNING: could not read {log_path}: {e}", file=sys.stderr)
+        return 0
+
+    last_attempt_start = 0
+    for i, rec in enumerate(records):
+        if rec.get("_label") == "turn_0":
+            last_attempt_start = i
+    last_attempt = records[last_attempt_start:]
+
+    total_cached = 0
+    for rec in last_attempt:
+        usage = rec.get("usage") or {}
+        ptd = usage.get("prompt_tokens_details") or {}
+        total_cached += ptd.get("cached_tokens") or 0
+    return total_cached
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -93,9 +220,49 @@ def _short(model_dir):
     }.get(model_dir, model_dir)
 
 
+EMPTY_PREDICTIONS_AUDIT_CSV = os.path.join(STUDY0_DIR, "logs", "empty_predictions_audit.csv")
+
+
+def load_category_b_corrections():
+    """Category B trials (scripts/audit_empty_predictions.py): the model
+    answered correctly in message content, but FINAL_ANSWER_PROMPT fired
+    anyway and overwrote it with an empty final_files_predicted. Recovered
+    predictions are re-scored here with plain set-based precision/recall/F1
+    (matching the audit script's own "would-be F1" convention) rather than
+    harness/run_trial.py's scorable_files()-filtered scoring -- that filter
+    (package-scope + source-file exclusion) was introduced for the later
+    multi-repo panel and it's not established that Study 0's original
+    single-repo (requests) scoring used it, so matching the audit's own
+    simpler convention is the more defensible choice than guessing.
+
+    Returns {(model_dir, task_idx, map_type, rep): (precision, recall, f1, recovered_pred_list)}.
+    """
+    if not os.path.isfile(EMPTY_PREDICTIONS_AUDIT_CSV):
+        return {}
+    audit = pd.read_csv(EMPTY_PREDICTIONS_AUDIT_CSV)
+    audit = audit[audit["category"] == "B"]
+    corrections = {}
+    for _, row in audit.iterrows():
+        model_dir = row["model"].replace("/", "_")
+        pred_list = json.loads(row["recovered_prediction"])
+        pred = set(pred_list)
+        gt   = set(json.loads(row["ground_truth"]))
+        if not gt or not pred:
+            continue
+        tp = len(pred & gt)
+        precision = tp / len(pred)
+        recall    = tp / len(gt)
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+        key = (model_dir, int(row["task_idx"]), row["map_type"], int(row["rep"]))
+        corrections[key] = (round(precision, 4), round(recall, 4), round(f1, 4), pred_list)
+    return corrections
+
+
 # ── load data ─────────────────────────────────────────────────────────────────
 
 def load_results():
+    price_lookup = load_price_lookup()
+    corrections = load_category_b_corrections()
     rows = []
     for folder in FOLDERS:
         folder_path = os.path.join(RESULTS_DIR, folder)
@@ -119,27 +286,64 @@ def load_results():
             pred    = d.get("final_files_predicted") or []
             gt      = d.get("ground_truth") or []
 
+            task_idx = d.get("task_idx")
+            map_type = d.get("map_type")
+            rep      = d.get("rep")
+            input_tokens  = metrics.get("total_input_tokens")
+            output_tokens = metrics.get("total_output_tokens")
+
+            cached_tokens = sum_cached_tokens(folder, task_idx, map_type, rep)
+            cost_usd = (compute_actual_cost(price_lookup, folder, input_tokens, cached_tokens, output_tokens)
+                        if input_tokens is not None and output_tokens is not None else None)
+            cost_usd_uncached = (compute_actual_cost(price_lookup, folder, input_tokens, 0, output_tokens)
+                                  if input_tokens is not None and output_tokens is not None else None)
+
+            # Category B correction (see load_category_b_corrections): only
+            # ever overrides a trial that was actually empty -- never
+            # touches a trial that already had a real prediction, even if
+            # its key happens to collide (it won't, since the audit only
+            # emits rows for trials that were empty at audit time).
+            prediction_corrected = False
+            precision, recall, f1 = scores.get("precision"), scores.get("recall"), scores.get("f1")
+            if _is_empty(pred):
+                correction_key = (folder, task_idx, map_type, rep)
+                if correction_key in corrections:
+                    precision, recall, f1, recovered_pred = corrections[correction_key]
+                    prediction_corrected = True
+                    # Also swap in the recovered list itself so
+                    # empty_prediction/n_predicted_files (derived from
+                    # pred below) reflect the correction consistently,
+                    # rather than reporting corrected scores against a
+                    # still-empty predicted-files count.
+                    pred = recovered_pred
+
             rows.append({
                 # identity
                 "model_dir":   folder,
                 "model_short": _short(folder),
                 "model":       d.get("model", ""),
-                "task_idx":    d.get("task_idx"),
-                "map_type":    d.get("map_type"),
-                "rep":         d.get("rep"),
+                "task_idx":    task_idx,
+                "map_type":    map_type,
+                "rep":         rep,
                 "issue_title": d.get("issue_title", ""),
                 "base_commit": d.get("base_commit", ""),
                 # metrics
-                "input_tokens":  metrics.get("total_input_tokens"),
-                "output_tokens": metrics.get("total_output_tokens"),
+                "input_tokens":  input_tokens,
+                "output_tokens": output_tokens,
                 "cost":          metrics.get("total_cost"),
                 "turns":         metrics.get("num_turns"),
                 "wall_time":     metrics.get("wall_time_seconds"),
                 "stop_reason":   metrics.get("stop_reason", ""),
-                # scores
-                "precision": scores.get("precision"),
-                "recall":    scores.get("recall"),
-                "f1":        scores.get("f1"),
+                # cost (recomputed from models/model_costs.xlsx; see module docstring)
+                "cached_tokens":      cached_tokens,
+                "cost_usd":           cost_usd,
+                "cost_usd_uncached":  cost_usd_uncached,
+                # scores (Category B corrected in place when applicable --
+                # see load_category_b_corrections and prediction_corrected)
+                "precision": precision,
+                "recall":    recall,
+                "f1":        f1,
+                "prediction_corrected": prediction_corrected,
                 # derived
                 "empty_prediction":   _is_empty(pred),
                 "n_predicted_files":  len([p for p in pred if (p or "").strip()]),
@@ -286,15 +490,24 @@ def summary_efficiency(df, out):
     order = [_short(f) for f in FOLDERS]
 
     # Mean turns per model
+    # cost_usd (recomputed from models/model_costs.xlsx) is used here, not
+    # the raw harness-recorded "cost" column -- litellm silently returns
+    # $0 for several of these models (no pricing entry for that model
+    # string), so raw "cost" reads as exactly 0.000 for 8 of the 12 models.
+    # cost_usd_uncached is shown alongside to make caching's actual saving
+    # visible per model.
     out.write("Mean turns per model:\n")
-    eff = (df.groupby("model_short")[["turns", "wall_time", "input_tokens", "output_tokens", "cost"]]
+    eff = (df.groupby("model_short")[["turns", "wall_time", "input_tokens", "output_tokens",
+                                       "cached_tokens", "cost_usd", "cost_usd_uncached"]]
              .mean()
-             .round(2)
+             .round(4)
              .reset_index())
     eff["model_short"] = pd.Categorical(eff["model_short"], categories=order, ordered=True)
     eff = eff.sort_values("model_short")
     out.write(_fmt(eff))
-    out.write("\n(Note: wall_time not comparable across providers — API latency varies)\n")
+    out.write("\n(Note: wall_time not comparable across providers — API latency varies.\n"
+              " cost_usd is recomputed from models/model_costs.xlsx -- the raw harness\n"
+              " 'cost' field is unreliable, silently $0 for models litellm has no price for.)\n")
 
     # Mean turns and tokens per map condition
     out.write("\nMean turns / input_tokens / output_tokens per map condition:\n")
@@ -394,6 +607,58 @@ def summary_map_effect(df, out):
     out.write("\n")
 
 
+# ── full summary statistics (cost / time / tokens / performance) ───────────────
+
+STATS_METRICS = {
+    # (column, human label, group) -- group is just for readability in the CSV
+    "cost_usd":          ("Cost (USD)", "cost"),
+    "cost_usd_uncached": ("Cost, no caching discount (USD)", "cost"),
+    "wall_time":         ("Wall time (s)", "time"),
+    "turns":             ("Turns", "time"),
+    "input_tokens":      ("Input tokens", "tokens"),
+    "cached_tokens":     ("Cached tokens", "tokens"),
+    "output_tokens":     ("Output tokens", "tokens"),
+    "precision":         ("Precision", "performance"),
+    "recall":            ("Recall", "performance"),
+    "f1":                ("F1", "performance"),
+}
+
+
+def _describe(series):
+    s = series.dropna()
+    return {
+        "n":      len(s),
+        "min":    s.min(),
+        "q1":     s.quantile(0.25),
+        "median": s.median(),
+        "mean":   s.mean(),
+        "std":    s.std(),
+        "q3":     s.quantile(0.75),
+        "max":    s.max(),
+    }
+
+
+def compute_full_stats(df):
+    """Long-format summary stats table: one row per (metric, model), plus
+    one 'Overall' row per metric pooling all 900 trials. n/min/q1/median/
+    mean/std/q3/max -- q1/q3 pair directly with the boxplot figures
+    (figures/study0_cost_boxplot.png etc.), n is included for transparency
+    even though it's a constant 75/model, 900 overall."""
+    order = [_short(f) for f in FOLDERS]
+    rows = []
+    for col, (label, group) in STATS_METRICS.items():
+        overall = _describe(df[col])
+        rows.append({"metric": label, "group": group, "model_short": "Overall", **overall})
+        for model_short in order:
+            sub = df[df["model_short"] == model_short]
+            rows.append({"metric": label, "group": group, "model_short": model_short,
+                         **_describe(sub[col])})
+    stats_df = pd.DataFrame(rows)
+    for c in ["min", "q1", "median", "mean", "std", "q3", "max"]:
+        stats_df[c] = stats_df[c].round(6)
+    return stats_df
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -423,6 +688,12 @@ def main():
     with open(OUT_TABLES, "w", encoding="utf-8") as f:
         f.write(output)
     print(f"Saved summary tables → {OUT_TABLES}")
+
+    # Full summary statistics -- min/q1/median/mean/std/q3/max per metric,
+    # per model + overall, for direct use in report text.
+    stats_df = compute_full_stats(df)
+    stats_df.to_csv(OUT_STATS, index=False)
+    print(f"Saved full summary statistics → {OUT_STATS}")
 
 
 if __name__ == "__main__":

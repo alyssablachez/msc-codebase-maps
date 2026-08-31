@@ -19,9 +19,13 @@ import re
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RESULTS_DIR = os.path.join(_ROOT, "results")
-LOGS_DIR    = os.path.join(_ROOT, "logs")
-OUT_CSV     = os.path.join(_ROOT, "logs", "empty_predictions_audit.csv")
+# Paths point at study_0/ -- the 2026-07-12 archival moved results/ and
+# logs/ there (same fix already applied to scripts/collate_results.py);
+# this script was never updated to match, so it was silently auditing 16
+# stale pre-archival files instead of the real 1213-file dataset.
+RESULTS_DIR = os.path.join(_ROOT, "study_0", "results")
+LOGS_DIR    = os.path.join(_ROOT, "study_0", "logs")
+OUT_CSV     = os.path.join(_ROOT, "study_0", "logs", "empty_predictions_audit.csv")
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
