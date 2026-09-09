@@ -3054,3 +3054,84 @@ Thirty-one issues now case-studied. `data/issue_case_study_notes.csv`,
 `data/model_failure_points.md`, and `scripts/run_replication_check.py`
 all modified this session; committing together after this entry.
 
+## 2026-08-09
+## Finishing All 45 Case Studies: Entries #51-56, and Two Corrections to Earlier Entries
+
+Worked the remaining fourteen issues -- `thefuck/5`, `rich/8`,
+`core/20`, `requests/13`, `core/16`, `keras/9`, `flask/6`, `scrapy/20`,
+`yt-dlp/23`, `stable-diffusion-webui/0`, `transformers/25`, `rich/1`,
+`scikit-learn/49`, `scikit-learn/5` -- closing out
+`data/issue_case_study_notes.csv` (all 45 rows now filled) and adding
+entries #51-56.
+
+- **`thefuck/5`** found gpt-oss auto-capitalizing the first path
+  segment of its own submitted paths (`Thefuck/shells.py` instead of
+  `thefuck/shells.py`), initially logged as tied to the repo's
+  informal name (#51). `keras/9`, an unrelated and ordinarily-named
+  repo, independently surfaced the identical bug, prompting a full
+  45-issue dataset-wide scan that corrected #51's framing: 36/1,620
+  (2.2%) of all gpt-oss trials, concentrated in exactly 3 of 15 repos
+  (`thefuck`, `keras`, `pandas`), zero elsewhere, zero for the other 3
+  models -- a real, if repo-concentrated, dataset-wide pattern, not a
+  naming-convention artifact.
+- **`core/20`** (#52): Ministral localizes to the *exact* fix line in
+  8/9 empty trials, then reasons itself out of submitting -- an
+  externally-rooted cause (OpenSSL version) gets misread as "no source
+  change needed." A new failure category distinct from touch-vs-kept
+  and from malformed-submission bugs.
+- **`requests/13`** (#53): Nemotron produces a distinct malformed
+  `submit_answer` *key* (not just malformed content), burying a
+  correct answer inside `{"[\"files\"]": "..."}`. Confirmed
+  dataset-wide at 10/6,480 trials, exclusively Nemotron, one instance
+  showing literal XML `<parameter>` tag fragments bleeding into the
+  JSON. Also notable on this issue: DeepSeek's `ast_compact` condition
+  beats baseline on both turns *and* total tokens for the same F1, a
+  genuine net efficiency win rather than just a turn-count artifact.
+- **`flask/6`, `scrapy/20`, `stable-diffusion-webui/0`**: three of the
+  cleanest issues in the dataset (140-144/144 correct, near-zero
+  wrong-file guesses), which turned out to be the best evidence for
+  two new mechanisms precisely because there's so little genuine
+  reasoning difficulty to confound them.
+- **Entry #54** (new): a forced "you must respond with a tool call"
+  continuation -- triggered whenever a trial ends with a text-only,
+  no-tool-call turn -- can corrupt or lose an answer the model had
+  already gotten right in plain text. Found first on `rich/1`
+  (gpt-oss, Study 3, two different corruption shapes: a fabricated
+  placeholder path and a spurious leading slash), then confirmed as a
+  general harness behavior rather than a Study-3-submit-gate quirk
+  when `scikit-learn/49` reproduced it in a non-gated Study 2
+  condition -- including a case where the forced continuation
+  reproduces entry #34's garbled-content shape exactly, and a case
+  where it produces nothing at all.
+- **Entry #55** (new, then substantially expanded): DeepSeek given a
+  full per-function line-number map (`ast_compact`) on
+  `stable-diffusion-webui/0` takes 2.6x longer than baseline, paging
+  through the map's offsets one at a time instead of reading the small
+  file once. A dataset-wide ratio scan across all 4 models confirmed
+  this is shared with gpt-oss (not DeepSeek-exclusive) via matching
+  instances on `scikit-learn/5` and `scrapy/20`, while Nemotron proved
+  structurally immune. gpt-oss additionally shows its own distinct
+  mechanism on `yt-dlp/23` -- six literally identical `read_file` calls
+  in one trial, the highest turn-inflation ratio found anywhere in the
+  dataset, apparently from not trusting or retaining its own prior
+  tool results.
+- **Entry #56** (new): Ministral's own high-ratio `ast_compact` outlier
+  (`gpt-engineer/12`) traces to a different mechanism entirely -- the
+  map surfaces multiple structurally-similar candidate files, and
+  Ministral commits to the wrong one in one of three reps, a real
+  scored miss rather than pure overhead.
+- **Correction**: a wider scan while building entry #53 revealed one
+  of `flask/6`'s three apparent Nemotron "touch-vs-kept" misses
+  (`all_tools` rep1) was actually an entry #53 malformed-key case
+  misread as a genuine non-submission -- corrected in both the entry
+  and the touch-vs-kept family note.
+- **Update**: entry #35 (Ministral's malformed-tool-call-name bug)
+  gained its most severe instance yet from `scikit-learn/5` -- a
+  30-turn trial hitting `max_turns` with *every single tool call*
+  malformed, zero successful reads or searches the entire trial.
+
+### Status
+All 45 issues now case-studied; `data/issue_case_study_notes.csv` is
+complete. 56 entries in `data/model_failure_points.md`. Committed as
+`cd3a2288` alongside a new `CASE_STUDY_WORKFLOW.md` reference doc.
+

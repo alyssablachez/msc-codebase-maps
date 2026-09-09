@@ -106,7 +106,7 @@ def main():
 
     ax.set_xscale("log")
     ax.set_ylim(bottom=0)
-    ax.set_xlabel("Lines of Code (log scale)", fontsize=13)
+    ax.set_xlabel("Python Lines of Code (log scale)", fontsize=13)
     ax.set_ylabel("Number of Issues", fontsize=13)
     ax.tick_params(axis="both", labelsize=11)
     for spine in ("top", "right"):

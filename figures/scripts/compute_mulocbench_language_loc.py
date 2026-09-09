@@ -1,10 +1,7 @@
 """
 Per-repo, per-language LoC across the MULocBench benchmark, bucketed into
-small/medium/large by total LoC -- recreates explore_dataset.ipynb's
-size-tiered language-breakdown cells (bucket(total): <10k small, <100k
-medium, else large -- MULocBench's own generic bucketing, independent of
-this study's small/medium/large panel tiers, which use different
-thresholds and a different repo set).
+small/medium/large by total LoC: small < 15k, medium 15k-150k, large >= 150k
+-- an even three-way split of the 46-repo pool (15/16/15).
 
 Reads study_0/results/loc_by_language.json.
 Writes figures/data/mulocbench_language_loc.csv (long format: repo, size,
@@ -23,9 +20,9 @@ OUT_CSV = os.path.join(_ROOT, "figures", "data", "mulocbench_language_loc.csv")
 
 
 def bucket(total):
-    if total < 10_000:
+    if total < 15_000:
         return "small"
-    elif total < 100_000:
+    elif total < 150_000:
         return "medium"
     return "large"
 

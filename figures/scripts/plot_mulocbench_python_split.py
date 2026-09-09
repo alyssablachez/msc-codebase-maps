@@ -10,12 +10,13 @@ import os
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_CSV = os.path.join(_ROOT, "figures", "data", "mulocbench_python_split.csv")
 
 SIZE_ORDER = ["small", "medium", "large"]
-SIZE_TITLE = {"small": "Small (< 10k LoC)", "medium": "Medium (10k–100k LoC)", "large": "Large (≥ 100k LoC)"}
+SIZE_TITLE = {"small": "Small (< 15k LoC)", "medium": "Medium (15k–150k LoC)", "large": "Large (≥ 150k LoC)"}
 SIZE_FILE = {
     "small": "mulocbench_python_split_small.png",
     "medium": "mulocbench_python_split_medium.png",
@@ -24,6 +25,12 @@ SIZE_FILE = {
 
 PYTHON_COLOR = "#2a78d6"  # slot 1, blue
 OTHER_COLOR = "#c3c2b7"   # muted gray
+
+# Label-colour threshold -- reserved status colours (skill: dataviz,
+# references/palette.md), distinct from the categorical bar colours above.
+PCT_THRESHOLD = 80
+GOOD_COLOR = "#0ca30c"
+BAD_COLOR = "#d03b3b"
 
 
 def main():
@@ -43,9 +50,10 @@ def main():
                 label="Other languages", zorder=3)
 
         for yi, (_, row) in zip(y, sub.iterrows()):
+            label_color = GOOD_COLOR if row["pct_python"] >= PCT_THRESHOLD else BAD_COLOR
             ax.annotate(f"{row['pct_python']:.1f}%", xy=(row["total_loc"], yi),
                         xytext=(6, 0), textcoords="offset points",
-                        va="center", fontsize=9.5, color="#52514e")
+                        va="center", fontsize=9.5, color=label_color, fontweight="bold")
 
         ax.set_yticks(list(y))
         ax.set_yticklabels(sub["repo"], fontsize=10.5)
@@ -57,7 +65,21 @@ def main():
             ax.spines[spine].set_visible(False)
         for spine in ("left", "bottom"):
             ax.spines[spine].set_color("#c3c2b7")
-        ax.legend(frameon=False, loc="lower right", fontsize=10.5)
+
+        bar_handles = [
+            mpatches.Patch(color=PYTHON_COLOR, label="Python (.py)"),
+            mpatches.Patch(color=OTHER_COLOR, label="Other languages"),
+        ]
+        label_handles = [
+            mpatches.Patch(color=GOOD_COLOR, label=f"≥ {PCT_THRESHOLD}% Python"),
+            mpatches.Patch(color=BAD_COLOR, label=f"< {PCT_THRESHOLD}% Python"),
+        ]
+        legend1 = ax.legend(handles=bar_handles, frameon=False, loc="lower right",
+                             fontsize=10.5, title="Bar", title_fontsize=10.5)
+        ax.add_artist(legend1)
+        ax.legend(handles=label_handles, frameon=False, loc="lower right",
+                  bbox_to_anchor=(1, 0.16), fontsize=10.5, title="% label",
+                  title_fontsize=10.5, labelcolor=[GOOD_COLOR, BAD_COLOR])
 
         fig.tight_layout()
         fig.savefig(out_png, dpi=300, bbox_inches="tight")

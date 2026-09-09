@@ -35,6 +35,19 @@ issuing several tool calls to the same file counts once, not once per
 call). 0 if never touched -- not "na" -- so the column stays directly
 summable/averageable.
 
+submitted: whether gt_file appears (case-insensitively) in the trial's
+final_files_predicted, independent of first_touch_turn. Added per user
+request 2026-09-01: a trial can name the right file in its final answer
+without ever having called read_file/lookup_* on it at all (a correct
+blind guess, e.g. pattern-matched from the issue text) -- confirmed this
+happens in 146/7,111 (2.1%) of otherwise-"never touched" rows, small but
+real. Kept as its own column rather than folded into first_touch_turn/
+"touched", since "did the model investigate this file" and "did the
+model ever name this file" are genuinely different questions -- the
+former is what the rest of this project's navigation-mechanism findings
+(e.g. why the Study 3 submit-gate raises touch rates) are actually
+about, and collapsing the two would erase that distinction.
+
 Usage:
     python3 scripts/gt_file_touch_timing.py
     python3 scripts/gt_file_touch_timing.py --out data/gt_file_touch_timing.csv
@@ -112,6 +125,8 @@ def main():
             n_skipped += 1
             continue
 
+        predicted_lower = {p.lower() for p in (d.get("final_files_predicted") or [])}
+
         n_trials += 1
         for gt_file in gt_files:
             turns = touch_turns_for_file(transcript, gt_file)
@@ -125,6 +140,7 @@ def main():
                 "gt_file": gt_file,
                 "first_touch_turn": first_touch_turn,
                 "turns_touched": turns_touched,
+                "submitted": gt_file.lower() in predicted_lower,
             })
 
     print(f"{n_trials} trials processed, {n_skipped} skipped (malformed/missing fields)")
@@ -132,7 +148,7 @@ def main():
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     fieldnames = ["model", "repo", "issue_idx", "map_type", "rep",
-                  "gt_file", "first_touch_turn", "turns_touched"]
+                  "gt_file", "first_touch_turn", "turns_touched", "submitted"]
     import csv
     with open(args.out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")

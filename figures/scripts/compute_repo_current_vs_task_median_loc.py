@@ -13,15 +13,22 @@ re-walked. Deep-Live-Cam/open-interpreter are walked fresh (small repos,
 fast) since they were never in that file.
 
 Median-task LoC: the 13 unchanged + core + transformers from
-repo_maps/map_generation_stats.csv (final-panel issues); Deep-Live-Cam/
-open-interpreter from figures/data/panel_composition_loc.csv's
-panel=="original" rows (their original 3 sampled issues -- see
-compute_panel_loc.py for how that was built).
+repo_maps/map_generation_stats.csv (final-panel issues, already computed
+via generate_all_maps.py's count_loc()). Deep-Live-Cam/open-interpreter
+are computed fresh here with that exact same function (imported directly,
+not reimplemented) against their original 3 sampled issues' base_commits
+-- NOT read from figures/data/panel_composition_loc.csv, which uses a
+different counting method (non-blank lines, skip-dirs applied) and would
+make these two rows inconsistent with the other 15 on the "median task"
+side while being consistent on the "current" side. See DEVLOG-equivalent
+note in compute_mulocbench_repo_stats.py for the broader LoC-source audit
+this fix came out of.
 
 Usage:
     python3 figures/scripts/compute_repo_current_vs_task_median_loc.py
 """
 import os
+import pickle
 import sys
 
 import pandas as pd
@@ -29,12 +36,14 @@ import pandas as pd
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_ROOT, "scripts"))
 from package_resolver import resolve_package_dir  # noqa: E402
+from generate_all_maps import count_loc, pkg_tree_path  # noqa: E402
 
 OUT_CSV = os.path.join(_ROOT, "figures", "data", "repo_current_vs_task_median_loc.csv")
+PKL_FILE = os.path.join(_ROOT, "data", "all_issues_with_pr_commit_comment_all_project_0922.pkl")
 
 EXTRA_REPOS = {
-    "Deep-Live-Cam":    ("repos/deep_live_cam_full", "modules"),
-    "open-interpreter": ("repos/open_interpreter_full", "interpreter"),
+    "Deep-Live-Cam":    ("repos/deep_live_cam_full", "modules", [1, 11, 0]),
+    "open-interpreter": ("repos/open_interpreter_full", "interpreter", [5, 1, 0]),
 }
 
 SKIP_DIRS = {
@@ -76,14 +85,23 @@ def main():
             "current_loc": int(current_loc), "median_task_loc": int(row["python_loc"]),
         })
 
-    panel_loc = pd.read_csv(os.path.join(_ROOT, "figures", "data", "panel_composition_loc.csv"))
-    for repo, (rel_dir, pkg_name) in EXTRA_REPOS.items():
+    with open(PKL_FILE, "rb") as f:
+        pkl_df = pd.DataFrame(pickle.load(f))
+
+    for repo, (rel_dir, pkg_name, issue_idxs) in EXTRA_REPOS.items():
         repo_dir = os.path.join(_ROOT, rel_dir)
         pkg_dir = resolve_package_dir(repo_dir, pkg_name)
         current_loc = count_loc_on_disk(pkg_dir)
 
-        orig = panel_loc[(panel_loc["repo"] == repo) & (panel_loc["panel"] == "original")]
-        median_task_loc = int(orig["python_loc"].median())
+        subset = pkl_df[pkl_df["repo_name"] == repo].reset_index(drop=True)
+        task_locs = []
+        for idx in issue_idxs:
+            base_commit = subset.iloc[idx]["base_commit"]
+            tree_path = pkg_tree_path(repo_dir, base_commit, pkg_name)
+            py_loc, _tot_loc = count_loc(repo_dir, base_commit, tree_path)
+            task_locs.append(py_loc)
+        median_task_loc = int(pd.Series(task_locs).median())
+        print(f"  {repo} per-issue python_loc: {task_locs}")
 
         rows.append({
             "repo": repo, "tier": "removed",

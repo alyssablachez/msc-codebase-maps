@@ -47,10 +47,20 @@ def mcnemar_row(wide, cond, ref):
     a = wide[ref].astype(bool)
     b = wide[cond].astype(bool)
     table = pd.crosstab(a, b).reindex(index=[False, True], columns=[False, True], fill_value=0)
-    result = mcnemar(table.values, exact=(table.values.sum() < 25))
     n_disagree = table.iloc[0, 1] + table.iloc[1, 0]
+    if n_disagree == 0:
+        # statsmodels' mcnemar() divides by (n1+n2) in its continuity-
+        # corrected chi2 statistic; with zero discordant pairs that's a
+        # 0/0 that silently evaluates to statistic=inf, p=0.0 -- read as
+        # "maximally significant" when the truth is the opposite: zero
+        # discordant pairs is zero evidence against the null of marginal
+        # homogeneity, i.e. p=1.0. Short-circuit before calling it.
+        statistic, pvalue = 0.0, 1.0
+    else:
+        result = mcnemar(table.values, exact=(table.values.sum() < 25))
+        statistic, pvalue = float(result.statistic), float(result.pvalue)
     return {
         "comparison": f"{cond}_vs_{ref}", "n": len(wide), "n_discordant_pairs": int(n_disagree),
         "ref_fail_cond_succeed": int(table.iloc[0, 1]), "ref_succeed_cond_fail": int(table.iloc[1, 0]),
-        "statistic": round(float(result.statistic), 3), "p_raw": float(result.pvalue),
+        "statistic": round(statistic, 3), "p_raw": pvalue,
     }

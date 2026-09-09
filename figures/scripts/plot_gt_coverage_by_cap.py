@@ -22,9 +22,9 @@ CAP_LABEL = {"no_cap": "no cap", "30k": "30k", "50k": "50k", "55k": "55k"}
 MAP_TYPE_ORDER = ["structural", "frequency", "cochange"]
 MAP_TYPE_LABEL = {"structural": "structural", "frequency": "frequency", "cochange": "co-change"}
 MAP_TYPE_COLOR = {
-    "structural": "#4a3aa7",  # slot 7, violet
-    "frequency":  "#008300",  # slot 6, green
-    "cochange":   "#e34948",  # slot 8, red
+    "structural": "#2a78d6",  # matches structural everywhere else (studies 1-3, Haiku trial)
+    "frequency":  "#eb6834",  # matches frequency everywhere else
+    "cochange":   "#1baf7a",  # matches co-change everywhere else
 }
 
 
